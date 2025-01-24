@@ -1,0 +1,50 @@
+.apiBlock {
+    background-color: rgb(12, 12, 14);
+    padding: 10px;
+    border: 1px solid rgb(5, 5, 5);
+    border-radius: 8px;
+}
+
+.apiBlock h2 {
+    color: rgb(7, 121, 231);
+}
+
+.output {
+    font-size: 0.9em;
+    padding: 2px;
+    font-family: Consolas, monospace;
+    color: #4e4ef5;
+    margin-bottom: 2px;
+    scrollbar-width: none;
+    width: auto;
+    max-width: 700px;
+}
+
+.output span {
+    background-color: rgb(3, 3, 5) !important;
+}
+
+.output code {
+    margin: 0;
+    padding: 0;
+    background-color: rgb(3, 3, 5) !important;
+}
+
+.output ::-webkit-scrollbar {
+    display: none;
+}
+
+.number, .string {
+    color: #76bcfa;
+}
+
+.boolean {
+    color: #fd6e4f;
+}
+
+.null {
+    color: magenta;
+}
+.key {
+    color: #389af6;
+}

@@ -1,0 +1,478 @@
+.run-card {
+    width: 580px;
+    height: 360px;
+    border: 4px solid #ccc;
+    border-radius: 20px;
+    box-sizing: content-box;
+    margin: auto;
+    -webkit-transform: scale(0.75);
+    margin-top: 10px;
+    -webkit-transform-origin: 25% 0;
+}
+
+.main {
+    padding-top: 0;
+}
+
+.startButton {
+    position: absolute;
+    width: 20px;
+    height: 360px;
+    z-index: 2;
+}
+
+.startButton:hover {
+    cursor: pointer;
+}
+
+.endButton {
+    position: absolute;
+    margin-left: 550px;
+    width: 30px;
+    height: 360px;
+    z-index: 2;
+}
+
+.endButton:hover {
+    cursor: pointer;
+}
+
+.card-bg {
+    position: absolute;
+    width: 580px;
+    height: 360px;
+    border-radius: 16px;
+    z-index: 0;
+}
+
+.card-line-wrapper {
+    position: relative;
+    z-index: 1;
+    margin-left: 18px;
+    margin-top: 16px;
+    width: 300px;
+}
+
+.icon {
+    width: 40px;
+    margin-right: 10px;
+}
+
+.card-line {
+    margin-bottom: 5px;
+    align-items: center;
+    width: 300px;
+}
+
+.split-name {
+    display: inline;
+    font-family: 'Minecraftia Regular', sans-serif;
+    position: relative;
+    top: 5px;
+    font-size: 1.4em;
+}
+
+.cardHead {
+    position: relative;
+    left: 505px;
+    top: 18px;
+    z-index: 2;
+    width: 58px;
+    height: 58px;
+    image-rendering: pixelated;
+}
+
+.cardBody {
+    display: none;
+    position: relative;
+    left: 488px;
+    top: 40px;
+    z-index: 1;
+    width: 16px;
+    image-rendering: pixelated;
+}
+
+.staticWrapper {
+    position: absolute;
+    width: 500px;
+}
+
+.last-updated {
+    width: 200px;
+    text-align: center;
+    font-size: 1.0em;
+}
+
+.last-updated p {
+    margin-bottom: 5px;
+}
+
+.timerTooltip .tooltip-inner {
+    text-align: center;
+    opacity: 1;
+    padding: 0;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.timerTooltip .timerHint {
+    margin: 5px auto 2px auto;
+    font-size: 1.1em;
+    color: rgb(230, 230, 230);
+    background-color: rgb(13, 13, 15);
+    padding: 5px 5px 8px;
+    width: 150px;
+    border: 1px rgb(5, 5, 5) solid;
+    border-radius: 8px;
+}
+
+.last-updated .info-icon {
+    position: relative;
+    margin-top: -6px;
+    top: 6px;
+    font-size: 1.3em;
+}
+
+.run-card .playerName {
+    margin-top: -34px;
+    text-align: right;
+    font-size: 1.8em;
+}
+
+.run-card .nameWrapper {
+    color: rgb(230, 230, 230);
+    text-decoration: none;
+}
+
+.run-card .runDate {
+    margin-right: -70px;
+    margin-top: 253px;
+    text-align: right;
+    font-size: 1.3em;
+}
+
+.secretId {
+    margin-right: -69px;
+    margin-top: -58px;
+    text-align: right;
+    font-size: 0.7em;
+    opacity: 0.5;
+}
+
+.copy-url {
+    width: 110px;
+}
+
+.copy-splits {
+    width: 150px;
+}
+
+.run-outer {
+    padding-top: 30px;
+    padding-bottom: 30px;
+    max-width: 650px;
+    margin: auto;
+}
+
+.run-outer-discord {
+    padding-top: 30px;
+    padding-bottom: 30px;
+    max-width: 650px;
+    background-color: #313338;
+    border-radius: 20px;
+    margin: auto;
+    box-sizing: content-box;
+}
+
+.has-vod:hover {
+    color: rgb(170, 170, 170);
+    cursor: pointer;
+}
+
+#twitch-player {
+    background-color: black;
+}
+
+.noBlack {
+    position: absolute;
+    background-color: #121215;
+    width: 1px;
+}
+
+.vod-hint {
+    width: 720px;
+    text-align: center;
+}
+
+.vod, .live {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background-color: black;
+    overflow: hidden;
+    padding: 0;
+}
+
+@media only screen and (min-width: 576px) {
+    .vod, .live {
+        margin: auto;
+    }
+}
+
+.chat {
+    position: absolute;
+}
+
+.chatBuffer {
+    display: none;
+}
+
+.runButtons {
+    margin-top: -70px;
+}
+
+@media only screen and (min-width: 1400px) {
+    .chat {
+        margin-top: -584px;
+        margin-left: 1036px;
+        height: 583px;
+    }
+
+    .run-card {
+        margin-left: 380px;
+    }
+
+    .live {
+        margin-left: -20px;
+        max-width: 80%
+    }
+
+    .vod {
+        max-width: 60%;
+    }
+
+    .noBlack {
+        height: 437px;
+    }
+}
+
+@media only screen and (min-width: 1200px) and (max-width: 1399px) {
+    .chat {
+        margin-top: -503px;
+        margin-left: 893px;
+        height: 502px;
+    }
+
+    .run-card {
+        margin-left: 295px;
+    }
+
+    .live {
+        margin-left: -37px;
+        max-width: 80%
+    }
+
+    .vod {
+        max-width: 60%
+    }
+
+    .noBlack {
+        height: 377px;
+    }
+}
+
+@media only screen and (min-width: 992px) and (max-width: 1199px) {
+    .chat {
+        margin-top: -396px;
+        margin-left: 701px;
+        height: 395px;
+    }
+
+    .run-card {
+        margin-left: 205px;
+    }
+
+    .live {
+        margin-left: -30px;
+        max-width: 75%
+    }
+
+    .vod {
+        max-width: 60%
+    }
+
+    .noBlack {
+        height: 317px;
+    }
+
+}
+
+@media only screen and (min-width: 768px) and (max-width: 991px) {
+    .chat {
+        margin-top: -295px;
+        margin-left: 521px;
+        max-width: 231px;
+        height: 294px;
+    }
+
+    .run-card {
+        margin-left: 90px;
+    }
+
+    .live {
+        margin-left: -28px;
+        max-width: 75%;
+    }
+
+    .vod {
+        max-width: 75%
+    }
+
+    .noBlack {
+        height: 295px;
+    }
+}
+
+@media only screen and (max-width: 767px) {
+    .chat {
+        position: absolute;
+        width: 100%;
+        max-width: 576px;
+        margin-top: 0;
+        height: 320px;
+        margin-left: -1px;
+    }
+
+    .chatBuffer {
+        display: block;
+        margin-bottom: 320px;
+    }
+
+    .run-card {
+        -webkit-transform: scale(0.75);
+        -webkit-transform-origin: 25% 0;
+    }
+
+    .live {
+        max-width: calc(100% - 2px);
+    }
+
+    .twitchWrapper {
+        padding: 0;
+    }
+
+    .noBlack {
+        height: 305px;
+    }
+}
+
+@media only screen and (min-width: 576px) and (max-width: 767px) {
+    .chat {
+        max-width: 538px;
+        margin-left: -1px;
+    }
+}
+
+@media only screen and (min-width: 480px) and (max-width: 520px) {
+    .run-card {
+        -webkit-transform: scale(0.7);
+        -webkit-transform-origin: 20% 0;
+    }
+}
+
+@media only screen and (min-width: 420px) and (max-width: 480px) {
+    .run-card {
+        -webkit-transform: scale(0.6);
+        -webkit-transform-origin: 15% 0;
+    }
+
+    .runButtons {
+        margin-top: -120px;
+    }
+}
+
+@media only screen and (min-width: 480px) and (max-width: 520px) {
+    .run-card {
+        -webkit-transform: scale(0.7);
+        -webkit-transform-origin: 20% 0;
+    }
+
+    .runButtons {
+        margin-top: -90px;
+    }
+}
+
+@media only screen and (min-width: 400px) and (max-width: 420px) {
+    .run-card {
+        -webkit-transform: scale(0.6);
+        -webkit-transform-origin: 5% 0;
+    }
+
+    .runButtons {
+        margin-top: -120px;
+    }
+}
+
+@media only screen and (min-width: 360px) and (max-width: 400px) {
+    .run-card {
+        -webkit-transform: scale(0.5);
+        -webkit-transform-origin: 12% 0;
+    }
+
+    .runButtons {
+        margin-top: -160px;
+    }
+}
+
+@media only screen and (max-width: 360px) {
+    .run-card {
+        -webkit-transform: scale(0.5);
+        -webkit-transform-origin: 5% 0;
+    }
+
+    .runButtons {
+        margin-top: -160px;
+    }
+}
+
+.runButtons {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.runButtons .btn {
+    margin: 0 8px;
+}
+
+.unknownRun {
+    font-size: 1.2em;
+    text-align: center;
+    width: 600px;
+}
+
+.fakeVod {
+    text-align: center;
+    line-height: 200px;
+    font-size: 1.3em;
+    z-index: 2;
+}
+
+.reset-text {
+    color: rgb(230, 0, 0);
+    margin-bottom: 1px !important;
+}
+
+.live-text {
+    color: green;
+    margin-bottom: 1px !important;
+}
+
+.runHeader {
+    margin-top: -12px;
+}
+
+.runHeader .header {
+    margin-bottom: 0;
+}
+
+.faq-list {
+    margin-bottom: 150px;
+}
