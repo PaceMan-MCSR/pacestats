@@ -1,4 +1,3 @@
-'use server'
 import PlayerSearch from "@/app/components/PlayerSearch";
 import {getAllUsers, getCached} from "@/app/data";
 

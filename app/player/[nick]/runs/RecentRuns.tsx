@@ -259,7 +259,7 @@ export default function RecentRuns({runs}: { runs: {}[] }) {
             sx={styles}
             initialState={{
                 pagination: {
-                    paginationModel: { pageSize: 10, page: 0 },
+                    paginationModel: { pageSize: 25, page: 0 },
                 },
             }}
             {...props}
