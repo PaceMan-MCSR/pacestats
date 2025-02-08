@@ -65,6 +65,7 @@ const ttls = {
     getPlayerRuns: 10,
     getRecentAARuns: 10,
     getAllPlayerRuns: 10,
+    getAllPlayerRunsOptimized: 10,
     getAllPlayerRunsByPeriod: 20,
     getRecentTimestamps: 10,
     getLeaderboards: {
@@ -429,6 +430,14 @@ export const getAllPlayerRuns = async (uuid: string, limit : number = 100) => {
     }
     const [rows, fields] = await (await getConn()).execute(
         `SELECT *, UNIX_TIMESTAMP(insertTime) AS time, UNIX_TIMESTAMP(lastUpdated) AS updatedTime FROM pace WHERE uuid=? ORDER BY id DESC LIMIT ${limit};`,
+        [uuid]
+    )
+    return rows
+}
+
+export const getAllPlayerRunsOptimized = async (uuid: string) => {
+    const [rows, fields] = await (await getConn()).execute(
+        `SELECT id, nether, bastion, fortress, first_portal, stronghold, end, finish, lastUpdated, vodId FROM pace WHERE uuid=? ORDER BY id DESC;`,
         [uuid]
     )
     return rows

@@ -1,7 +1,7 @@
 import {
     getCached,
     getAllNamesByNick,
-    getAllNamesByTwitch, getAllPlayerRuns,
+    getAllNamesByTwitch, getAllPlayerRuns, getAllPlayerRunsOptimized,
 } from "@/app/data";
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
@@ -34,7 +34,7 @@ export default async function Page({params, searchParams}: {
     }
     const uuid = names.uuid
 
-    const recentRuns = await getCached(getAllPlayerRuns, "getAllPlayerRuns", uuid, 200)
+    const recentRuns = await getCached(getAllPlayerRunsOptimized, "getAllPlayerRunsOptimized", uuid)
 
     const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
 
@@ -42,7 +42,7 @@ export default async function Page({params, searchParams}: {
         <div className="container">
             <ResetScroll/>
             <div className="row justify-content-center">
-                <div className="col-lg-8 col-xl-7">
+                <div className="col-lg-9 col-xl-8">
                     <h1 className="header mb-4">
                         Recent runs for {realNick}
                         <img className="titleHead mx-2" src={headUrl} alt={realNick}/>
