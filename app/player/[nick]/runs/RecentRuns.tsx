@@ -3,12 +3,125 @@
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
 import { formatIfNotNull } from "@/app/utils";
 import { useRouter } from "next/navigation";
-import { DataGrid, DataGridProps, GridColDef, useGridApiRef } from '@mui/x-data-grid';
-import { useEffect, useState } from "react";
+import {
+    DataGrid,
+    DataGridProps,
+    GridColDef,
+    GridFilterInputValueProps,
+    GridFilterOperator,
+    useGridApiRef
+} from '@mui/x-data-grid';
+import React, { useEffect, useImperativeHandle, useRef, useState } from "react";
 import useDebouncedCallback from "@restart/hooks/useDebouncedCallback";
 import { useMediaQuery } from "@mui/system";
-import { CircularProgress } from "@mui/material";
+import { CircularProgress, TextField } from "@mui/material";
 import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
+import Box from "@mui/material/Box";
+
+function MinutesSecondsInputValue(props: GridFilterInputValueProps) {
+    const { item, applyValue, focusElementRef } = props;
+
+    const inputRef: React.Ref<any> = useRef(null);
+    useImperativeHandle(focusElementRef, () => ({
+        focus: () => {
+            inputRef.current.focus();
+        },
+    }));
+
+    const handleFilterChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const value = event.target.value;
+        if (/^[\d:]*$/.test(value)) {
+            applyValue({ ...item, value: value });
+        }
+    };
+
+    return (
+        <Box
+            sx={{
+                display: 'inline-flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                height: 48,
+                pl: '20px',
+            }}
+        >
+            <TextField
+                value={item.value || ''}
+                onChange={handleFilterChange}
+                inputRef={inputRef}
+                placeholder="mm:ss"
+            />
+        </Box>
+    );
+}
+
+const minutesSecondsOperators: GridFilterOperator<any, string>[] = [
+    {
+        label: 'Greater than',
+        value: 'greaterThan',
+        getApplyFilterFn: (filterItem: any) => {
+            if (!filterItem.field || !filterItem.value || !filterItem.operator) {
+                return null;
+            }
+
+            const parseTime = (timeString: string): number => {
+                const parts = timeString.split(':');
+                if (parts.length !== 2) return NaN; // Invalid format
+                const minutes = parseInt(parts[0], 10);
+                const seconds = parseInt(parts[1], 10);
+                if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) return NaN; //More validation
+                return minutes * 60 + seconds;
+            };
+
+            const filterTime = parseTime(filterItem.value);
+            if (isNaN(filterTime)) return null;
+
+
+            return (value: any) => {
+                const time = value / 1000;
+                return time > filterTime;
+            };
+        },
+        InputComponent: MinutesSecondsInputValue,
+        InputComponentProps: { type: 'string' },
+        getValueAsString: (value: string) => value, // Just return the string
+    },
+    {
+        label: 'Less than',
+        value: 'lessThan',
+        getApplyFilterFn: (filterItem: any) => {
+            if (!filterItem.field || !filterItem.value || !filterItem.operator) {
+                return null;
+            }
+
+            const parseTime = (timeString: string): number => {
+                const parts = timeString.split(':');
+                if (parts.length !== 2) return NaN; // Invalid format
+                const minutes = parseInt(parts[0], 10);
+                const seconds = parseInt(parts[1], 10);
+                if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) return NaN; //More validation
+                return minutes * 60 + seconds;
+            };
+
+            const filterTime = parseTime(filterItem.value);
+            if (isNaN(filterTime)) return null;
+
+            return (value: any) => {
+                const time = value / 1000;
+                return time < filterTime;
+            };
+        },
+        InputComponent: MinutesSecondsInputValue,
+        InputComponentProps: { type: 'string' },
+        getValueAsString: (value: string) => value,
+    },
+    {
+        value: "isNotEmpty",
+        requiresFilterValue: false,
+        label: "Is not empty",
+        getApplyFilterFn: () => (value: any) => value !== null,
+    }
+];
 
 export default function RecentRuns({runs}: { runs: {}[] }) {
     const ref = useGridApiRef();
@@ -20,6 +133,16 @@ export default function RecentRuns({runs}: { runs: {}[] }) {
     useEffect(() => {
         setIsLoading(false);
     }, []);
+
+    const sharedProps: Partial<GridColDef> = {
+        type: 'custom',
+        disableColumnMenu: small,
+        filterOperators: minutesSecondsOperators,
+        align: 'right',
+        renderCell: (params) => {
+            return formatIfNotNull(params.row[params.field]);
+        },
+    }
 
     const columns: GridColDef[] = [
         {
@@ -40,107 +163,75 @@ export default function RecentRuns({runs}: { runs: {}[] }) {
         {
             field: 'nether',
             headerName: 'Nether',
-            type: 'number',
-            renderCell: (params) => {
-                return formatIfNotNull(params.row.nether);
-            },
             renderHeader: (params) => {
                 if(small){
                     return <img src="/stats/nether.webp" alt="Nether" className="icon"/>
                 }
                 return <span>Nether</span>
             },
-            disableColumnMenu: small
+            ...sharedProps
         },
         {
             field: 'bastion',
             headerName: 'Bastion',
-            type: 'number',
-            renderCell: (params) => {
-                return formatIfNotNull(params.row.bastion);
-            },
             renderHeader: (params) => {
                 if(small){
                     return <img src="/stats/bastion.webp" alt="Bastion" className="icon"/>
                 }
                 return <span>Bastion</span>
             },
-            disableColumnMenu: small
+            ...sharedProps
         },
         {
             field: 'fortress',
             headerName: 'Fortress',
-            type: 'number',
-            renderCell: (params) => {
-                return formatIfNotNull(params.row.fortress);
-            },
             renderHeader: (params) => {
                 if(small){
                     return <img src="/stats/fortress.webp" alt="Fortress" className="icon"/>
                 }
                 return <span>Fortress</span>
             },
-            disableColumnMenu: small
-        },
+            ...sharedProps        },
         {
             field: 'first_portal',
             headerName: 'First Portal',
-            type: 'number',
-            renderCell: (params) => {
-                return formatIfNotNull(params.row.first_portal);
-            },
             renderHeader: (params) => {
                 if(small){
                     return <img src="/stats/first_portal.webp" alt="First Portal" className="icon"/>
                 }
                 return <span>First Portal</span>
             },
-            disableColumnMenu: small
-        },
+            ...sharedProps        },
         {
             field: 'stronghold',
             headerName: 'Stronghold',
-            type: 'number',
-            renderCell: (params) => {
-                return formatIfNotNull(params.row.stronghold);
-            },
             renderHeader: (params) => {
                 if(small){
                     return <img src="/stats/stronghold.webp" alt="Stronghold" className="icon"/>
                 }
                 return <span>Stronghold</span>
             },
-            disableColumnMenu: small
-        },
+            ...sharedProps        },
         {
             field: 'end',
             headerName: 'End',
-            type: 'number',
-            renderCell: (params) => {
-                return formatIfNotNull(params.row.end);
-            },
             renderHeader: (params) => {
                 if(small){
                     return <img src="/stats/end.webp" alt="End" className="icon"/>
                 }
                 return <span>End</span>
             },
-            disableColumnMenu: small
-        },
+            ...sharedProps        },
         {
             field: 'finish',
             headerName: 'Finish',
-            type: 'number',
-            renderCell: (params) => {
-                return formatIfNotNull(params.row.finish);
-            },
             renderHeader: (params) => {
                 if(small){
                     return <img src="/stats/finish.webp" alt="Finish" className="icon"/>
                 }
                 return <span>Finish</span>
             },
-            disableColumnMenu: small
+            ...sharedProps
         }
     ];
 
