@@ -120,6 +120,12 @@ const minutesSecondsOperators: GridFilterOperator<any, string>[] = [
         requiresFilterValue: false,
         label: "Is not empty",
         getApplyFilterFn: () => (value: any) => value !== null,
+    },
+    {
+        value: "isEmpty",
+        requiresFilterValue: false,
+        label: "Is empty",
+        getApplyFilterFn: () => (value: any) => value === null,
     }
 ];
 
