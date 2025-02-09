@@ -17,6 +17,7 @@ import { useMediaQuery } from "@mui/system";
 import { CircularProgress, TextField } from "@mui/material";
 import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 import Box from "@mui/material/Box";
+import BastionFort from "@/app/components/BastionFort";
 
 function MinutesSecondsInputValue(props: GridFilterInputValueProps) {
     const { item, applyValue, focusElementRef } = props;
@@ -129,7 +130,8 @@ const minutesSecondsOperators: GridFilterOperator<any, string>[] = [
     }
 ];
 
-export default function RecentRuns({runs}: { runs: {}[] }) {
+export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
+    const [bastionFort, setBastionFort] = useState(bf)
     const ref = useGridApiRef();
     const router = useRouter()
     const rows = runs;
@@ -140,6 +142,10 @@ export default function RecentRuns({runs}: { runs: {}[] }) {
         setIsLoading(false);
     }, []);
 
+    useEffect(() => {
+        resize();
+    }, [bastionFort])
+
     const sharedProps: Partial<GridColDef> = {
         type: 'custom',
         disableColumnMenu: small,
@@ -149,6 +155,72 @@ export default function RecentRuns({runs}: { runs: {}[] }) {
             return formatIfNotNull(params.row[params.field]);
         },
     }
+
+    const bastionFortColumns: GridColDef[] = [
+        {
+            field: 'bastion',
+            headerName: 'Bastion',
+            renderHeader: (params) => {
+                if(small){
+                    return <img src="/stats/bastion.webp" alt="Bastion" className="icon"/>
+                }
+                return <span>Bastion</span>
+            },
+            ...sharedProps,
+        },
+        {
+            field: 'fortress',
+            headerName: 'Fortress',
+            renderHeader: (params) => {
+                if(small){
+                    return <img src="/stats/fortress.webp" alt="Fortress" className="icon"/>
+                }
+                return <span>Fortress</span>
+            },
+            ...sharedProps
+        }
+    ]
+
+    const firstSecondColumns: GridColDef[] = [
+        {
+            field: 'first_structure',
+            headerName: 'First Struct',
+            renderHeader: (params) => {
+                if(small){
+                    return <img src="/stats/bastion.webp" alt="Bastion" className="icon"/>
+                }
+                return <span>Struct 1</span>
+            },
+            ...sharedProps,
+            renderCell: (params) => {
+                const bastion = params.row.bastion;
+                const fortress = params.row.fortress;
+                if(bastion === null && fortress === null){
+                    return null;
+                }
+                return formatIfNotNull(Math.min(bastion === null ? Infinity : bastion, fortress === null ? Infinity : fortress));
+            },
+        },
+        {
+            field: 'second_structure',
+            headerName: 'Second Structure',
+            renderHeader: (params) => {
+                if(small){
+                    return <img src="/stats/fortress.webp" alt="Fortress" className="icon"/>
+                }
+                return <span>Struct 2</span>
+            },
+            ...sharedProps,
+            renderCell: (params) => {
+                const bastion = params.row.bastion;
+                const fortress = params.row.fortress;
+                if(bastion === null || fortress === null){
+                    return null;
+                }
+                return formatIfNotNull(Math.max(bastion, fortress));
+            }
+        }
+    ]
 
     const columns: GridColDef[] = [
         {
@@ -177,27 +249,8 @@ export default function RecentRuns({runs}: { runs: {}[] }) {
             },
             ...sharedProps
         },
-        {
-            field: 'bastion',
-            headerName: 'Bastion',
-            renderHeader: (params) => {
-                if(small){
-                    return <img src="/stats/bastion.webp" alt="Bastion" className="icon"/>
-                }
-                return <span>Bastion</span>
-            },
-            ...sharedProps
-        },
-        {
-            field: 'fortress',
-            headerName: 'Fortress',
-            renderHeader: (params) => {
-                if(small){
-                    return <img src="/stats/fortress.webp" alt="Fortress" className="icon"/>
-                }
-                return <span>Fortress</span>
-            },
-            ...sharedProps        },
+        bastionFort ? bastionFortColumns[0] : firstSecondColumns[0],
+        bastionFort ? bastionFortColumns[1] : firstSecondColumns[1],
         {
             field: 'first_portal',
             headerName: 'First Portal',
@@ -207,7 +260,8 @@ export default function RecentRuns({runs}: { runs: {}[] }) {
                 }
                 return <span>First Portal</span>
             },
-            ...sharedProps        },
+            ...sharedProps
+        },
         {
             field: 'stronghold',
             headerName: 'Stronghold',
@@ -217,7 +271,8 @@ export default function RecentRuns({runs}: { runs: {}[] }) {
                 }
                 return <span>Stronghold</span>
             },
-            ...sharedProps        },
+            ...sharedProps
+        },
         {
             field: 'end',
             headerName: 'End',
@@ -227,7 +282,8 @@ export default function RecentRuns({runs}: { runs: {}[] }) {
                 }
                 return <span>End</span>
             },
-            ...sharedProps        },
+            ...sharedProps
+        },
         {
             field: 'finish',
             headerName: 'Finish',
@@ -337,6 +393,13 @@ export default function RecentRuns({runs}: { runs: {}[] }) {
     }, []);
 
     return <div className="recentRunsFull paceHeader">
+        <div className="row justify-content-center align-content-center">
+            <div className="col-10 col-sm-9 col-md-6 col-lg-5 col-xl-4 col-xxl-4">
+                <div className="topRow">
+                    <BastionFort bastionFort={bastionFort} setBastionFort={setBastionFort}/>
+                </div>
+            </div>
+        </div>
         <div style={{textAlign: "center"}}>
             <h6>Click on a row to view run info</h6>
         </div>

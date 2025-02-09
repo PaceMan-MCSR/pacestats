@@ -12,6 +12,7 @@ export default async function Page({params, searchParams}: {
     params: { nick: string },
     searchParams: { [key: string]: string | undefined }
 }) {
+    let bastionFort = searchParams["bastionFort"] === "true"
     let nick = params.nick
     if (nick === "jojoe77777" || nick === "jojoe" || nick === "COVID19") nick = "COVlD19"
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", nick)
@@ -43,17 +44,17 @@ export default async function Page({params, searchParams}: {
             <ResetScroll/>
             <div className="row justify-content-center">
                 <div className="col-lg-9 col-xl-8">
-                    <h1 className="header mb-4">
+                    <h1 className="header mb-3">
                         Recent runs for {realNick}
                         <img className="titleHead mx-2" src={headUrl} alt={realNick}/>
                     </h1>
-                    <div style={{textAlign: "center"}} className="mb-4">
+                    <div style={{textAlign: "center"}} className="mb-3">
                         <Link href={`/player/${realNick}/`}>
                             <button className="btn btn-dark">Back to Profile</button>
                         </Link>
                     </div>
                     <Suspense fallback={<div>Loading...</div>}>
-                        <RecentRuns runs={recentRuns}/>
+                        <RecentRuns runs={recentRuns} bf={bastionFort}/>
                     </Suspense>
                 </div>
             </div>

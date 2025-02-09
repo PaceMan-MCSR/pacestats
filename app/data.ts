@@ -437,7 +437,29 @@ export const getAllPlayerRuns = async (uuid: string, limit : number = 100) => {
 
 export const getAllPlayerRunsOptimized = async (uuid: string) => {
     const [rows, fields] = await (await getConn()).execute(
-        `SELECT id, nether, bastion, fortress, first_portal, stronghold, end, finish, lastUpdated, vodId FROM pace WHERE uuid=? ORDER BY id DESC;`,
+        `SELECT id, nether, bastion, fortress, 
+            CASE
+                WHEN bastion is null and fortress is null THEN null
+                WHEN bastion is null and fortress is not null THEN fortress
+                WHEN bastion is not null and fortress is null THEN bastion 
+                WHEN bastion <= fortress then bastion 
+                ELSE fortress 
+            END as first_structure, 
+            CASE 
+                WHEN bastion is null and fortress is null THEN null
+                WHEN bastion is null and fortress is not null THEN null
+                WHEN bastion is not null and fortress is null THEN null
+                WHEN bastion <= fortress then fortress
+                ELSE bastion 
+            END as second_structure, 
+            first_portal,
+            stronghold, 
+            end,
+            finish, 
+            lastUpdated,
+            vodId
+        FROM pace
+        WHERE uuid=? ORDER BY id DESC;`,
         [uuid]
     )
     return rows
