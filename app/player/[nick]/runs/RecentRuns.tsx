@@ -57,6 +57,35 @@ function MinutesSecondsInputValue(props: GridFilterInputValueProps) {
 
 const minutesSecondsOperators: GridFilterOperator<any, string>[] = [
     {
+        label: 'Less than',
+        value: 'lessThan',
+        getApplyFilterFn: (filterItem: any) => {
+            if (!filterItem.field || !filterItem.value || !filterItem.operator) {
+                return null;
+            }
+
+            const parseTime = (timeString: string): number => {
+                const parts = timeString.split(':');
+                if (parts.length !== 2) return NaN; // Invalid format
+                const minutes = parseInt(parts[0], 10);
+                const seconds = parseInt(parts[1], 10);
+                if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) return NaN; //More validation
+                return minutes * 60 + seconds;
+            };
+
+            const filterTime = parseTime(filterItem.value);
+            if (isNaN(filterTime)) return null;
+
+            return (value: any) => {
+                const time = value / 1000;
+                return value !== null && time < filterTime;
+            };
+        },
+        InputComponent: MinutesSecondsInputValue,
+        InputComponentProps: { type: 'string' },
+        getValueAsString: (value: string) => value,
+    },
+    {
         label: 'Greater than',
         value: 'greaterThan',
         getApplyFilterFn: (filterItem: any) => {
@@ -85,35 +114,6 @@ const minutesSecondsOperators: GridFilterOperator<any, string>[] = [
         InputComponent: MinutesSecondsInputValue,
         InputComponentProps: { type: 'string' },
         getValueAsString: (value: string) => value, // Just return the string
-    },
-    {
-        label: 'Less than',
-        value: 'lessThan',
-        getApplyFilterFn: (filterItem: any) => {
-            if (!filterItem.field || !filterItem.value || !filterItem.operator) {
-                return null;
-            }
-
-            const parseTime = (timeString: string): number => {
-                const parts = timeString.split(':');
-                if (parts.length !== 2) return NaN; // Invalid format
-                const minutes = parseInt(parts[0], 10);
-                const seconds = parseInt(parts[1], 10);
-                if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) return NaN; //More validation
-                return minutes * 60 + seconds;
-            };
-
-            const filterTime = parseTime(filterItem.value);
-            if (isNaN(filterTime)) return null;
-
-            return (value: any) => {
-                const time = value / 1000;
-                return time < filterTime;
-            };
-        },
-        InputComponent: MinutesSecondsInputValue,
-        InputComponentProps: { type: 'string' },
-        getValueAsString: (value: string) => value,
     },
     {
         value: "isNotEmpty",
