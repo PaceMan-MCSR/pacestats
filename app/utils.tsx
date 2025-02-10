@@ -296,3 +296,24 @@ export function roundNumber(num: number, decimals: number = 2) {
 export function numberWithCommas(x: number) {
     return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
+
+export const defaultNameColor = "#e6e6e6"
+
+export const getNameColor = (users: {
+    uuid: string,
+    displayName: string,
+    color: string
+}[], uuid: string) => {
+    const user = users?.find(u => u.uuid === uuid)
+    return user ? `#${user.color}` : defaultNameColor
+}
+
+
+export const getDisplayName = (users: {
+    uuid: string,
+    displayName: string,
+    color: string
+}[], uuid: string, fallback: string) => {
+    const user = users?.find(u => u.uuid === uuid)
+    return user ? user.displayName : fallback
+}

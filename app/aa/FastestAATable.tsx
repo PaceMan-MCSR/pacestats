@@ -71,7 +71,7 @@ export function FastestAATable({catName, catId, days, data} : {catName: string, 
                     return <tr key={entryIdx}>
                         <td className="col-1"><p>{entryIdx + 1}</p></td>
                         <td className="col-10">
-                            <BoardLink name={name} url={url} linkUrl={linkUrl}/>
+                            <BoardLink name={name} uuid={d.uuid} url={url} linkUrl={linkUrl}/>
                         </td>
                         <td className="col-1">
                             <p>

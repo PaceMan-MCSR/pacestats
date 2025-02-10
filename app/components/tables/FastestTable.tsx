@@ -75,7 +75,7 @@ export function FastestTable({catName, catId, days} : {catName: string, catId: s
                     return <tr key={entryIdx}>
                         <td className="col-1"><p>{entryIdx + 1}</p></td>
                         <td className="col-10">
-                            <BoardLink name={name} url={url} linkUrl={linkUrl}/>
+                            <BoardLink name={name} uuid={d.uuid} url={url} linkUrl={linkUrl}/>
                         </td>
                         <td className="col-1">
                             <a href={`/stats/run/${runId}`} style={{marginLeft: 5, textDecoration: "none"}}>

@@ -94,6 +94,7 @@ const ttls = {
     jude: 30,
     getNethersByPeriod: 2,
     getSessionStats: 10,
+    getAllUserInfo: 5,
 }
 
 export const getLiveRuns = async () => {
@@ -431,6 +432,13 @@ export const getAllPlayerRuns = async (uuid: string, limit : number = 100) => {
     const [rows, fields] = await (await getConn()).execute(
         `SELECT *, UNIX_TIMESTAMP(insertTime) AS time, UNIX_TIMESTAMP(lastUpdated) AS updatedTime FROM pace WHERE uuid=? ORDER BY id DESC LIMIT ${limit};`,
         [uuid]
+    )
+    return rows
+}
+
+export const getAllUserInfo = async () => {
+    const [rows, fields] = await (await getConn()).execute(
+        `SELECT uuid, displayName, color FROM users;`
     )
     return rows
 }

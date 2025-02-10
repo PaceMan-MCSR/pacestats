@@ -1,13 +1,14 @@
 import {
     getCached,
     getAllNamesByNick,
-    getAllNamesByTwitch, getAllPlayerRuns, getAllPlayerRunsOptimized,
+    getAllNamesByTwitch, getAllPlayerRuns, getAllPlayerRunsOptimized, getAllUserInfo,
 } from "@/app/data";
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
 import RecentRuns from "@/app/player/[nick]/runs/RecentRuns";
 import {Suspense} from "react";
 import { Button } from "@mui/material";
+import { defaultNameColor, getNameColor } from "@/app/utils";
 
 export default async function Page({params, searchParams}: {
     params: { nick: string },
@@ -37,8 +38,10 @@ export default async function Page({params, searchParams}: {
     const uuid = names.uuid
 
     const recentRuns = await getCached(getAllPlayerRunsOptimized, "getAllPlayerRunsOptimized", uuid)
+    const userInfo = await getCached(getAllUserInfo, "getAllUserInfo")
 
     const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
+    const nameColor = getNameColor(userInfo, uuid)
 
     return (<main className="main allRuns">
         <div className="container">
@@ -55,10 +58,12 @@ export default async function Page({params, searchParams}: {
                                 <span className="material-symbols-outlined">arrow_back</span>
                             </Button>
                         </Link>
-                        Run history for {realNick}
-                        <img className="titleHead mx-2" style={{
-                            marginTop: "-5px"
-                        }} src={headUrl} alt={realNick}/>
+                        Run history for <span style={{color: nameColor}}>{realNick}</span>
+                        <img className="titleHead mx-2" style={nameColor !== defaultNameColor ? {
+                            marginTop: "-5px",
+                            border: "4px solid " + nameColor,
+                            boxSizing: "content-box",
+                        } : {marginTop: "-5px"}} src={headUrl} alt={realNick}/>
                     </h1>
                     <Suspense fallback={<div>Loading...</div>}>
                         <RecentRuns runs={recentRuns} bf={bastionFort}/>

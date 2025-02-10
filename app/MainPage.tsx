@@ -11,10 +11,12 @@ import {AvgTable} from "@/app/components/tables/AvgTable";
 import {ConversionTable} from "@/app/components/tables/ConversionTable";
 import BastionFort from "@/app/components/BastionFort";
 import {NPHTable} from "@/app/components/tables/NPHTable";
+import {UsersContext} from "@/app/contexts";
 
-export default function MainPage({searchParams, nph, lb}: {
+export default function MainPage({searchParams, nph, lb, users}: {
     lb: any,
     nph: any,
+    users: any,
     searchParams: { [key: string]: string | undefined } }
 ) {
     const [showSample, setShowSample] = useState(searchParams["showQty"] === "true")
@@ -37,7 +39,8 @@ export default function MainPage({searchParams, nph, lb}: {
     if (days !== 1 && days !== 7 && days !== 30 && days !== 9999) {
         days = 30
     }
-    return <main className="main">
+    return <UsersContext.Provider value={users}>
+        <main className="main">
         <div className="container">
             <h1 className="header">Stats Leaderboards</h1>
             <h6 className="subheader">Click on a player to see their stats</h6>
@@ -175,4 +178,5 @@ export default function MainPage({searchParams, nph, lb}: {
             </div>
         </div>
     </main>
+    </UsersContext.Provider>
 }

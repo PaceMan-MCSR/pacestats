@@ -4,8 +4,9 @@ import { ReactSearchAutocomplete } from 'react-search-autocomplete'
 import { useRouter } from 'next/navigation'
 import {SearchName} from "@/app/types";
 import Link from "next/link";
+import { getNameColor } from "@/app/utils";
 
-export default function PlayerSearch({data, input, setOutput}: { data: SearchName[], input?: any, setOutput?: any }) {
+export default function PlayerSearch({data, input, setOutput, userInfo}: { data: SearchName[], input?: any, setOutput?: any, userInfo: any }) {
     const router = useRouter()
 
     const handleOnSelect = (item: any) => {
@@ -31,7 +32,7 @@ export default function PlayerSearch({data, input, setOutput}: { data: SearchNam
             <span style={{ display: 'block', textAlign: 'left' }}>
                 {setOutput === undefined && (<Link href={`/player/${item.nick}`}></Link>)}
                 <img className="avatarSmall" src={url} alt={item.nick}/>
-                {item.nick}
+                <span style={{color: getNameColor(userInfo, item.id)}}>{item.nick}</span>
             </span>
         )
     }

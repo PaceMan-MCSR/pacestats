@@ -11,7 +11,7 @@ import { Button } from "@mui/material";
 import PlayerSearch from "@/app/components/PlayerSearch";
 import { usePathname } from "next/navigation";
 
-export default function Hamburger({users}: {users: any}) {
+export default function Hamburger({users, userInfo}: {users: any, userInfo: any}) {
     const [open, setOpen] = useState(false);
     const path = usePathname();
 
@@ -43,7 +43,7 @@ export default function Hamburger({users}: {users: any}) {
                 </ListItem>
                 <ListItem disablePadding>
                     <div className="searchWrapper">
-                        <PlayerSearch data={users}/>
+                        <PlayerSearch data={users} userInfo={userInfo}/>
                     </div>
                 </ListItem>
             </List>

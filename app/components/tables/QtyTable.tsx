@@ -1,11 +1,13 @@
-import {useEffect, useState} from "react";
+import { useContext, useEffect, useState } from "react";
 import {Entry} from "@/app/types";
 import {CategoryType, fixDisplayName, formatTime} from "@/app/utils";
 import BoardLink from "@/app/components/tables/BoardLink";
+import { UsersContext } from "@/app/contexts";
 
 export function QtyTable({catName, catId, days, lb, aa = false} : {catName: string, catId: string, days: number, lb?: any, aa?: boolean}) {
     const [data, setData] = useState([])
     const [isLoading, setLoading] = useState(true)
+    const users = useContext(UsersContext);
 
     useEffect(() => {
         if(lb){
@@ -72,7 +74,6 @@ export function QtyTable({catName, catId, days, lb, aa = false} : {catName: stri
                     let skinName = d.name
                     let value: number = d.qty
                     let url = "https://mc-heads.net/avatar/" + skinName + "/8"
-                    let count: string = d.qty.toString()
                     let avg = d.avg
                     let linkUrl = "/player/" + name + "/"
                     if(aa){
@@ -81,7 +82,7 @@ export function QtyTable({catName, catId, days, lb, aa = false} : {catName: stri
                     return <tr key={entryIdx}>
                         <td className="col-1"><p>{entryIdx + 1}</p></td>
                         <td className="col-10">
-                            <BoardLink name={name} url={url} linkUrl={linkUrl}/>
+                            <BoardLink name={name} uuid={d.uuid} url={url} linkUrl={linkUrl}/>
                         </td>
                         <td className="col-1" title={formatTime(avg)} style={{textAlign: "right"}}>
                             <p>

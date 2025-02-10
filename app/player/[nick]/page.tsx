@@ -3,7 +3,7 @@ import {
     getAllNamesByNick,
     getAllNamesByTwitch,
     getLeaderboards, getPlayerRuns,
-    getTwitchAccounts, getNPH, isTwitchLive,
+    getTwitchAccounts, getNPH, isTwitchLive, getAllUserInfo,
 } from "@/app/data";
 import Link from "next/link";
 import {CategoryType, fixDisplayName, getMinQty} from "@/app/utils";
@@ -118,6 +118,7 @@ export default async function Page({params, searchParams}: {
 
     const recentRuns = await getCached(getPlayerRuns, "getPlayerRuns", uuid, 4)
     const nph = await getCached(getNPH, "getNPH", uuid, days * 24, days * 24)
+    const users = await getCached(getAllUserInfo, "getAllUserInfo")
 
     const twitches = await getCached(getTwitchAccounts, "getTwitchAccounts", uuid) as { twitch: string, time: number }[]
     let t = [];
@@ -126,5 +127,5 @@ export default async function Page({params, searchParams}: {
             return {twitch: t.twitch, time: t.time, live: await getCached(isTwitchLive, "isTwitchLive", t.twitch)}
         }));
     }
-    return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} twitches={t} nph={nph} data={data} days={days} bf={bastionFort} />
+    return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} twitches={t} nph={nph} data={data} days={days} bf={bastionFort} users={users} />
 }

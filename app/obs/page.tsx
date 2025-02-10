@@ -1,5 +1,5 @@
 import ObsWrapper from "@/app/obs/ObsWrapper";
-import {getAllUsers, getCached} from "@/app/data";
+import { getAllUserInfo, getAllUsers, getCached } from "@/app/data";
 
 export const dynamic = "force-dynamic"
 
@@ -8,5 +8,6 @@ export default async function Page({params, searchParams}: {
     searchParams: { [key: string]: string | undefined }
 }) {
     const names = await getCached(getAllUsers, "getAllUsers");
-    return <ObsWrapper names={names} params={params} />
+    const userInfo = await getCached(getAllUserInfo, "getAllUserInfo");
+    return <ObsWrapper names={names} userInfo={userInfo} params={params} />
 }

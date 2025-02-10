@@ -7,7 +7,7 @@ import {inter} from "@/app/styles/fonts";
 import PaceManLink from "@/app/components/PaceManLink";
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v14-appRouter';
 import Hamburger from "@/app/Hamburger";
-import { getAllUsers, getCached } from "@/app/data";
+import { getAllUserInfo, getAllUsers, getCached } from "@/app/data";
 import PlayerSearch from "@/app/components/PlayerSearch";
 
 export const metadata: Metadata = {
@@ -19,6 +19,7 @@ export default async function RootLayout({children}: Readonly<{
     children: React.ReactNode;
 }>) {
     const users = await getCached(getAllUsers, "getAllUsers");
+    const userInfo = await getCached(getAllUserInfo, "getAllUserInfo");
     return (
         <html lang="en">
         <body className={inter.className}>
@@ -26,7 +27,7 @@ export default async function RootLayout({children}: Readonly<{
             <div className="d-sm-none">
                 <nav className="navbar navbar-expand-sm navbar-dark bg-dark">
                     <div className="container">
-                        <Hamburger users={users}/>
+                        <Hamburger users={users} userInfo={userInfo}/>
                     </div>
                 </nav>
             </div>
@@ -47,7 +48,7 @@ export default async function RootLayout({children}: Readonly<{
                             </li>
                             <li className="nav-item">
                                 <div className="searchWrapper">
-                                    <PlayerSearch data={users}/>
+                                    <PlayerSearch data={users} userInfo={userInfo}/>
                                 </div>
                             </li>
                         </ul>
