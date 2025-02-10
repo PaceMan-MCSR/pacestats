@@ -15,16 +15,10 @@ import { useMediaQuery } from "@mui/system";
 import { CircularProgress } from "@mui/material";
 import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 import BastionFort from "@/app/components/BastionFort";
-import FilterChange from "@/app/components/FilterChange";
 import RunFilters from "@/app/components/RunFilters";
 
 export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
-    const [filters, setFilters] = useState([        {
-        column: 'nether',
-        operatorValue: 'lessThan',
-        value: '1:30',
-        inMs: 90000,
-    }] as {
+    const [filters, setFilters] = useState([] as {
         column: string,
         operatorValue: string,
         value: string,
