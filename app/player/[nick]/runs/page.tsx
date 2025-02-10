@@ -7,6 +7,7 @@ import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
 import RecentRuns from "@/app/player/[nick]/runs/RecentRuns";
 import {Suspense} from "react";
+import { Button } from "@mui/material";
 
 export default async function Page({params, searchParams}: {
     params: { nick: string },
@@ -45,14 +46,20 @@ export default async function Page({params, searchParams}: {
             <div className="row justify-content-center">
                 <div className="col-lg-9 col-xl-8">
                     <h1 className="header mb-3">
-                        Recent runs for {realNick}
-                        <img className="titleHead mx-2" src={headUrl} alt={realNick}/>
-                    </h1>
-                    <div style={{textAlign: "center"}} className="mb-3">
                         <Link href={`/player/${realNick}/`}>
-                            <button className="btn btn-dark">Back to Profile</button>
+                            <Button color={"info"} sx={{
+                                marginTop: "-5px",
+                                minWidth: "40px",
+                                maxWidth: "40px",
+                            }}>
+                                <span className="material-symbols-outlined">arrow_back</span>
+                            </Button>
                         </Link>
-                    </div>
+                        Run history for {realNick}
+                        <img className="titleHead mx-2" style={{
+                            marginTop: "-5px"
+                        }} src={headUrl} alt={realNick}/>
+                    </h1>
                     <Suspense fallback={<div>Loading...</div>}>
                         <RecentRuns runs={recentRuns} bf={bastionFort}/>
                     </Suspense>

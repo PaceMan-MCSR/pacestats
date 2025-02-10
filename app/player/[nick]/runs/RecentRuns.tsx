@@ -7,134 +7,57 @@ import {
     DataGrid,
     DataGridProps,
     GridColDef,
-    GridFilterInputValueProps,
-    GridFilterOperator,
     useGridApiRef
 } from '@mui/x-data-grid';
-import React, { useEffect, useImperativeHandle, useRef, useState } from "react";
+import React, { useEffect,useState } from "react";
 import useDebouncedCallback from "@restart/hooks/useDebouncedCallback";
 import { useMediaQuery } from "@mui/system";
-import { CircularProgress, TextField } from "@mui/material";
+import { CircularProgress } from "@mui/material";
 import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
-import Box from "@mui/material/Box";
 import BastionFort from "@/app/components/BastionFort";
-
-function MinutesSecondsInputValue(props: GridFilterInputValueProps) {
-    const { item, applyValue, focusElementRef } = props;
-
-    const inputRef: React.Ref<any> = useRef(null);
-    useImperativeHandle(focusElementRef, () => ({
-        focus: () => {
-            inputRef.current.focus();
-        },
-    }));
-
-    const handleFilterChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const value = event.target.value;
-        if (/^[\d:]*$/.test(value)) {
-            applyValue({ ...item, value: value });
-        }
-    };
-
-    return (
-        <Box
-            sx={{
-                display: 'inline-flex',
-                flexDirection: 'row',
-                alignItems: 'center',
-                height: 48,
-                pl: '20px',
-            }}
-        >
-            <TextField
-                value={item.value || ''}
-                onChange={handleFilterChange}
-                inputRef={inputRef}
-                placeholder="mm:ss"
-            />
-        </Box>
-    );
-}
-
-const minutesSecondsOperators: GridFilterOperator<any, string>[] = [
-    {
-        label: 'Less than',
-        value: 'lessThan',
-        getApplyFilterFn: (filterItem: any) => {
-            if (!filterItem.field || !filterItem.value || !filterItem.operator) {
-                return null;
-            }
-
-            const parseTime = (timeString: string): number => {
-                const parts = timeString.split(':');
-                if (parts.length !== 2) return NaN; // Invalid format
-                const minutes = parseInt(parts[0], 10);
-                const seconds = parseInt(parts[1], 10);
-                if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) return NaN; //More validation
-                return minutes * 60 + seconds;
-            };
-
-            const filterTime = parseTime(filterItem.value);
-            if (isNaN(filterTime)) return null;
-
-            return (value: any) => {
-                const time = value / 1000;
-                return value !== null && time < filterTime;
-            };
-        },
-        InputComponent: MinutesSecondsInputValue,
-        InputComponentProps: { type: 'string' },
-        getValueAsString: (value: string) => value,
-    },
-    {
-        label: 'Greater than',
-        value: 'greaterThan',
-        getApplyFilterFn: (filterItem: any) => {
-            if (!filterItem.field || !filterItem.value || !filterItem.operator) {
-                return null;
-            }
-
-            const parseTime = (timeString: string): number => {
-                const parts = timeString.split(':');
-                if (parts.length !== 2) return NaN; // Invalid format
-                const minutes = parseInt(parts[0], 10);
-                const seconds = parseInt(parts[1], 10);
-                if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) return NaN; //More validation
-                return minutes * 60 + seconds;
-            };
-
-            const filterTime = parseTime(filterItem.value);
-            if (isNaN(filterTime)) return null;
-
-
-            return (value: any) => {
-                const time = value / 1000;
-                return time > filterTime;
-            };
-        },
-        InputComponent: MinutesSecondsInputValue,
-        InputComponentProps: { type: 'string' },
-        getValueAsString: (value: string) => value, // Just return the string
-    },
-    {
-        value: "isNotEmpty",
-        requiresFilterValue: false,
-        label: "Is not empty",
-        getApplyFilterFn: () => (value: any) => value !== null,
-    },
-    {
-        value: "isEmpty",
-        requiresFilterValue: false,
-        label: "Is empty",
-        getApplyFilterFn: () => (value: any) => value === null,
-    }
-];
+import FilterChange from "@/app/components/FilterChange";
+import RunFilters from "@/app/components/RunFilters";
 
 export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
+    const [filters, setFilters] = useState([        {
+        column: 'nether',
+        operatorValue: 'lessThan',
+        value: '1:30',
+        inMs: 90000,
+    }] as {
+        column: string,
+        operatorValue: string,
+        value: string,
+        inMs: number,
+    }[])
     const [bastionFort, setBastionFort] = useState(bf)
     const ref = useGridApiRef();
     const router = useRouter()
-    const rows = runs;
+
+    const rows = runs.filter((run) => {
+        for (const filter of filters) {
+            if(!run.hasOwnProperty(filter.column)){
+                return false;
+            }
+            // @ts-ignore
+            const time = run[filter.column];
+            const filterTime = filter.inMs;
+            if (filter.operatorValue === 'lessThan' && (time == null || time >= filterTime)) {
+                return false;
+            }
+            if (filter.operatorValue === 'greaterThan' && time <= filterTime) {
+                return false;
+            }
+            if (filter.operatorValue === 'isNotEmpty' && time == null) {
+                return false;
+            }
+            if (filter.operatorValue === 'isEmpty' && time != null) {
+                return false;
+            }
+        }
+        return true;
+    });
+
     const small = useMediaQuery('(max-width: 768px)');
     const [isLoading, setIsLoading] = useState(true);
 
@@ -144,12 +67,11 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
 
     useEffect(() => {
         resize();
-    }, [bastionFort])
+    }, [bastionFort, filters])
 
     const sharedProps: Partial<GridColDef> = {
         type: 'custom',
         disableColumnMenu: small,
-        filterOperators: minutesSecondsOperators,
         align: 'right',
         renderCell: (params) => {
             return formatIfNotNull(params.row[params.field]);
@@ -187,7 +109,7 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
             headerName: 'First Struct',
             renderHeader: (params) => {
                 if(small){
-                    return <img src="/stats/bastion.webp" alt="Bastion" className="icon"/>
+                    return <img src="/stats/struct1.png" alt="Structure 1" className="icon"/>
                 }
                 return <span>Struct 1</span>
             },
@@ -206,7 +128,7 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
             headerName: 'Second Structure',
             renderHeader: (params) => {
                 if(small){
-                    return <img src="/stats/fortress.webp" alt="Fortress" className="icon"/>
+                    return <img src="/stats/struct2.png" alt="Structure 2" className="icon"/>
                 }
                 return <span>Struct 2</span>
             },
@@ -350,6 +272,9 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
         },
         '& .MuiDataGrid-menuIcon .MuiSvgIcon-root': {
             color: '#AAAABB',
+        },
+        '& .MuiDataGrid-columnHeaderTitleContainerContent span': {
+            userSelect: 'none',
         }
     }
 
@@ -394,21 +319,28 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
 
     return <div className="recentRunsFull paceHeader">
         <div className="row justify-content-center align-content-center">
-            <div className="col-10 col-sm-9 col-md-6 col-lg-5 col-xl-4 col-xxl-4">
+            <div className="col-10 col-sm-9 col-md-6 col-lg-12 col-xl-12 col-xxl-12">
                 <div className="topRow">
                     <BastionFort bastionFort={bastionFort} setBastionFort={setBastionFort}/>
                 </div>
             </div>
         </div>
-        <div style={{textAlign: "center"}}>
-            <h6>Click on a row to view run info</h6>
+        <div className="row justify-content-center align-content-center">
+            <div className="col-12">
+                <RunFilters bf={bastionFort} filters={filters} setFilters={setFilters}/>
+            </div>
         </div>
-        <div className="liveDescription">
+        <div className="liveDescription" style={{
+            marginBottom: "-14px"
+        }}>
             <span className="liveIndicator"/>= Live
         </div>
         {isLoading && <div className="loading" style={{marginTop: "10px", display: "flex", justifyContent: "center"}}>
             <CircularProgress sx={{margin: "auto"}}/>
         </div>}
+        <div style={{textAlign: "right", marginRight: "2px"}}>
+            <p style={{lineHeight: 0}}>{rows.length} results</p>
+        </div>
         <DataGrid
             columns={columns}
             rows={rows}
@@ -416,6 +348,7 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
             onRowClick={(params, e) => {
                 router.push("/run/" + params.row.id)
             }}
+            disableColumnFilter={true}
             sx={styles}
             initialState={{
                 pagination: {
