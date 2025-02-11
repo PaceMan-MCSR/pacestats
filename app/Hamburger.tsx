@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Drawer from '@mui/material/Drawer';
 import List from '@mui/material/List';
@@ -10,10 +10,12 @@ import ListItemText from '@mui/material/ListItemText';
 import { Button } from "@mui/material";
 import PlayerSearch from "@/app/components/PlayerSearch";
 import { usePathname } from "next/navigation";
+import { UserColoursContext } from "@/app/contexts";
 
 export default function Hamburger({users, userInfo}: {users: any, userInfo: any}) {
     const [open, setOpen] = useState(false);
     const path = usePathname();
+    const colours = useContext(UserColoursContext)
 
     useEffect(() => {
         setOpen(false);
@@ -22,9 +24,13 @@ export default function Hamburger({users, userInfo}: {users: any, userInfo: any}
     const toggleDrawer = (newOpen: boolean) => () => {
         setOpen(newOpen);
     };
+    console.log(colours)
 
     const DrawerList = (
-        <Box sx={{ width: 260 }} role="presentation">
+        <Box sx={{
+            width: 260,
+            color: colours?.isCustom ? `${(colours.bgText as {color: string}).color}` : "#DDDDEE",
+        }} role="presentation">
             <List>
                 <ListItem disablePadding>
                     <ListItemButton href={"/stats/"}>
@@ -60,7 +66,7 @@ export default function Hamburger({users, userInfo}: {users: any, userInfo: any}
                 onClose={toggleDrawer(false)}
                 sx={{
                     '& .MuiDrawer-paper': {
-                        backgroundColor: "#121215",
+                        backgroundColor: colours?.isCustom ? `#${colours.bg}` : "#121215",
                         color: "rgb(230,230,230)",
                     },
                 }}

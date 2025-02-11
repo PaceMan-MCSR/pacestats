@@ -1,5 +1,8 @@
 'use client'
 
+import { useContext } from "react";
+import { UserColoursContext } from "@/app/contexts";
+
 function backToPaceMan() {
     if(window.location.pathname.indexOf("/stats/player/") === -1){
         window.location.href = "https://paceman.gg/";
@@ -9,5 +12,6 @@ function backToPaceMan() {
 }
 
 export default function PaceManLink() {
-    return <a className="nav-link" href="#" onClick={backToPaceMan}>Back to PaceMan</a>;
+    const colours = useContext(UserColoursContext)
+    return <a className="nav-link" href="#" onClick={backToPaceMan} style={colours.fgText}>Back to PaceMan</a>;
 }

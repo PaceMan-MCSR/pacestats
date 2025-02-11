@@ -1,7 +1,9 @@
 'use client'
 
-import {CategoryType, formatTime} from "@/app/utils";
-import {useState} from "react";
+import { CategoryType, formatTime, getDarkerColor } from "@/app/utils";
+import { useContext, useState } from "react";
+import { UserColoursContext } from "@/app/contexts";
+import Box from "@mui/material/Box";
 
 export function Stat({category, headUrl, name, days, data}: {
     category: string,
@@ -19,7 +21,18 @@ export function Stat({category, headUrl, name, days, data}: {
     if(count === undefined){
         return null;
     }
-    return <div className="stat mb-4" onClick={() => {setFocus(!focus)}}>
+    const colours = useContext(UserColoursContext)
+    return <Box className="stat mb-4" onClick={() => {setFocus(!focus)}} sx={colours.isCustom ? {
+        backgroundColor: `#${colours?.fg} !important`,
+        borderColor: `#${getDarkerColor(colours?.fg, 0.6)} !important`,
+        '& p, h4': {
+            ...colours.fgText
+        },
+        '& h5': {
+            color: `#${colours.name}`,
+            filter: `drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000)`
+        }
+    } : {}}>
         {!focus && (
             <h4 className="statHeader" style={{marginBottom: 10, userSelect: "none"}}>
                 {category}
@@ -42,5 +55,5 @@ export function Stat({category, headUrl, name, days, data}: {
         {conversion !== undefined && (
             <p>Conversion: {conversion.value.toFixed(1)}% {conversion.ranking !== -1 ? ("(#" + conversion.ranking + ")") : ""}</p>
         )}
-    </div>
+    </Box>
 }

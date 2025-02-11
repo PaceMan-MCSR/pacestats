@@ -8,7 +8,7 @@
 
 body {
     min-height: 100vh;
-    background-color: rgb(18, 18, 21);
+    background-color: rgb(18, 18, 21) !important;
 }
 
 .main {
@@ -368,10 +368,12 @@ td p {
     background-color: rgb(20, 20, 23) !important;
     border-color: rgb(10, 10, 10) !important;
     color: rgb(230, 230, 230) !important;
+    z-index: 1 !important;
 }
 
 .searchBox .wrapper input {
     color: rgb(200, 200, 200) !important;
+    font-size: 1.05em;
 }
 
 .searchBox .selected:hover {
@@ -390,7 +392,7 @@ td p {
 }
 
 .searchWrapper .wrapper input {
-    background-color: rgb(20, 20, 23) !important;
+    background-color: rgb(20, 20, 23);
 }
 
 .avatarSmall {
