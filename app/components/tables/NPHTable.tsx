@@ -1,6 +1,6 @@
-import {fixDisplayName, formatDecimals, formatTime, generateHexCode, getGoodQty, getMinQty} from "@/app/utils";
+import {fixDisplayName, formatTime, generateHexCode, getGoodQty, getMinQty} from "@/app/utils";
 import BoardLink from "@/app/components/tables/BoardLink";
-import React, {useState} from "react";
+import React, { useState } from "react";
 import {Collapse} from "react-bootstrap";
 import TimeSlider from "@/app/components/TimeSlider";
 import NPHSlider from "@/app/components/NPHSlider";

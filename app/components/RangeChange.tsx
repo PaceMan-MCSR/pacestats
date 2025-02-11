@@ -1,6 +1,10 @@
 'use client';
 
 import {useSearchParams} from "next/navigation";
+import { useContext } from "react";
+import { UserColoursContext } from "@/app/contexts";
+import Box from "@mui/material/Box";
+import { getDarkerColor } from "@/app/utils";
 
 const setDays = (days: number, paramString: string) => {
     const params = new URLSearchParams(paramString)
@@ -12,7 +16,21 @@ export default function RangeChange() {
     const searchParams = useSearchParams()
     const paramString = searchParams.toString()
     const days = parseInt(searchParams.get('days') || '30')
-    return <div className="rangeButtons">
+    const colours = useContext(UserColoursContext)
+    return <Box className="rangeButtons" sx={colours?.isCustom ?{
+        '& button': {
+            backgroundColor: `#${colours.fg}`,
+            ...colours.fgText
+        },
+        '& button.btn-primary': {
+            backgroundColor: `#${getDarkerColor(colours.fg, 0.8)}`,
+            borderColor: `#000000`,
+        },
+        '& button:hover': {
+            backgroundColor: `#${getDarkerColor(colours.fg, 0.9)}`,
+            ...colours.bgText
+        }
+    } : {}}>
         <button className={"btn " + (days === 1 ? "btn-primary" : "btn-dark")}
                 onClick={() => setDays(1, paramString)}>
             24 hours
@@ -29,5 +47,5 @@ export default function RangeChange() {
                 onClick={() => setDays(9999, paramString)}>
             Lifetime
         </button>
-    </div>
+    </Box>
 }
