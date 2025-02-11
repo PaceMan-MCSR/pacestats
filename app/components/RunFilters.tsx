@@ -199,6 +199,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                     {(filter.column == "date" ? [
                                         {value: "before", label: "Before"},
                                         {value: "after", label: "After"},
+                                        {value: "during", label: "During"},
                                     ] : [
                                         {value: "lessThan", label: "Under"},
                                         {value: "greaterThan", label: "Over"},
@@ -212,7 +213,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                         >{option.label}</MenuItem>
                                     ))}
                                 </TextField>
-                                {["before", "after"].includes(filter.operatorValue) && (
+                                {["before", "after", "during"].includes(filter.operatorValue) && (
                                     <LocalizationProvider dateAdapter={AdapterMoment}>
                                         <DatePicker
                                             value={filter.value ? moment(filter.value) : null}

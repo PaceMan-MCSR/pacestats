@@ -16,6 +16,7 @@ import { CircularProgress } from "@mui/material";
 import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 import BastionFort from "@/app/components/BastionFort";
 import RunFilters from "@/app/components/RunFilters";
+import moment from 'moment';
 
 export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
     const [filters, setFilters] = useState([] as {
@@ -38,6 +39,9 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
                     return false;
                 }
                 if (filter.operatorValue === 'after' && date < filterDate) {
+                    return false;
+                }
+                if (filter.operatorValue === 'during' && moment(date).toDate().toDateString() !== moment(filterDate).toDate().toDateString()) {
                     return false;
                 }
                 continue;
