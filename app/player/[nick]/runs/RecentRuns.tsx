@@ -30,6 +30,18 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
 
     const rows = runs.filter((run) => {
         for (const filter of filters) {
+            if(filter.column === 'date'){
+                // @ts-ignore
+                const date = run.lastUpdated
+                const filterDate = new Date(filter.value);
+                if (filter.operatorValue === 'before' && date > filterDate) {
+                    return false;
+                }
+                if (filter.operatorValue === 'after' && date < filterDate) {
+                    return false;
+                }
+                continue;
+            }
             if(!run.hasOwnProperty(filter.column)){
                 return false;
             }
@@ -60,7 +72,7 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
     }, []);
 
     useEffect(() => {
-        resize();
+        actuallyResize()
     }, [bastionFort, filters])
 
     const sharedProps: Partial<GridColDef> = {
@@ -142,7 +154,8 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
         {
             field: 'time',
             filterable: false,
-            headerName: 'Time',
+            headerName: 'Date',
+            minWidth: 130,
             renderCell: (params) => {
                 if(params.row.vodId !== null){
                     return <>

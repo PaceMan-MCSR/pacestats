@@ -3,6 +3,9 @@ import React, { useState } from "react";
 import { Collapse } from "react-bootstrap";
 import Tooltip from "react-bootstrap/Tooltip";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
+import { DatePicker, LocalizationProvider } from "@mui/x-date-pickers";
+import { AdapterMoment } from "@mui/x-date-pickers/AdapterMoment";
+import moment from 'moment';
 
 const parseTime = (timeString: string): number => {
     const parts = timeString.split(':');
@@ -141,10 +144,19 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                             }}>
                                 <TextField
                                     value={filter.column}
-                                    label={"Split"}
+                                    label={"Column"}
                                     onChange={(e) => {
                                         const newFilters = [...filters];
+                                        const oldColumn = newFilters[index].column;
                                         newFilters[index].column = e.target.value;
+                                        if(newFilters[index].column == "date") {
+                                            newFilters[index].operatorValue = "before";
+                                            newFilters[index].value = moment().startOf("day");
+                                        } else if(oldColumn === "date" && newFilters[index].column !== "date") {
+                                            newFilters[index].operatorValue = "lessThan";
+                                            newFilters[index].value = "1:30";
+                                            newFilters[index].inMs = 90000;
+                                        }
                                         setFilters(newFilters);
                                     }}
                                     {...sharedProps}
@@ -154,6 +166,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                     }}
                                 >
                                     {[
+                                        {value: "date", label: "Date"},
                                         {value: "nether", label: "Nether"},
                                         bf ? {value: "bastion", label: "Bastion"} : {value: "first_structure", label: "First Structure"},
                                         bf ? {value: "fortress", label: "Fortress"} : {value: "second_structure", label: "Second Structure"},
@@ -183,12 +196,15 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                         width: "100px"
                                     }}
                                 >
-                                    {[
+                                    {(filter.column == "date" ? [
+                                        {value: "before", label: "Before"},
+                                        {value: "after", label: "After"},
+                                    ] : [
                                         {value: "lessThan", label: "Under"},
                                         {value: "greaterThan", label: "Over"},
                                         {value: "isNotEmpty", label: "Exists"},
                                         {value: "isEmpty", label: "Doesn't Exist"}
-                                    ].map((option) => (
+                                    ]).map((option) => (
                                         <MenuItem
                                             key={option.value}
                                             value={option.value}
@@ -196,7 +212,31 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                         >{option.label}</MenuItem>
                                     ))}
                                 </TextField>
-                                {filter.operatorValue !== "isEmpty" && filter.operatorValue !== "isNotEmpty" && (
+                                {["before", "after"].includes(filter.operatorValue) && (
+                                    <LocalizationProvider dateAdapter={AdapterMoment}>
+                                        <DatePicker
+                                            value={filter.value ? moment(filter.value) : null}
+                                            onChange={(date) => {
+                                                const newFilters = [...filters];
+                                                newFilters[index].value = date;
+                                                setFilters(newFilters);
+                                            }}
+                                            label={"Date"}
+                                            {...sharedProps}
+                                            sx={{
+                                                ...sharedProps.sx,
+                                                width: "150px",
+                                                '& input': {
+                                                    paddingY: 1.5,
+                                                },
+                                                '& .MuiSvgIcon-root': {
+                                                    color: 'rgb(140, 140, 140)',
+                                                },
+                                            }}
+                                        />
+                                    </LocalizationProvider>
+                                )}
+                                {["lessThan", "greaterThan"].includes(filter.operatorValue) && (
                                     <TextField
                                         value={filter.value || ''}
                                         label={"Time"}
