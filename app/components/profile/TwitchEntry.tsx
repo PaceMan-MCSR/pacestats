@@ -14,7 +14,7 @@ export function TwitchEntry({twitch}: { twitch: { twitch: string, time: number, 
     } : {}}>
         <a href={"https://twitch.tv/" + name} style={{
             color: `#${colours.name}`,
-            filter: `drop-shadow(0 0 3px #000) drop-shadow(0 0 2px #777)`,
+            filter: `drop-shadow(0 0 3px #000) drop-shadow(0 0 2px #000)`,
         }}>{name}</a>
         {isLive ?
             <div>

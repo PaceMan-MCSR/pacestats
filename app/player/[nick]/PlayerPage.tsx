@@ -39,7 +39,7 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
                 }}>
                     <div className="container">
                         <ResetScroll/>
-                        <h1 className="header" style={{marginTop: 20, marginBottom: 30}}>
+                        <h1 className="header" style={{marginTop: 0, paddingTop: 30, marginBottom: 30}}>
                             <span style={{
                                 color: nameColor,
                                 filter: `drop-shadow(0px 0px 2px #000000)`
