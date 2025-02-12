@@ -20,7 +20,7 @@ export default async function RootLayout({children}: Readonly<{
     const userInfo = await getCached(getAllUserInfo, "getAllUserInfo");
     return (
         <html lang="en">
-        <body className={inter.className}>
+        <body className={inter.className} id="body">
         <AppRouterCacheProvider>
             <BootstrapLoader/>
             <Header users={users} userInfo={userInfo}/>

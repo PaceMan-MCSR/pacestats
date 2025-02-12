@@ -6,9 +6,9 @@
     src: url('/stats/mc.ttf') format('truetype');
 }
 
-body {
+#body {
     min-height: 100vh;
-    background-color: rgb(18, 18, 21) !important;
+    background-color: rgb(18, 18, 21);
 }
 
 .main {
