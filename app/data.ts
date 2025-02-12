@@ -438,7 +438,7 @@ export const getAllPlayerRuns = async (uuid: string, limit : number = 100) => {
 
 export const getAllUserInfo = async () => {
     const [rows, fields] = await (await getConn()).execute(
-        `SELECT uuid, displayName, color FROM users;`
+        `SELECT uuid, displayName, color, bgColor FROM users;`
     )
     return rows
 }

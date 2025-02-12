@@ -364,14 +364,15 @@ export function getDarkerColor(hex: string, darkenFactor: number): string {
 export const getUserColours = (users: {
     uuid: string,
     displayName: string,
-    color: string
+    color: string,
+    bgColor: string
 }[], uuid: string) => {
     const user = users?.find(u => u.uuid === uuid)
     if(!user?.color) return {
         isCustom: false
     };
-    const bg = getDarkerColor(user.color, 0.4)
-    const fg = getDarkerColor(user.color, 0.8)
+    const bg = user.bgColor || getDarkerColor(user.color, 0.5)
+    const fg = getDarkerColor(user.color, 0.95)
     return {
         bg: bg,
         fg: fg,
