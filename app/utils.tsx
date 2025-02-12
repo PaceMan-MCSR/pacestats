@@ -370,17 +370,17 @@ export const getUserColours = (users: {
     if(!user?.color) return {
         isCustom: false
     };
-    const bg = getDarkerColor(user.color, 0.6)
+    const bg = getDarkerColor(user.color, 0.4)
     const fg = getDarkerColor(user.color, 0.8)
     return {
         bg: bg,
         fg: fg,
         fgText: {
-            color: `#${getDarkerColor(fg, 0.15)}`,
+            color: `#${getDarkerColor(fg, 0.05)}`,
             filter: `drop-shadow(0 0 0.5px #${getDarkerColor(fg, 0.3)})`,
         },
         bgText: {
-            color: `#${getDarkerColor(bg, 0.2)}`,
+            color: `#${getDarkerColor(bg, 0.05)}`,
             filter: `drop-shadow(0 0 0.5px #${getDarkerColor(fg, 0.1)})`,
         },
         name: user.color,
