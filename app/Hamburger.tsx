@@ -24,7 +24,6 @@ export default function Hamburger({users, userInfo}: {users: any, userInfo: any}
     const toggleDrawer = (newOpen: boolean) => () => {
         setOpen(newOpen);
     };
-    console.log(colours)
 
     const DrawerList = (
         <Box sx={{

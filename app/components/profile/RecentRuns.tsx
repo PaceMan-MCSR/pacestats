@@ -10,10 +10,6 @@ import Box from "@mui/material/Box";
 export function RecentRuns({runs}: { runs: {} }) {
     const router = useRouter()
     const colours = useContext(UserColoursContext)
-    const style : any = {
-        "--bs-table-bg": `#${colours?.fg}`,
-        "--bs-table-color": `${(colours?.fgText as {color: string}).color}`,
-    }
     return <div className="recentRuns">
         <h4 className="runsHeader" style={colours.isCustom ? {
             color: `#${colours.name}`,
@@ -35,9 +31,14 @@ export function RecentRuns({runs}: { runs: {} }) {
             '& .table tr': {
                 backgroundColor: `#${colours?.bg} !important`,
                 borderColor: `#${getDarkerColor(colours?.fg, 0.7)}`
+            },
+            '& .table': {
+                "--bs-table-bg": `#${colours?.fg}`,
+                "--bs-table-color": `${(colours?.fgText as {color: string}).color}`,
             }
         } : {}}>
-            <table className="table table-dark table-bordered table-sm" style={colours.isCustom ? style : {}}>
+            <table className="table table-dark table-bordered table-sm" style={colours.isCustom ? {
+            } : {}}>
                 <thead>
                 <tr className="paceHeader">
                     <th>Time</th>
