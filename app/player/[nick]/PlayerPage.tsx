@@ -162,6 +162,14 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
                             </div>
                         </div>
                     </div>
+                    {name === "therowdie" && (
+                        <img src="/stats/rowdcat.gif" alt="Cat" style={{
+                            position: "fixed",
+                            bottom: "0",
+                            right: "0",
+                            maxWidth: "160px",
+                        }}/>
+                    )}
                 </main>
             </UserColoursContext.Provider>
         </UsersContext.Provider>)
