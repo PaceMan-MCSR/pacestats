@@ -2,7 +2,7 @@
 
 import useSWR, {useSWRConfig} from 'swr'
 import useWebSocket from "react-use-websocket";
-import {useEffect} from "react";
+import { useEffect, useState } from "react";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 const refresh = 60
@@ -39,10 +39,28 @@ export default function SessionNethers({name, settings}: {
         reconnectInterval: 5000
     });
 
+    const [heart, setHeart] = useState("❤️")
+
+    useEffect(() => {
+        if(name !== "therowdie"){
+            return
+        }
+        const interval = setInterval(() => {
+            const hearts = ["❤️", "💜", "💙", "💚", "💛", "🧡", "💞", "💕", "💘", "💟", "💓", "💖", "💗", "💝", "🥰", "😍"]
+            const h = hearts[Math.floor(Math.random() * hearts.length)]
+            setHeart(h)
+
+        }, 30000)
+        return () => clearInterval(interval)
+    }, [])
+
     useEffect(() => {
         if (lastMessage !== null) {
             if(lastMessage.data === "refresh") {
                 mutate(key)
+            }
+            if(lastMessage.data === "reloadPage"){
+                window.location.reload()
             }
         }
     }, [lastMessage]);
@@ -66,6 +84,9 @@ export default function SessionNethers({name, settings}: {
     }
 
     return (<main className={"main obs sessionNethers" + (settings.demo ? " demoBrowser" : "")}>
+        {name === "therowdie" && <>
+            <h1 style={{position: "absolute", fontSize: "300%", marginTop: "45px", marginLeft: "115px"}}>{heart}</h1>
+        </>}
         <h1 style={{fontSize: "600%", color: `${settings.color}`, fontFamily: settings.font}}>
             {!data ? 0 : data.count}<br/>
         </h1>
