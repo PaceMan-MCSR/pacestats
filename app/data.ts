@@ -95,6 +95,7 @@ const ttls = {
     getNethersByPeriod: 2,
     getSessionStats: 10,
     getAllUserInfo: 5,
+    getAllAARuns: 20
 }
 
 export const getLiveRuns = async () => {
@@ -419,6 +420,14 @@ export const getPlayerRuns = async (uuid: string, limit : number = 5) => {
 export const getRecentAARuns = async (uuid: string, limit : number = 5) => {
     const [rows, fields] = await (await getConn()).execute(
         `SELECT *, UNIX_TIMESTAMP(insertTime) AS time FROM aa WHERE uuid=? AND (elytra > 0) ORDER BY id DESC LIMIT ${limit};`,
+        [uuid]
+    )
+    return rows
+}
+
+export const getAllAARuns = async (uuid: string) => {
+    const [rows, fields] = await (await getConn()).execute(
+        `SELECT *, UNIX_TIMESTAMP(insertTime) AS time FROM aa WHERE uuid=? ORDER BY id DESC;`,
         [uuid]
     )
     return rows
