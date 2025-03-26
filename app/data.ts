@@ -95,7 +95,9 @@ const ttls = {
     getNethersByPeriod: 2,
     getSessionStats: 10,
     getAllUserInfo: 5,
-    getAllAARuns: 20
+    getAllAARuns: 20,
+    getAllPBs: 60,
+    getPBs: 10
 }
 
 export const getLiveRuns = async () => {
@@ -1467,4 +1469,32 @@ export const getSessionStats = async (uuid: string, hours: number, hoursBetween:
         }
     }
     return response
+}
+
+export const getAllPBs = async () => {
+    const users = await getCached(getAllUsers, "getAllUsers")
+    let query = `select min(finish) as finish, uuid, UNIX_TIMESTAMP(insertTime) as timestamp from pace where finish is not null group by uuid order by finish asc`;
+    const [results, _] = await (await getConn()).execute<any[]>(
+      query,
+    );
+    for (let result of results) {
+        let user = users.find((x: any) => x.id === result.uuid)
+        if(user){
+            result.name = user.nick
+        }
+        result.pb = formatTime(result.finish)
+    }
+    results.sort((a, b) => a.finish - b.finish)
+    return results;
+}
+
+export const getPBs = async (nicks: string[], uuids: string[]) => {
+    const all = await getCached(getAllPBs, "getAllPBs")
+    if(nicks.length > 0){
+        return all.filter((x: any) => nicks.includes(x.name))
+    }
+    if(uuids.length > 0){
+        return all.filter((x: any) => uuids.includes(x.uuid))
+    }
+    return all;
 }
