@@ -7,10 +7,9 @@ import {
     getSecondStructure,
     roundNumber
 } from "@/app/utils";
-import mysql, {ResultSetHeader} from 'mysql2/promise';
+import mysql from 'mysql2/promise';
 import {Entry, FastestEntry} from "@/app/types";
 import WebSocket from 'ws';
-import { NextResponse } from "next/server";
 
 const NodeCache = require("node-cache");
 
@@ -97,7 +96,10 @@ const ttls = {
     getAllUserInfo: 5,
     getAllAARuns: 20,
     getAllPBs: 60,
-    getPBs: 10
+    getPBs: 10,
+    getLowestId: 60,
+    getHighestId: 60,
+    getRunsPaginated: 60
 }
 
 export const getLiveRuns = async () => {
@@ -1497,4 +1499,57 @@ export const getPBs = async (nicks: string[], uuids: string[]) => {
         return all.filter((x: any) => uuids.includes(x.uuid))
     }
     return all;
+}
+
+export const getLowestId = async () => {
+    const [results, _] = await (await getConn()).execute<any[]>(
+        `SELECT id FROM pace ORDER BY id ASC LIMIT 1;`
+    );
+    return results[0].id;
+}
+
+export const getHighestId = async () => {
+    const [results, _] = await (await getConn()).execute<any[]>(
+        `SELECT id FROM pace ORDER BY id DESC LIMIT 1;`
+    );
+    return results[0].id;
+}
+
+function filterNullValues(obj: any) {
+    return Object.entries(obj).reduce((acc, [key, value]) => {
+        if (value !== null) {
+            // @ts-ignore
+            acc[key] = value;
+        }
+        return acc;
+    }, {});
+}
+
+function filterNullValuesInArray(arrayOfObjects: any) {
+    return arrayOfObjects.map(filterNullValues);
+}
+
+export const getRunsPaginated = async (page: number, pageSize: number) => {
+    const minId = await getCached(getLowestId, "getLowestId");
+    const maxId = await getCached(getHighestId, "getHighestId");
+    const pageCount = Math.ceil((maxId - minId) / pageSize);
+    if(page < 1 || page > pageCount){
+        return {
+            error: "Invalid page number",
+            pageCount: pageCount,
+            runs: []
+        }
+    }
+    const minForPage = minId + (page - 1) * pageSize;
+    const maxForPage = minForPage + pageSize;
+    const [results, _] = await (await getConn()).execute<any[]>(
+      `SELECT id, nickname, uuid, twitch, nether, bastion, fortress, first_portal, second_portal,
+        stronghold, end, finish, insertTime as time, worldId, vodId, vodOffset, obtainObsidian, obtainCryingObsidian, obtainRod
+        FROM pace WHERE id >= ? AND id < ? ORDER BY id DESC;`,
+      [minForPage, maxForPage]
+    );
+    return {
+        pageCount,
+        runs: filterNullValuesInArray(results)
+    };
 }
