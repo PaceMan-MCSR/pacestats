@@ -7,7 +7,6 @@ import {
 } from "@/app/data";
 
 export async function GET(request: NextRequest) {
-    console.log("getRecentRuns ", request.ip, request.url)
     let name = request.nextUrl.searchParams.get("name")
     let hours = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hours") || "9999999"))
     let hoursBetween = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hoursBetween") || "9999999"))
