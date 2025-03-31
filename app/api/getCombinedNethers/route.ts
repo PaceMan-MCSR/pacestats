@@ -7,6 +7,7 @@ export async function GET(request: NextRequest) {
     let hours = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hours") || "24"))
     let hoursBetween = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hoursBetween") || "6"))
     let start = parseInt(request.nextUrl.searchParams.get("start") || "0")
+    let maxTime = Math.min(99999999, parseInt(request.nextUrl.searchParams.get("maxTime") || "99999999"))
     const days = Math.ceil(hours / 24)
     let lastTime = 0
     let count = 0
@@ -31,6 +32,9 @@ export async function GET(request: NextRequest) {
             }
             if(Date.now() / 1000 - run.time > 60 * 60 * hours){
                 break
+            }
+            if(run.nether > maxTime){
+                continue
             }
             times.push(run.nether)
             count += 1
