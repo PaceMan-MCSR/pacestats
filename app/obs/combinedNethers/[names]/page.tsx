@@ -13,6 +13,7 @@ export default function Page({params, searchParams}: {
     let font: string = searchParams["font"] || "Minecraft"
     let color = searchParams["color"] || "000000"
     let start = parseInt(searchParams["start"] || "0")
+    let maxTime = parseInt(searchParams["maxTime"] || "99999999")
     if (isNaN(hours)) {
         hours = 24
     }
@@ -24,7 +25,7 @@ export default function Page({params, searchParams}: {
     return <div>
         <CombinedNethers names={params.names} settings={{
         hours: hours, hoursBetween: hoursBetween, color: `#${color}`,
-        demo: demo, font: font, start: start
+        demo: demo, font: font, start: start, maxTime
         }}/>
     </div>
 }
