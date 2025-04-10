@@ -20,6 +20,9 @@ export default async function RootLayout({children}: Readonly<{
     const userInfo = await getCached(getAllUserInfo, "getAllUserInfo");
     return (
         <html lang="en">
+        <head>
+            <meta name="darkreader-lock"/>
+        </head>
         <body className={inter.className} id="body">
         <AppRouterCacheProvider>
             <BootstrapLoader/>
