@@ -369,8 +369,14 @@ function getPreviousSplit(split: string) {
 
 function getPreviousAASplit(split: string) {
     switch (split) {
-        case "end":
+        case "bastion":
             return "nether"
+        case "fortress":
+            return "bastion"
+        case "stronghold":
+            return "fortress"
+        case "end":
+            return "stronghold"
         case "elytra":
             return "end"
         case "credits":
