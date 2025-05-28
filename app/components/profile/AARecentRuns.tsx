@@ -50,7 +50,7 @@ export async function AARecentRuns({runs}: { runs: {} }) {
             {Object.keys(runs).map((runId, index) => {
                 // @ts-ignore
                 const run = runs[runId]
-                if(run.vodId === null){
+                if(run.twitch === null){
                     return <tr key={index}>
                         <td>
                             <span className="d-sm-none">

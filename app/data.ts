@@ -478,7 +478,8 @@ export const getAllPlayerRunsOptimized = async (uuid: string) => {
             end,
             finish, 
             lastUpdated,
-            vodId
+            vodId,
+            twitch
         FROM pace
         WHERE uuid=? ORDER BY id DESC;`,
         [uuid]

@@ -76,7 +76,7 @@ export function RecentRuns({runs}: { runs: {} }) {
                 {Object.keys(runs).map((runId, index) => {
                     // @ts-ignore
                     const run = runs[runId]
-                    if(run.vodId === null){
+                    if(run.twitch === null){
                         return <tr key={index} onClick={() => {router.push(`/run/${run.id}`)}}>
                             <td>
                                 <span className="d-sm-none">

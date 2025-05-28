@@ -161,7 +161,7 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
             headerName: 'Date',
             minWidth: 130,
             renderCell: (params) => {
-                if(params.row.vodId !== null){
+                if(params.row.twitch !== null){
                     return <>
                         <span className="liveIndicator"/>
                         <RelativeTimer start={params.row.lastUpdated / 1000} small={false}/>
