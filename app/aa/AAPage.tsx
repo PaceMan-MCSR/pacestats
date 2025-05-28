@@ -60,6 +60,15 @@ export default function AAPage({searchParams, lb, users}: {
                         <QtyTable catName="Nether Enters" catId="nether" days={days} lb={lb} aa={true}/>
                         <AvgTable catName="Nether Average" catId="nether" days={days} lb={lb} showQty={showSample} aa={true}/>
 
+                        <QtyTable catName="Bastion Enters" catId="bastion" days={days} lb={lb} aa={true}/>
+                        <AvgTable catName="Bastion Average" catId="bastion" days={days} lb={lb} showQty={showSample} aa={true}/>
+
+                        <QtyTable catName="Fortress Enters" catId="fortress" days={days} lb={lb} aa={true}/>
+                        <AvgTable catName="Fortress Average" catId="fortress" days={days} lb={lb} showQty={showSample} aa={true}/>
+
+                        <QtyTable catName="Stronghold Enters" catId="stronghold" days={days} lb={lb} aa={true}/>
+                        <AvgTable catName="Stronghold Average" catId="stronghold" days={days} lb={lb} showQty={showSample} aa={true}/>
+
                         <QtyTable catName="End Enters" catId="end" days={days} lb={lb} aa={true}/>
                         <AvgTable catName="End Enter Average" catId="end" days={days} lb={lb} showQty={showSample} aa={true}/>
 
@@ -76,6 +85,9 @@ export default function AAPage({searchParams, lb, users}: {
                 {catType === CategoryType.AVG && (
                     <div className="row stats-row">
                         <AvgTable catName="Nether Average" catId="nether" days={days} lb={lb} showQty={showSample} aa={true}/>
+                        <AvgTable catName="Bastion Average" catId="bastion" days={days} lb={lb} showQty={showSample} aa={true}/>
+                        <AvgTable catName="Fortress Average" catId="fortress" days={days} lb={lb} showQty={showSample} aa={true}/>
+                        <AvgTable catName="Stronghold Average" catId="stronghold" days={days} lb={lb} showQty={showSample} aa={true}/>
                         <AvgTable catName="End Enter Average" catId="end" days={days} lb={lb} showQty={showSample} aa={true}/>
                         <AvgTable catName="Elytra Average" catId="elytra" days={days} lb={lb} showQty={showSample} aa={true}/>
                         <AvgTable catName="End Exit Average" catId="credits" days={days} lb={lb} showQty={showSample} aa={true}/>
@@ -85,6 +97,9 @@ export default function AAPage({searchParams, lb, users}: {
                 {catType === CategoryType.FASTEST && (
                     <div className="row stats-row">
                         <FastestAATable catName="Fastest Nether" catId="nether" days={days} data={lb}/>
+                        <FastestAATable catName="Fastest Bastion" catId="bastion" days={days} data={lb}/>
+                        <FastestAATable catName="Fastest Fortress" catId="fortress" days={days} data={lb}/>
+                        <FastestAATable catName="Fastest Stronghold" catId="stronghold" days={days} data={lb}/>
                         <FastestAATable catName="Fastest End Enter" catId="end" days={days} data={lb}/>
                         <FastestAATable catName="Fastest Elytra" catId="elytra" days={days} data={lb}/>
                         <FastestAATable catName="Fastest End Exit" catId="credits" days={days} data={lb}/>
@@ -93,6 +108,9 @@ export default function AAPage({searchParams, lb, users}: {
                 )}
                 {catType === CategoryType.CONVERSION && (
                     <div className="row stats-row">
+                        <ConversionTable catName="Bastion Conversion" catId="bastion" days={days} lb={lb} showQty={showSample} aa={true}/>
+                        <ConversionTable catName="Fortress Conversion" catId="fortress" days={days} lb={lb} showQty={showSample} aa={true}/>
+                        <ConversionTable catName="Stronghold Conversion" catId="stronghold" days={days} lb={lb} showQty={showSample} aa={true}/>
                         <ConversionTable catName="End Conversion" catId="end" days={days} lb={lb} showQty={showSample} aa={true}/>
                         <ConversionTable catName="Elytra Conversion" catId="elytra" days={days} lb={lb} showQty={showSample} aa={true}/>
                         <ConversionTable catName="End Exit Conversion" catId="credits" days={days} lb={lb} showQty={showSample} aa={true}/>

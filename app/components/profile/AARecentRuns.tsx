@@ -23,8 +23,12 @@ export async function AARecentRuns({runs}: { runs: {} }) {
                     <p className="d-none d-md-inline">Nether</p>
                 </th>
                 <th>
-                    <img src="/stats/first_portal.webp" alt="First Portal" className="icon d-md-none"/>
-                    <p className="d-none d-md-inline">First Portal</p>
+                    <img src="/stats/bastion.webp" alt="Bastion" className="icon d-md-none"/>
+                    <p className="d-none d-md-inline">Bastion</p>
+                </th>
+                <th>
+                    <img src="/stats/fortress.webp" alt="Fortress" className="icon d-md-none"/>
+                    <p className="d-none d-md-inline">Fortress</p>
                 </th>
                 <th>
                     <img src="/stats/stronghold.webp" alt="Stronghold" className="icon d-md-none"/>
@@ -61,7 +65,8 @@ export async function AARecentRuns({runs}: { runs: {} }) {
                             </span>
                         </td>
                         <td>{formatIfNotNull(run.nether)}</td>
-                        <td>{formatIfNotNull(run.first_portal)}</td>
+                        <td>{formatIfNotNull(run.bastion)}</td>
+                        <td>{formatIfNotNull(run.fortress)}</td>
                         <td>{formatIfNotNull(run.stronghold)}</td>
                         <td>{formatIfNotNull(run.end)}</td>
                         <td>{formatIfNotNull(run.elytra)}</td>
@@ -80,7 +85,8 @@ export async function AARecentRuns({runs}: { runs: {} }) {
                             </span>
                         </td>
                         <td>{formatIfNotNull(run.nether)}</td>
-                        <td>{formatIfNotNull(run.first_portal)}</td>
+                        <td>{formatIfNotNull(run.bastion)}</td>
+                        <td>{formatIfNotNull(run.fortress)}</td>
                         <td>{formatIfNotNull(run.stronghold)}</td>
                         <td>{formatIfNotNull(run.end)}</td>
                         <td>{formatIfNotNull(run.elytra)}</td>

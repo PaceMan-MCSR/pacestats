@@ -53,6 +53,9 @@ export const minQtys = new Map<number, { [days: string]: QtyStats }>([
 export const minAAQtys = new Map<number, { [days: string]: QtyStats }>([
     [1, {
         nether: {min: 1, good: 1},
+        bastion: {min: 1, good: 1},
+        fortress: {min: 1, good: 1},
+        stronghold: {min: 1, good: 1},
         end: {min: 1, good: 1},
         elytra: {min: 1, good: 1},
         credits: {min: 1, good: 1},
@@ -60,6 +63,9 @@ export const minAAQtys = new Map<number, { [days: string]: QtyStats }>([
     }],
     [7, {
         nether: {min: 5, good: 10},
+        bastion: {min: 1, good: 1},
+        fortress: {min: 1, good: 1},
+        stronghold: {min: 1, good: 1},
         end: {min: 3, good: 5},
         elytra: {min: 1, good: 1},
         credits: {min: 1, good: 1},
@@ -67,6 +73,9 @@ export const minAAQtys = new Map<number, { [days: string]: QtyStats }>([
     }],
     [30, {
         nether: {min: 20, good: 50},
+        bastion: {min: 1, good: 1},
+        fortress: {min: 1, good: 1},
+        stronghold: {min: 1, good: 1},
         end: {min: 5, good: 20},
         elytra: {min: 1, good: 5},
         credits: {min: 1, good: 5},
@@ -74,6 +83,9 @@ export const minAAQtys = new Map<number, { [days: string]: QtyStats }>([
     }],
     [9999, {
         nether: {min: 20, good: 50},
+        bastion: {min: 1, good: 1},
+        fortress: {min: 1, good: 1},
+        stronghold: {min: 1, good: 1},
         end: {min: 5, good: 20},
         elytra: {min: 2, good: 5},
         credits: {min: 2, good: 5},

@@ -631,6 +631,9 @@ export const getTrimmedAALB = async (days: number, limit = 10, skipFastest = fal
     ]
     const categories = [
         "nether",
+        "bastion",
+        "fortress",
+        "stronghold",
         "end",
         "elytra",
         "credits",
@@ -881,6 +884,9 @@ export const getAALB = async (interval: string = "30 DAY") => {
     // Define stats categories
     const categories = [
         "nether",
+        "bastion",
+        "fortress",
+        "stronghold",
         "end",
         "elytra",
         "credits",
@@ -898,7 +904,7 @@ export const getAALB = async (interval: string = "30 DAY") => {
 
     const [rows, fields] = await (await getConn()).execute(
         `SELECT id, nickname, uuid, 
-        nether, end, elytra, credits, finish
+        nether, bastion, fortress, stronghold, end, elytra, credits, finish
         FROM aa WHERE insertTime >= NOW() - ${timePeriod} ORDER BY id DESC;`
     )
 
