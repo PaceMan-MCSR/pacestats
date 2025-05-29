@@ -66,6 +66,7 @@ const ttls = {
     getRecentAARuns: 10,
     getAllPlayerRuns: 10,
     getAllPlayerRunsByPeriod: 20,
+    getAllPlayerRunsByMultiplePeriods: 10,
     getRecentTimestamps: 10,
     getLeaderboards: {
         default: 60 * 10,
@@ -93,7 +94,7 @@ const ttls = {
     jude: 30,
     getNethersByPeriod: 2,
     getSessionStats: 10,
-    getAllPlayerRunsByMultiplePeriods: 10
+    getEventInfo: 60 * 30
 }
 
 export const getLiveRuns = async () => {
@@ -1358,6 +1359,57 @@ export const getAllPlayerRunsByMultiplePeriods = async (uuid: string, startTimes
         return false;
     });
 };
+
+interface EventData {
+    event: {
+        _id: string;
+        name: string;
+        starts: number[];
+        ends: number[];
+        whitelist: string[];
+        vanity: string;
+    };
+}
+
+export interface EventInfo {
+    name: string;
+    vanity: string;
+    whitelist: string[];
+    starts: number[];
+    ends: number[];
+}
+
+export const getEventInfo = async (vanity: string): Promise<EventInfo | null> => {
+    try {
+        const eventResponse = await fetch(`${process.env.GETEVENT_ENDPOINT}?vanity=${vanity}`, {
+            cache: "no-store"
+        });
+
+        if (!eventResponse.ok) {
+            console.error(`Failed to fetch event data: ${eventResponse.statusText}`);
+            return null;
+        }
+
+        const eventData = await eventResponse.json() as EventData;
+
+        const { whitelist, starts, ends, name } = eventData.event;
+
+        if (!whitelist || whitelist.length === 0 || !starts || !ends || starts.length !== ends.length) {
+            return null;
+        }
+
+        return {
+            name,
+            vanity,
+            whitelist,
+            starts,
+            ends
+        };
+    } catch (error) {
+        console.error("Error fetching event info:", error);
+        return null;
+    }
+}; 
 
 export const getSessionStats = async (uuid: string, hours: number, hoursBetween: number) => {
     const days = Math.ceil(hours / 24)

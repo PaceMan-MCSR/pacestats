@@ -1,45 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getCached,
-  getAllNamesByNick,
-  getAllNamesByTwitch,
-  getAllPlayerRunsByMultiplePeriods, calculateAvg,
+  getAllPlayerRunsByMultiplePeriods,
+  calculateAvg,
+  getEventInfo
 } from "@/app/data";
 import { formatTime, getFirstStructure, getSecondStructure } from "@/app/utils";
 
-// Define the Run type based on the properties we're accessing
-interface Run {
-  time: number;
-  bastion?: number;
-  fortress?: number;
-  obtainRod?: number;
-  id: number;
-  nether?: number;
-  first_portal?: number;
-  stronghold?: number;
-  end?: number;
-  finish?: number;
-  [key: string]: number | undefined;
-}
-
 export async function GET(request: NextRequest) {
-  let names = (request.nextUrl.searchParams.get("names") || "").split(",").map(n => n.trim()).filter(n => n !== "")
-  let startTimes = (request.nextUrl.searchParams.get("startTimes") || "").split(",").map(t => parseInt(t)).filter(t => !isNaN(t))
-  let endTimes = (request.nextUrl.searchParams.get("endTimes") || "").split(",").map(t => parseInt(t)).filter(t => !isNaN(t))
+  const vanity = request.nextUrl.searchParams.get("vanity")
 
-  if (names.length === 0) {
-    return NextResponse.json({ error: "No players specified" }, { status: 400 });
+  if (!vanity) {
+    return NextResponse.json({ error: "No event vanity specified" }, { status: 400 });
   }
 
-  if (startTimes.length !== endTimes.length) {
-    return NextResponse.json({ error: "Number of start times must match number of end times" }, { status: 400 });
+  // Fetch event data with caching
+  const eventInfo = await getCached(getEventInfo, "getEventInfo", vanity);
+
+  if (!eventInfo) {
+    return NextResponse.json({ error: "Failed to fetch event data or invalid event data" }, { status: 404 });
   }
 
-  // If no time periods specified, use a single period from 0 to now
-  if (startTimes.length === 0) {
-    startTimes = [0];
-    endTimes = [Math.floor(Date.now() / 1000)];
-  }
+  const { whitelist, starts, ends, name } = eventInfo;
 
   const categories = [
     "nether",
@@ -55,23 +37,22 @@ export async function GET(request: NextRequest) {
 
   let playerStats: { [player: string]: { [category: string]: { count: number, avg: string } } } = {}
 
-  for (let name of names) {
-    let n = await getCached(getAllNamesByNick, "getAllNamesByNick", name)
-    if (n === null) {
-      n = await getCached(getAllNamesByTwitch, "getAllNamesByTwitch", name)
-      if (n === null) {
-        continue; // Skip unknown players
-      }
-    }
-
+  // Process each player in the whitelist
+  for (let uuid of whitelist) {
     // Initialize data structures for this player
     const allSplits = new Map<string, number[]>()
     for (const category of categories) {
       allSplits.set(category, [])
     }
 
-    // Get runs that fall within any of the specified time periods
-    const periodRuns = await getAllPlayerRunsByMultiplePeriods(n.uuid, startTimes, endTimes);
+    // Get runs that fall within any of the specified time periods with caching
+    const periodRuns = await getCached(
+      getAllPlayerRunsByMultiplePeriods,
+      "getAllPlayerRunsByMultiplePeriods",
+      uuid,
+      starts,
+      ends
+    );
 
     // Process all runs that fall within the specified time periods
     for (const run of periodRuns) {
@@ -135,8 +116,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    playerStats[name] = playerData
+    playerStats[uuid] = playerData
   }
 
-  return NextResponse.json(playerStats, { status: 200 });
+  return NextResponse.json({
+    event: {
+      name,
+      vanity,
+      starts,
+      ends
+    },
+    stats: playerStats
+  }, { status: 200 });
 } 
