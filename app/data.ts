@@ -66,6 +66,7 @@ const ttls = {
     getAllPlayerRuns: 10,
     getAllPlayerRunsOptimized: 10,
     getAllPlayerRunsByPeriod: 20,
+    getAllPlayerRunsByMultiplePeriods: 10,
     getRecentTimestamps: 10,
     getLeaderboards: {
         default: 60 * 10,
@@ -99,7 +100,8 @@ const ttls = {
     getPBs: 10,
     getLowestId: 60,
     getHighestId: 60,
-    getRunsPaginated: 60
+    getRunsPaginated: 60,
+    getEventInfo: 60 * 30,
 }
 
 export const getLiveRuns = async () => {
@@ -1393,6 +1395,86 @@ export const getRunId = async (uuid: string, worldId: string) => {
 
     return results[0].id;
 }
+
+export const getAllPlayerRunsByMultiplePeriods = async (uuid: string, startTimes: number[], endTimes: number[]) => {
+    if (startTimes.length === 0 || endTimes.length === 0 || startTimes.length !== endTimes.length) {
+        return [];
+    }
+
+    // Find the earliest start and latest end to fetch all potentially relevant runs
+    const earliestStart = Math.min(...startTimes);
+    const latestEnd = Math.max(...endTimes);
+
+    // Calculate days needed based on total time span
+    const totalTimeRangeInHours = (latestEnd - earliestStart) / 3600;
+    const days = Math.ceil(totalTimeRangeInHours / 24);
+
+    // Get all runs within the overall time range
+    const allRuns = await getCached(getAllPlayerRunsByPeriod, "getAllPlayerRunsByPeriod", uuid, days);
+
+    // Filter runs to only include those within any of the specified time periods
+    return allRuns.filter((run: any) => {
+        const runTime = run.time;
+        // Check if the run falls within any of the time periods
+        for (let i = 0; i < startTimes.length; i++) {
+            if (runTime >= startTimes[i] && runTime <= endTimes[i]) {
+                return true;
+            }
+        }
+        return false;
+    });
+};
+
+interface EventData {
+    event: {
+        _id: string;
+        name: string;
+        starts: number[];
+        ends: number[];
+        whitelist: string[];
+        vanity: string;
+    };
+}
+
+export interface EventInfo {
+    name: string;
+    vanity: string;
+    whitelist: string[];
+    starts: number[];
+    ends: number[];
+}
+
+export const getEventInfo = async (vanity: string): Promise<EventInfo | null> => {
+    try {
+        const eventResponse = await fetch(`${process.env.GETEVENT_ENDPOINT}?vanity=${vanity}`, {
+            cache: "no-store"
+        });
+
+        if (!eventResponse.ok) {
+            console.error(`Failed to fetch event data: ${eventResponse.statusText}`);
+            return null;
+        }
+
+        const eventData = await eventResponse.json() as EventData;
+
+        const { whitelist, starts, ends, name } = eventData.event;
+
+        if (!whitelist || whitelist.length === 0 || !starts || !ends || starts.length !== ends.length) {
+            return null;
+        }
+
+        return {
+            name,
+            vanity,
+            whitelist,
+            starts,
+            ends
+        };
+    } catch (error) {
+        console.error("Error fetching event info:", error);
+        return null;
+    }
+}; 
 
 export const getSessionStats = async (uuid: string, hours: number, hoursBetween: number) => {
     const days = Math.ceil(hours / 24)
