@@ -1,6 +1,6 @@
-import {fixDisplayName, formatDecimals, formatTime, generateHexCode, getGoodQty, getMinQty} from "@/app/utils";
+import {fixDisplayName, formatTime, generateHexCode, getGoodQty, getMinQty} from "@/app/utils";
 import BoardLink from "@/app/components/tables/BoardLink";
-import React, {useState} from "react";
+import React, { useState } from "react";
 import {Collapse} from "react-bootstrap";
 import TimeSlider from "@/app/components/TimeSlider";
 import NPHSlider from "@/app/components/NPHSlider";
@@ -82,7 +82,7 @@ export function NPHTable({days, data, showQty = false} : {days: number, data?: a
                     return <tr key={entryIdx}>
                         <td className="col-1"><p>{entryIdx + 1}</p></td>
                         <td className="col-10">
-                            <BoardLink name={showQty ? truncated : name} url={url} linkUrl={linkUrl}/>
+                            <BoardLink name={showQty ? truncated : name} uuid={d.uuid} url={url} linkUrl={linkUrl}/>
                         </td>
                         {showQty &&
                             <td className="col-1" style={{textAlign: "right"}}>

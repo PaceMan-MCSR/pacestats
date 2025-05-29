@@ -2,7 +2,7 @@
 
 import useSWR, {useSWRConfig} from 'swr'
 import useWebSocket from "react-use-websocket";
-import {useEffect} from "react";
+import { useEffect, useState } from "react";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 const refresh = 60
@@ -43,6 +43,9 @@ export default function SessionNethers({name, settings}: {
         if (lastMessage !== null) {
             if(lastMessage.data === "refresh") {
                 mutate(key)
+            }
+            if(lastMessage.data === "reloadPage"){
+                window.location.reload()
             }
         }
     }, [lastMessage]);

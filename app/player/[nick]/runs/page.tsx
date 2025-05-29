@@ -1,17 +1,20 @@
 import {
     getCached,
     getAllNamesByNick,
-    getAllNamesByTwitch, getAllPlayerRuns,
+    getAllNamesByTwitch, getAllPlayerRuns, getAllPlayerRunsOptimized, getAllUserInfo,
 } from "@/app/data";
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
 import RecentRuns from "@/app/player/[nick]/runs/RecentRuns";
 import {Suspense} from "react";
+import { Button } from "@mui/material";
+import { defaultNameColor, getNameColor } from "@/app/utils";
 
 export default async function Page({params, searchParams}: {
     params: { nick: string },
     searchParams: { [key: string]: string | undefined }
 }) {
+    let bastionFort = searchParams["bastionFort"] === "true"
     let nick = params.nick
     if (nick === "jojoe77777" || nick === "jojoe" || nick === "COVID19") nick = "COVlD19"
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", nick)
@@ -34,26 +37,36 @@ export default async function Page({params, searchParams}: {
     }
     const uuid = names.uuid
 
-    const recentRuns = await getCached(getAllPlayerRuns, "getAllPlayerRuns", uuid, 200)
+    const recentRuns = await getCached(getAllPlayerRunsOptimized, "getAllPlayerRunsOptimized", uuid)
+    const userInfo = await getCached(getAllUserInfo, "getAllUserInfo")
 
     const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
+    const nameColor = getNameColor(userInfo, uuid)
 
     return (<main className="main allRuns">
         <div className="container">
             <ResetScroll/>
             <div className="row justify-content-center">
-                <div className="col-lg-8 col-xl-7">
-                    <h1 className="header mb-4">
-                        Recent runs for {realNick}
-                        <img className="titleHead mx-2" src={headUrl} alt={realNick}/>
-                    </h1>
-                    <div style={{textAlign: "center"}} className="mb-4">
+                <div className="col-lg-9 col-xl-8">
+                    <h1 className="header mb-3">
                         <Link href={`/player/${realNick}/`}>
-                            <button className="btn btn-dark">Back to Profile</button>
+                            <Button color={"info"} sx={{
+                                marginTop: "-5px",
+                                minWidth: "40px",
+                                maxWidth: "40px",
+                            }}>
+                                <span className="material-symbols-outlined">arrow_back</span>
+                            </Button>
                         </Link>
-                    </div>
+                        Run history for <span style={{color: nameColor}}>{realNick}</span>
+                        <img className="titleHead mx-2" style={nameColor !== defaultNameColor ? {
+                            marginTop: "-5px",
+                            border: "4px solid " + nameColor,
+                            boxSizing: "content-box",
+                        } : {marginTop: "-5px"}} src={headUrl} alt={realNick}/>
+                    </h1>
                     <Suspense fallback={<div>Loading...</div>}>
-                        <RecentRuns runs={recentRuns}/>
+                        <RecentRuns runs={recentRuns} bf={bastionFort}/>
                     </Suspense>
                 </div>
             </div>

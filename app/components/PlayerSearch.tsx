@@ -4,8 +4,14 @@ import { ReactSearchAutocomplete } from 'react-search-autocomplete'
 import { useRouter } from 'next/navigation'
 import {SearchName} from "@/app/types";
 import Link from "next/link";
+import { defaultNameColor, getDarkerColor, getNameColor } from "@/app/utils";
+import { useContext } from "react";
+import { UserColoursContext } from "@/app/contexts";
+import Box from "@mui/material/Box";
 
-export default function PlayerSearch({data, input, setOutput}: { data: SearchName[], input?: any, setOutput?: any }) {
+export default function PlayerSearch({data, input, setOutput, userInfo}: { data: SearchName[], input?: any, setOutput?: any, userInfo: any }) {
+    const colours = useContext(UserColoursContext);
+    const hasColours = colours?.isCustom
     const router = useRouter()
 
     const handleOnSelect = (item: any) => {
@@ -30,13 +36,42 @@ export default function PlayerSearch({data, input, setOutput}: { data: SearchNam
         return (
             <span style={{ display: 'block', textAlign: 'left' }}>
                 {setOutput === undefined && (<Link href={`/player/${item.nick}`}></Link>)}
-                <img className="avatarSmall" src={url} alt={item.nick}/>
-                {item.nick}
+                <img className="avatarSmall" src={url} alt={item.nick} style={{
+                    marginTop: '-2px',
+                }}/>
+                <span style={{
+                    color: getNameColor(userInfo, item.id),
+                    filter: getNameColor(userInfo, item.id) !== defaultNameColor ? `drop-shadow(0px 0px 1px #000000) drop-shadow(0px 0px 1px #000000)` : '',
+                    fontSize: '1.15em',
+                }}>{item.nick}</span>
             </span>
         )
     }
 
-    return <ReactSearchAutocomplete
+    return <Box sx={hasColours ? {
+        '& .searchBox .wrapper': {
+            backgroundColor: `#${getDarkerColor(colours?.fg, 0.9)} !important`,
+        },
+        '& .searchBox .wrapper input': {
+            backgroundColor: `#${getDarkerColor(colours?.fg, 0.9)} !important`,
+        },
+        '& .searchBox .wrapper div input::placeholder': {
+            color: `${(colours?.fgText as {color: string})?.color} !important`
+        },
+        '& .searchBox .wrapper div input': {
+            color: `${(colours?.fgText as {color: string})?.color} !important`
+        },
+        '& .searchBox .wrapper div svg path': {
+            fill: `${(colours?.fgText as {color: string})?.color} !important`
+        },
+        '& .searchBox .wrapper div ul li': {
+            backgroundColor: `#${getDarkerColor(colours?.fg, 0.8)} !important`,
+        },
+        '& .searchBox .wrapper div ul li:hover': {
+            backgroundColor: `#${getDarkerColor(colours?.fg, 0.7)} !important`,
+        }
+    } : {}}>
+        <ReactSearchAutocomplete
                 items={data}
                 fuseOptions={{
                     keys: ["nick", "twitches"],
@@ -56,4 +91,5 @@ export default function PlayerSearch({data, input, setOutput}: { data: SearchNam
                 placeholder={"Username"}
                 maxResults={5}
             />
+        </Box>
 }

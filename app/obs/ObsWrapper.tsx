@@ -9,8 +9,8 @@ import SessionNethers from "@/app/obs/sessionNethers/[nick]/SessionNethers";
 import Session from "@/app/obs/session/[nick]/Session";
 import FontPicker from "@/app/obs/FontPicker";
 
-export default function ObsWrapper({names, params}: {
-        names: any, params: { }
+export default function ObsWrapper({names, userInfo, params}: {
+        names: any, userInfo: any, params: { }
     }) {
     const [search, setSearch] = useState("")
     const [color, setColor] = useState("#000000")
@@ -85,7 +85,7 @@ export default function ObsWrapper({names, params}: {
                         <div className="col">
                             <img className="avatar" src={url} alt={search}/>
                             <div className="nameSearch">
-                                <PlayerSearch data={names} input={search} setOutput={setSearch} />
+                                <PlayerSearch data={names} userInfo={userInfo} input={search} setOutput={setSearch} />
                             </div>
                             <OverlayTrigger overlay={
                                 <Tooltip className="hoursTooltip">

@@ -82,6 +82,9 @@ export default async function Page({params, searchParams}: {
     // Define stats categories
     const categories = [
         "nether",
+        "bastion",
+        "fortress",
+        "stronghold",
         "end",
         "elytra",
         "credits",

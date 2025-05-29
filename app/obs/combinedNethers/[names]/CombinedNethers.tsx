@@ -11,14 +11,15 @@ export interface CombinedNethersSettings {
     demo: boolean,
     color: string,
     font: string,
-    start: number
+    start: number,
+    maxTime: number
 }
 
 export default function CombinedNethers({names, settings}: {
     names: string,
     settings: CombinedNethersSettings
 }) {
-    const { data } = useSWR(`/stats/api/getCombinedNethers/?names=${names}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}`,
+    const { data } = useSWR(`/stats/api/getCombinedNethers/?names=${names}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}&maxTime=${settings.maxTime}`,
         fetcher, { refreshInterval: settings.demo ? 999999999 : refresh * 1000 }
     )
 

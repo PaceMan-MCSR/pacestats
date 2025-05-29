@@ -53,6 +53,9 @@ export const minQtys = new Map<number, { [days: string]: QtyStats }>([
 export const minAAQtys = new Map<number, { [days: string]: QtyStats }>([
     [1, {
         nether: {min: 1, good: 1},
+        bastion: {min: 1, good: 1},
+        fortress: {min: 1, good: 1},
+        stronghold: {min: 1, good: 1},
         end: {min: 1, good: 1},
         elytra: {min: 1, good: 1},
         credits: {min: 1, good: 1},
@@ -60,6 +63,9 @@ export const minAAQtys = new Map<number, { [days: string]: QtyStats }>([
     }],
     [7, {
         nether: {min: 5, good: 10},
+        bastion: {min: 1, good: 1},
+        fortress: {min: 1, good: 1},
+        stronghold: {min: 1, good: 1},
         end: {min: 3, good: 5},
         elytra: {min: 1, good: 1},
         credits: {min: 1, good: 1},
@@ -67,6 +73,9 @@ export const minAAQtys = new Map<number, { [days: string]: QtyStats }>([
     }],
     [30, {
         nether: {min: 20, good: 50},
+        bastion: {min: 1, good: 1},
+        fortress: {min: 1, good: 1},
+        stronghold: {min: 1, good: 1},
         end: {min: 5, good: 20},
         elytra: {min: 1, good: 5},
         credits: {min: 1, good: 5},
@@ -74,6 +83,9 @@ export const minAAQtys = new Map<number, { [days: string]: QtyStats }>([
     }],
     [9999, {
         nether: {min: 20, good: 50},
+        bastion: {min: 1, good: 1},
+        fortress: {min: 1, good: 1},
+        stronghold: {min: 1, good: 1},
         end: {min: 5, good: 20},
         elytra: {min: 2, good: 5},
         credits: {min: 2, good: 5},
@@ -295,4 +307,96 @@ export function roundNumber(num: number, decimals: number = 2) {
 
 export function numberWithCommas(x: number) {
     return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+export const defaultNameColor = "#e6e6e6"
+
+export const getNameColor = (users: {
+    uuid: string,
+    displayName: string,
+    color: string
+}[], uuid: string) => {
+    const user = users?.find(u => u.uuid === uuid)
+    return user?.color ? `#${user.color}` : defaultNameColor
+}
+
+
+export const getDisplayName = (users: {
+    uuid: string,
+    displayName: string,
+    color: string
+}[], uuid: string, fallback: string) => {
+    const user = users?.find(u => u.uuid === uuid)
+    return user ? user.displayName : fallback
+}
+
+export const getContrastColor = (hex: string) => {
+    const r = parseInt(hex.substr(0, 2), 16)
+    const g = parseInt(hex.substr(2, 2), 16)
+    const b = parseInt(hex.substr(4, 2), 16)
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    return (yiq >= 128) ? '000000' : 'ffffff';
+}
+
+export const getWhiteOrBlack = (hex: string) => {
+    const r = parseInt(hex.substr(0, 2), 16)
+    const g = parseInt(hex.substr(2, 2), 16)
+    const b = parseInt(hex.substr(4, 2), 16)
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    return (yiq <= 100) ? '#e6e6e6' : '#000000';
+}
+
+export function getDarkerColor(hex: string, darkenFactor: number): string {
+    // Parse the hex string into RGB components
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+
+    // Darken each component
+    const darkenedR = Math.round(r * darkenFactor);
+    const darkenedG = Math.round(g * darkenFactor);
+    const darkenedB = Math.round(b * darkenFactor);
+
+    // Ensure values stay within 0-255 range
+    const clampedR = Math.max(0, Math.min(255, darkenedR));
+    const clampedG = Math.max(0, Math.min(255, darkenedG));
+    const clampedB = Math.max(0, Math.min(255, darkenedB));
+
+    // Convert back to hex and pad with zeros if needed
+    const toHex = (c: number) => {
+        const hexValue = c.toString(16);
+        return hexValue.length === 1 ? "0" + hexValue : hexValue;
+    };
+
+    const darkenedHex = toHex(clampedR) + toHex(clampedG) + toHex(clampedB);
+
+    return darkenedHex;
+}
+
+export const getUserColours = (users: {
+    uuid: string,
+    displayName: string,
+    color: string,
+    bgColor: string
+}[], uuid: string) => {
+    const user = users?.find(u => u.uuid === uuid)
+    if(!user?.color) return {
+        isCustom: false
+    };
+    const bg = user.bgColor || getDarkerColor(user.color, 0.5)
+    const fg = getDarkerColor(user.color, 0.95)
+    return {
+        bg: bg,
+        fg: fg,
+        fgText: {
+            color: `#${getDarkerColor(fg, 0.05)}`,
+            filter: `drop-shadow(0 0 0.5px #${getDarkerColor(fg, 0.3)})`,
+        },
+        bgText: {
+            color: `#${getDarkerColor(bg, 0.05)}`,
+            filter: `drop-shadow(0 0 0.5px #${getDarkerColor(fg, 0.1)})`,
+        },
+        name: user.color,
+        isCustom: true
+    }
 }

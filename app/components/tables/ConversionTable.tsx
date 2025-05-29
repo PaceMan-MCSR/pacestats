@@ -9,7 +9,6 @@ import {
 } from "@/app/utils";
 import {useEffect, useState} from "react";
 import {Entry} from "@/app/types";
-import Link from "next/link";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Tooltip from "react-bootstrap/Tooltip";
 import BoardLink from "@/app/components/tables/BoardLink";
@@ -134,7 +133,7 @@ export function ConversionTable({catName, catId, days, lb, showQty = false, aa =
                     return <tr key={entryIdx}>
                         <td className="col-1"><p>{entryIdx + 1}</p></td>
                         <td className="col-10">
-                            <BoardLink name={name} url={url} linkUrl={linkUrl}/>
+                            <BoardLink name={name} uuid={d.uuid} url={url} linkUrl={linkUrl}/>
                         </td>
                         {showQty &&
                             <td className="col-1" style={{textAlign: "right"}}>

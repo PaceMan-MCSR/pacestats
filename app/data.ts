@@ -7,10 +7,9 @@ import {
     getSecondStructure,
     roundNumber
 } from "@/app/utils";
-import mysql, {ResultSetHeader} from 'mysql2/promise';
+import mysql from 'mysql2/promise';
 import {Entry, FastestEntry} from "@/app/types";
 import WebSocket from 'ws';
-import { NextResponse } from "next/server";
 
 const NodeCache = require("node-cache");
 
@@ -65,6 +64,7 @@ const ttls = {
     getPlayerRuns: 10,
     getRecentAARuns: 10,
     getAllPlayerRuns: 10,
+    getAllPlayerRunsOptimized: 10,
     getAllPlayerRunsByPeriod: 20,
     getAllPlayerRunsByMultiplePeriods: 10,
     getRecentTimestamps: 10,
@@ -94,7 +94,14 @@ const ttls = {
     jude: 30,
     getNethersByPeriod: 2,
     getSessionStats: 10,
-    getEventInfo: 60 * 30
+    getAllUserInfo: 5,
+    getAllAARuns: 20,
+    getAllPBs: 60,
+    getPBs: 10,
+    getLowestId: 60,
+    getHighestId: 60,
+    getRunsPaginated: 60,
+    getEventInfo: 60 * 30,
 }
 
 export const getLiveRuns = async () => {
@@ -364,8 +371,14 @@ function getPreviousSplit(split: string) {
 
 function getPreviousAASplit(split: string) {
     switch (split) {
-        case "end":
+        case "bastion":
             return "nether"
+        case "fortress":
+            return "bastion"
+        case "stronghold":
+            return "fortress"
+        case "end":
+            return "stronghold"
         case "elytra":
             return "end"
         case "credits":
@@ -424,6 +437,14 @@ export const getRecentAARuns = async (uuid: string, limit : number = 5) => {
     return rows
 }
 
+export const getAllAARuns = async (uuid: string) => {
+    const [rows, fields] = await (await getConn()).execute(
+        `SELECT *, UNIX_TIMESTAMP(insertTime) AS time FROM aa WHERE uuid=? ORDER BY id DESC;`,
+        [uuid]
+    )
+    return rows
+}
+
 export const getAllPlayerRuns = async (uuid: string, limit : number = 100) => {
     const bans = await getCached(getBans, "getBans");
     if (bans.includes(uuid)) {
@@ -431,6 +452,44 @@ export const getAllPlayerRuns = async (uuid: string, limit : number = 100) => {
     }
     const [rows, fields] = await (await getConn()).execute(
         `SELECT *, UNIX_TIMESTAMP(insertTime) AS time, UNIX_TIMESTAMP(lastUpdated) AS updatedTime FROM pace WHERE uuid=? ORDER BY id DESC LIMIT ${limit};`,
+        [uuid]
+    )
+    return rows
+}
+
+export const getAllUserInfo = async () => {
+    const [rows, fields] = await (await getConn()).execute(
+        `SELECT uuid, displayName, color, bgColor FROM users;`
+    )
+    return rows
+}
+
+export const getAllPlayerRunsOptimized = async (uuid: string) => {
+    const [rows, fields] = await (await getConn()).execute(
+        `SELECT id, nether, bastion, fortress, 
+            CASE
+                WHEN bastion is null and fortress is null THEN null
+                WHEN bastion is null and fortress is not null THEN fortress
+                WHEN bastion is not null and fortress is null THEN bastion 
+                WHEN bastion <= fortress then bastion 
+                ELSE fortress 
+            END as first_structure, 
+            CASE 
+                WHEN bastion is null and fortress is null THEN null
+                WHEN bastion is null and fortress is not null THEN null
+                WHEN bastion is not null and fortress is null THEN null
+                WHEN bastion <= fortress then fortress
+                ELSE bastion 
+            END as second_structure, 
+            first_portal,
+            stronghold, 
+            end,
+            finish, 
+            lastUpdated,
+            vodId,
+            twitch
+        FROM pace
+        WHERE uuid=? ORDER BY id DESC;`,
         [uuid]
     )
     return rows
@@ -580,6 +639,9 @@ export const getTrimmedAALB = async (days: number, limit = 10, skipFastest = fal
     ]
     const categories = [
         "nether",
+        "bastion",
+        "fortress",
+        "stronghold",
         "end",
         "elytra",
         "credits",
@@ -830,6 +892,9 @@ export const getAALB = async (interval: string = "30 DAY") => {
     // Define stats categories
     const categories = [
         "nether",
+        "bastion",
+        "fortress",
+        "stronghold",
         "end",
         "elytra",
         "credits",
@@ -847,7 +912,7 @@ export const getAALB = async (interval: string = "30 DAY") => {
 
     const [rows, fields] = await (await getConn()).execute(
         `SELECT id, nickname, uuid, 
-        nether, end, elytra, credits, finish
+        nether, bastion, fortress, stronghold, end, elytra, credits, finish
         FROM aa WHERE insertTime >= NOW() - ${timePeriod} ORDER BY id DESC;`
     )
 
@@ -1501,4 +1566,85 @@ export const getSessionStats = async (uuid: string, hours: number, hoursBetween:
         }
     }
     return response
+}
+
+export const getAllPBs = async () => {
+    const users = await getCached(getAllUsers, "getAllUsers")
+    let query = `select min(finish) as finish, uuid, UNIX_TIMESTAMP(insertTime) as timestamp from pace where finish is not null group by uuid order by finish asc`;
+    const [results, _] = await (await getConn()).execute<any[]>(
+      query,
+    );
+    for (let result of results) {
+        let user = users.find((x: any) => x.id === result.uuid)
+        if(user){
+            result.name = user.nick
+        }
+        result.pb = formatTime(result.finish)
+    }
+    results.sort((a, b) => a.finish - b.finish)
+    return results;
+}
+
+export const getPBs = async (nicks: string[], uuids: string[]) => {
+    const all = await getCached(getAllPBs, "getAllPBs")
+    if(nicks.length > 0){
+        return all.filter((x: any) => nicks.includes(x.name))
+    }
+    if(uuids.length > 0){
+        return all.filter((x: any) => uuids.includes(x.uuid))
+    }
+    return all;
+}
+
+export const getLowestId = async () => {
+    const [results, _] = await (await getConn()).execute<any[]>(
+        `SELECT id FROM pace ORDER BY id ASC LIMIT 1;`
+    );
+    return results[0].id;
+}
+
+export const getHighestId = async () => {
+    const [results, _] = await (await getConn()).execute<any[]>(
+        `SELECT id FROM pace ORDER BY id DESC LIMIT 1;`
+    );
+    return results[0].id;
+}
+
+function filterNullValues(obj: any) {
+    return Object.entries(obj).reduce((acc, [key, value]) => {
+        if (value !== null) {
+            // @ts-ignore
+            acc[key] = value;
+        }
+        return acc;
+    }, {});
+}
+
+function filterNullValuesInArray(arrayOfObjects: any) {
+    return arrayOfObjects.map(filterNullValues);
+}
+
+export const getRunsPaginated = async (page: number, pageSize: number) => {
+    const minId = await getCached(getLowestId, "getLowestId");
+    const maxId = await getCached(getHighestId, "getHighestId");
+    const pageCount = Math.ceil((maxId - minId) / pageSize);
+    if(page < 1 || page > pageCount){
+        return {
+            error: "Invalid page number",
+            pageCount: pageCount,
+            runs: []
+        }
+    }
+    const minForPage = minId + (page - 1) * pageSize;
+    const maxForPage = minForPage + pageSize;
+    const [results, _] = await (await getConn()).execute<any[]>(
+      `SELECT id, nickname, uuid, twitch, nether, bastion, fortress, first_portal, second_portal,
+        stronghold, end, finish, insertTime as time, worldId, vodId, vodOffset, obtainObsidian, obtainCryingObsidian, obtainRod
+        FROM pace WHERE id >= ? AND id < ? ORDER BY id DESC;`,
+      [minForPage, maxForPage]
+    );
+    return {
+        pageCount,
+        runs: filterNullValuesInArray(results)
+    };
 }

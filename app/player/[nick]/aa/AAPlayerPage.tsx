@@ -51,7 +51,16 @@ export default async function AAPlayerPage({name, uuid, recentRuns, twitches, np
             </div>
             <div className="row stats-row">
                 <div className="col-sm-12 col-md-6 col-xl-4 col-xxl-3">
-                    <Stat category="AA Nether Enters" data={data["nether"]} headUrl={headUrl} name={name} days={days}/>
+                    <Stat category="Nether Enters" data={data["nether"]} headUrl={headUrl} name={name} days={days}/>
+                </div>
+                <div className="col-sm-12 col-md-6 col-xl-4 col-xxl-3">
+                    <Stat category="Bastion Enters" data={data["bastion"]} headUrl={headUrl} name={name} days={days}/>
+                </div>
+                <div className="col-sm-12 col-md-6 col-xl-4 col-xxl-3">
+                    <Stat category="Fortress Enters" data={data["fortress"]} headUrl={headUrl} name={name} days={days}/>
+                </div>
+                <div className="col-sm-12 col-md-6 col-xl-4 col-xxl-3">
+                    <Stat category="Stronghold Enters" data={data["stronghold"]} headUrl={headUrl} name={name} days={days}/>
                 </div>
                 <div className="col-sm-12 col-md-6 col-xl-4 col-xxl-3">
                     <Stat category="AA End Enters" data={data["end"]} headUrl={headUrl} name={name} days={days}/>
