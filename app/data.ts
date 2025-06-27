@@ -14,13 +14,15 @@ import WebSocket from 'ws';
 const NodeCache = require("node-cache");
 
 const cache = new NodeCache({
-    stdTTL: 60 * 10, // default 10 mins
+    stdTTL: 60 * 30, // default 10 mins
     checkperiod: 60 * 60, // 1 hour auto cache clear
     useClones: false
 });
 
+const promiseCache = new Map<string, Promise<any>>();
+
 const AsyncLock = require("async-lock");
-const lock = new AsyncLock();
+//const lock = new AsyncLock();
 let conn : mysql.Connection;
 
 const connectDb = async () => {
@@ -62,39 +64,39 @@ const ttls = {
     getAllData: 60 * 5,
     getAllAAData: 60 * 5,
     getPlayerRuns: 10,
-    getRecentAARuns: 10,
-    getAllPlayerRuns: 10,
+    getRecentAARuns: 20,
+    getAllPlayerRuns: 30,
     getAllPlayerRunsOptimized: 10,
     getAllPlayerRunsByPeriod: 20,
     getRecentTimestamps: 10,
     getLeaderboards: {
-        default: 60 * 10,
+        default: 60 * 60,
         "1 day": 60,
-        "7 day": 60 * 5,
-        "30 day": 60 * 10
+        "7 day": 60 * 30,
+        "30 day": 60 * 60
     },
     getTrimmedLeaderboards: {
-        default: 60 * 10,
+        default: 60 * 60,
         "1 day": 60,
-        "7 day": 60 * 5,
-        "30 day": 60 * 10
+        "7 day": 60 * 30,
+        "30 day": 60 * 60
     },
     getFastestLeaderboards: 60 * 30,
     getLiveRuns: 5,
     getWorldLiveData: 5,
     getNPH: 5,
     getLatestRun: 5,
-    getRecentNethers: 10,
+    getRecentNethers: 20,
     getUUIDByAccessKey: 60 * 30,
     getRunId: 60 * 30,
     getNPHLeaderboards: 30,
-    getAALB: 30,
-    getTrimmedAALB: 30,
+    getAALB: 60 * 10,
+    getTrimmedAALB: 60 * 10,
     jude: 30,
-    getNethersByPeriod: 2,
+    getNethersByPeriod: 5,
     getSessionStats: 10,
     getAllUserInfo: 5,
-    getAllAARuns: 20,
+    getAllAARuns: 60 * 30,
     getAllPBs: 60,
     getPBs: 10,
     getLowestId: 60,
@@ -560,22 +562,62 @@ export const getRecentTimestamps = async (uuid: string, limit : number = 5, only
     return rows
 }
 
-// func name is passed as string because func.name breaks in minified prod builds
-export const getCached = async (func: Function, funcName: string, ...args: any[]) => {
-    const key = funcName + args.map(arg => arg.toString()).join("")
-    await lock.acquire(key, async () => {
-        if(cache.has(key)){
-            return cache.get(key)
-        }
-        const result = await func(...args)
+export const getCached = async <T>(
+    func: (...args: any[]) => Promise<T>, // Ensure the function returns a Promise
+    funcName: string,
+    ...args: any[]
+): Promise<any> => {
+    // 1. Generate a unique key for the request
+    const key = funcName + args.map(arg => String(arg)).join("");
+
+    // 2. Check the main data cache first for a valid, non-expired result
+    if (cache.has(key)) {
+        //console.log(`[CACHE HIT] Returning data for key: ${key}`);
+        return cache.get(key) as T;
+    }
+
+    // 3. Check if another request for the same key is already in-flight
+    if (promiseCache.has(key)) {
+        //console.log(`[PROMISE HIT] Waiting for in-flight request for key: ${key}`);
+        // Return the existing promise for others to await
+        return promiseCache.get(key)!;
+    }
+
+    // 4. If no data and no in-flight promise, this is the first request.
+    //    Create the promise, but DON'T await it yet.
+    //console.log(`[FETCH] Starting new fetch for key: ${key}`);
+    const promise = func(...args);
+
+    // 5. Store the promise in the promise cache immediately
+    promiseCache.set(key, promise);
+
+    try {
+        // 6. Now, await the result of the function call
+        const result = await promise;
+
+        // 7. Determine the TTL
         // @ts-ignore
-        let ttl = ttls[funcName]
-        if(ttl instanceof Object){
-            ttl = ttl[args[0]] || ttl.default
+        let ttl = ttls[funcName];
+        if (ttl instanceof Object) {
+            ttl = ttl[args[0]] || ttl.default;
         }
-        cache.set(key, result, ttl)
-    })
-    return cache.get(key)
+
+        // 8. Store the final result in the main data cache
+        cache.set(key, result, ttl);
+        //console.log(`[SUCCESS] Cached data for key: ${key} with TTL: ${ttl}s`);
+
+        return result;
+    } catch (error) {
+        // 9. If the promise fails, we must re-throw the error
+        //    so the caller can handle it.
+        //console.error(`[FAIL] Fetch failed for key: ${key}`, error);
+        throw error;
+    } finally {
+        // 10. CRITICAL: Whether it succeeded or failed, remove the
+        //     promise from the in-flight cache. This allows subsequent
+        //     requests to retry the fetch if it failed.
+        promiseCache.delete(key);
+    }
 }
 
 export const getTrimmedLeaderboards = async (days: number, limit = 10, skipFastest = false) => {
