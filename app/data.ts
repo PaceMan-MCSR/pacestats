@@ -51,8 +51,7 @@ export async function fetchPlayerStatsFromRedis(uuid: string, days = 30) {
 export async function fetchTwitchesFromRedis(uuid: string) {
     const jsonString = await redis.call('JSON.GET', `users:twitch_details:${uuid}`, '$');
     if (!jsonString) {
-        console.error(`Error: Twitch accounts not found in Redis.`);
-        throw new Error(`Twitch accounts not found in Redis.`)
+        return []
     }
     const parsedData = JSON.parse(jsonString as string);
     return parsedData[0];
