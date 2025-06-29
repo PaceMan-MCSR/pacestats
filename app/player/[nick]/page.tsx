@@ -2,11 +2,11 @@ import {
     getCached,
     getAllNamesByNick,
     getAllNamesByTwitch,
-    getLeaderboards, getPlayerRuns,
-    getTwitchAccounts, getNPH, isTwitchLive, getAllUserInfo,
+    getPlayerRuns,
+    getAllUserInfo, fetchPlayerStatsFromRedis, fetchTwitchesFromRedis, fetchNphFromRedis,
 } from "@/app/data";
 import Link from "next/link";
-import {CategoryType, fixDisplayName, getMinQty} from "@/app/utils";
+import {fixDisplayName} from "@/app/utils";
 import PlayerPage from "@/app/player/[nick]/PlayerPage";
 
 export async function generateMetadata({params}: { params: { nick: string } }) {
@@ -72,60 +72,12 @@ export default async function Page({params, searchParams}: {
 
     let realNick = fixDisplayName(names.nick)
     const uuid = names.uuid
-    const lb = await getCached(getLeaderboards, "getLeaderboards", days + " day")
-    const filters = [
-        CategoryType.AVG,
-        CategoryType.COUNT,
-        CategoryType.FASTEST,
-        CategoryType.CONVERSION
-    ]
 
-    const categories = [
-        "nether",
-        "bastion",
-        "first_structure",
-        "second_structure",
-        "fortress",
-        "first_portal",
-        "second_portal",
-        "stronghold",
-        "end",
-        "finish"
-    ]
-
-
-    const data: { [category: string]: { [filter: number]: { ranking: number, value: number } } } = {}
-    for (const category of categories) {
-        data[category] = {}
-    }
-
-    for(const filter of filters) {
-        for (const category of categories) {
-            const minQty = getMinQty(category, days)
-            const board = lb[filter][category]
-            let i = 0
-            for (const entry of board) {
-                if (entry.qty === 0) continue;
-                if (entry.qty < minQty && entry.uuid !== uuid) continue;
-                i++;
-                if (entry.uuid === uuid) {
-                    data[category][filter] = {ranking: entry.qty < minQty ? -1 : i, value: entry.value}
-                    break
-                }
-            }
-        }
-    }
-
+    const data = await fetchPlayerStatsFromRedis(uuid, days);
     const recentRuns = await getCached(getPlayerRuns, "getPlayerRuns", uuid, 4)
-    const nph = await getCached(getNPH, "getNPH", uuid, days * 24, days * 24)
+    const nph = await fetchNphFromRedis(uuid, days)
     const users = await getCached(getAllUserInfo, "getAllUserInfo")
 
-    const twitches = await getCached(getTwitchAccounts, "getTwitchAccounts", uuid) as { twitch: string, time: number }[]
-    let t = [];
-    if(twitches !== null) {
-        t = await Promise.all(twitches.map(async (t): Promise<any> => {
-            return {twitch: t.twitch, time: t.time, live: await getCached(isTwitchLive, "isTwitchLive", t.twitch)}
-        }));
-    }
-    return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} twitches={t} nph={nph} data={data} days={days} bf={bastionFort} users={users} />
+    const twitches = await fetchTwitchesFromRedis(uuid);
+    return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} twitches={twitches} nph={nph} data={data} days={days} bf={bastionFort} users={users} />
 }

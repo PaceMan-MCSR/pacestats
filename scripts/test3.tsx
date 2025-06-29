@@ -1,4 +1,4 @@
-import mysql from 'mysql2/promise';
+import mysql, { RowDataPacket } from 'mysql2/promise';
 import Redis from 'ioredis';
 import dotenv from 'dotenv';
 
@@ -65,7 +65,10 @@ const mysqlConfig = {
     host: process.env.DB_HOST, port: 3306, user: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD, database: process.env.DB_NAME,
 };
+const getConn = () => mysql.createConnection(mysqlConfig);
 const redisUrl = process.env.REDIS_URL;
+let redis = new Redis(redisUrl!);
+let conn: any = null;
 
 // --- Type Definitions and Enums (from your original code) ---
 export enum CategoryType {
@@ -106,7 +109,6 @@ interface PaceRow {
 
 // This function establishes a new connection each time.
 // In a real app, you'd use a connection pool. For a script, this is fine.
-const getConn = () => mysql.createConnection(mysqlConfig);
 
 export const getFirstStructure = (bastion: number | null, fortress: number | null) : number | null => {
     if (bastion !== null && fortress == null) {
@@ -172,17 +174,13 @@ export function calculateAvg(data: number[]): number {
  */
 async function calculateAndStoreLeaderboards(days: number = 30) {
     console.log("Starting leaderboard calculation process...");
-    let mysqlConnection: mysql.Connection | null = null;
-    const redisClient = new Redis(redisUrl!);
-
     try {
         // --- 1. FETCH DATA FROM MYSQL ---
         console.log("Connecting to MySQL and fetching data for the last 30 days...");
-        mysqlConnection = await getConn();
         let paceRows: PaceRow[] = [];
         if(days !== 9999) {
             const timePeriod = `INTERVAL ${days} DAY`;
-            const [rows] = await mysqlConnection.execute(
+            const [rows] = await conn.execute(
                 `SELECT id, nickname, uuid, 
             nether, bastion, fortress, first_portal, second_portal, stronghold, end, finish,
             lootBastion, obtainObsidian, obtainCryingObsidian, obtainRod
@@ -190,7 +188,7 @@ async function calculateAndStoreLeaderboards(days: number = 30) {
             );
             paceRows = rows as PaceRow[];
         } else {
-            const [rows] = await mysqlConnection.execute(
+            const [rows] = await conn.execute(
                 `SELECT id, nickname, uuid, 
             nether, bastion, fortress, first_portal, second_portal, stronghold, end, finish,
             lootBastion, obtainObsidian, obtainCryingObsidian, obtainRod
@@ -417,7 +415,7 @@ async function calculateAndStoreLeaderboards(days: number = 30) {
             }
         }
 
-        const res1 = await redisClient.call('JSON.SET', `topLeaderboards:${days}day`, '$', JSON.stringify(topLeaderboards));
+        const res1 = await redis.call('JSON.SET', `topLeaderboards:${days}day`, '$', JSON.stringify(topLeaderboards));
         if (res1 !== 'OK') {
             throw new Error(`Failed to store top leaderboards for ${days} days in Redis.`);
         }
@@ -426,7 +424,7 @@ async function calculateAndStoreLeaderboards(days: number = 30) {
         // --- 6. CACHE THE FINAL RESULT IN REDIS ---
         console.log("Storing calculated leaderboards in Redis...");
         const redisKey = `leaderboards:${days}day`; // A descriptive key
-        const result = await redisClient.call('JSON.SET', redisKey, '$', JSON.stringify(leaderboards));
+        const result = await redis.call('JSON.SET', redisKey, '$', JSON.stringify(leaderboards));
 
         if (result === 'OK') {
             console.log(`\n✅ Successfully calculated and cached leaderboards in Redis at key '${redisKey}'`);
@@ -437,19 +435,407 @@ async function calculateAndStoreLeaderboards(days: number = 30) {
     } catch (error) {
         console.error("\n❌ An error occurred during the process:", error);
         process.exit(1);
-    } finally {
-        // --- 7. CLEAN UP CONNECTIONS ---
-        if (mysqlConnection) {
-            await mysqlConnection.end();
-            console.log("MySQL connection closed.");
-        }
-        await redisClient.quit();
-        console.log("Redis connection closed.");
     }
 }
 
-// --- Run the main function ---
-const days = [1, 7, 30]
-for (const day of days) {
-    calculateAndStoreLeaderboards(day);
+async function calculateAndStoreNames() {
+    try {
+        // --- Step 1: Run two optimized queries in parallel ---
+
+        // Query A: Get the MOST RECENT nickname for EACH distinct UUID.
+        // This is a common pattern: Group by uuid to find the max(id), then join back
+        // to the table to get the nickname associated with that specific row.
+        const latestNicknamesQuery = `
+            SELECT p.uuid, p.nickname
+            FROM pace p
+            INNER JOIN (
+                SELECT uuid, MAX(id) as max_id
+                FROM pace
+                GROUP BY uuid
+            ) as latest
+            ON p.uuid = latest.uuid AND p.id = latest.max_id;
+        `;
+
+        // Query B: Get all non-null twitch usernames for each UUID.
+        const allTwitchesQuery = `
+            SELECT uuid, twitch
+            FROM pace
+            WHERE twitch IS NOT NULL;
+        `;
+
+        // Execute both queries concurrently using Promise.all for maximum speed
+        const [
+            [latestNicknameRows],
+            [twitchRows]
+        ] = await Promise.all([
+            conn.execute(latestNicknamesQuery),
+            conn.execute(allTwitchesQuery)
+        ]);
+
+        // --- Step 2: Combine the results efficiently in memory ---
+
+        // Create a map for quick lookup of nicknames by UUID.
+        const nameMap: { [uuid: string]: any } = {};
+
+        // First, populate the map with all UUIDs and their latest nicknames.
+        // This ensures every user is included, even if they have no twitch accounts linked.
+        for (const row of latestNicknameRows) {
+            nameMap[row.uuid] = {
+                id: row.uuid,
+                nick: row.nickname,
+                twitches: [], // Initialize with an empty array
+            };
+        }
+
+        // Now, iterate through the twitch data and add it to the existing user objects.
+        for (const row of twitchRows) {
+            // Since we already populated all users, we can be sure nameMap[row.uuid] exists.
+            // (Unless there's a data integrity issue where a twitch entry exists for a non-existent UUID)
+            if (nameMap[row.uuid]) {
+                nameMap[row.uuid].twitches.push(row.twitch);
+            }
+        }
+
+        // --- Step 3: Store the final result in Redis ---
+
+        const finalUserList = Object.values(nameMap);
+
+        if (finalUserList.length === 0) {
+            console.log("No user data found to cache.");
+            return;
+        }
+
+        const res = await redis.call('JSON.SET', 'users', '$', JSON.stringify(finalUserList));
+        if (res !== 'OK') {
+            console.error("Failed to set users in Redis:", res);
+            return;
+        }
+
+        console.log(`User names for ${finalUserList.length} users cached in Redis successfully.`);
+
+    } catch (error) {
+        console.error("An error occurred in calculateAndStoreNames:", error);
+    }
 }
+
+async function calculateAndStorePlayerStats(days: number) {
+    const users = JSON.parse(await redis.call('JSON.GET', `users`, '$') as string)[0];
+    const lb = JSON.parse(await redis.call('JSON.GET', `leaderboards:${days}day`, '$') as string)[0];
+
+    const filters = [
+        CategoryType.AVG,
+        CategoryType.COUNT,
+        CategoryType.FASTEST,
+        CategoryType.CONVERSION
+    ]
+
+    const categories = [
+        "nether",
+        "bastion",
+        "first_structure",
+        "second_structure",
+        "fortress",
+        "first_portal",
+        "second_portal",
+        "stronghold",
+        "end",
+        "finish"
+    ]
+    for (const user of users) {
+        const uuid = user.id;
+        const data: { [category: string]: { [filter: number]: { ranking: number, value: number } } } = {}
+        for (const category of categories) {
+            data[category] = {}
+        }
+        for(const filter of filters) {
+            for (const category of categories) {
+                const minQty = getMinQty(category, days)
+                const board = lb[filter][category]
+                let i = 0
+                for (const entry of board) {
+                    if (entry.qty === 0) continue;
+                    if (entry.qty < minQty && entry.uuid !== uuid) continue;
+                    i++;
+                    if (entry.uuid === uuid) {
+                        data[category][filter] = {ranking: entry.qty < minQty ? -1 : i, value: entry.value}
+                        break
+                    }
+                }
+            }
+        }
+        redis.call('JSON.SET', `playerStats:${uuid}:${days}day`, '$', JSON.stringify(data));
+    }
+    console.log(`\n✅ Successfully cached player stats for ${days} days in Redis.`)
+}
+
+async function calculateAndStoreUserData() {
+    try {
+        // --- Step 1: Define and Run All Database Queries Concurrently ---
+
+        // Query A: Get the latest nickname for each UUID.
+        const latestNicknamesQuery = `
+        SELECT p.uuid, p.nickname
+        FROM pace p
+        INNER JOIN (
+            SELECT uuid, MAX(id) as max_id
+            FROM pace
+            GROUP BY uuid
+        ) as latest ON p.uuid = latest.uuid AND p.id = latest.max_id;
+    `;
+
+        // Query B: Get all unique (uuid, twitch) pairs for the simple list.
+        const allTwitchesQuery = `
+        SELECT DISTINCT uuid, twitch
+        FROM pace
+        WHERE twitch IS NOT NULL;
+    `;
+
+        // Query C: Get the top 2 most recent, unique twitch accounts per user using a window function.
+        const topTwitchAccountsQuery = `
+        SELECT uuid, twitch, time
+        FROM (
+            SELECT 
+                uuid, 
+                twitch, 
+                UNIX_TIMESTAMP(latest_time) as time,
+                ROW_NUMBER() OVER(PARTITION BY uuid ORDER BY latest_time DESC) as rn
+            FROM (
+                -- This inner query finds the most recent timestamp for each unique (uuid, twitch) pair
+                SELECT uuid, twitch, MAX(insertTime) as latest_time
+                FROM pace
+                WHERE twitch IS NOT NULL
+                GROUP BY uuid, twitch
+            ) as unique_recent_twitches
+        ) as ranked_twitches
+        WHERE rn <= 2;
+    `;
+
+        // Execute all three queries in parallel for maximum speed
+        const [
+            [latestNicknameRows],
+            [twitchRows],
+            [topTwitchAccountRows]
+        ] = await Promise.all([
+            conn.execute(latestNicknamesQuery),
+            conn.execute(allTwitchesQuery),
+            conn.execute(topTwitchAccountsQuery)
+        ]);
+
+        // --- Step 2: Process and Combine Results in Memory ---
+
+        const userMap: Record<string, any> = {};
+        const twitchDetailsMap: any = {};
+
+        // Pass 1: Populate base user data (id, nick) from the nicknames query.
+        for (const row of latestNicknameRows) {
+            userMap[row.uuid] = {
+                id: row.uuid,
+                nick: row.nickname,
+                twitches: [],
+            };
+            // Also initialize the entry in our second map.
+            twitchDetailsMap[row.uuid] = [];
+        }
+
+        // Pass 2: Add the simple list of all twitch usernames to the appropriate users.
+        for (const row of twitchRows) {
+            if (userMap[row.uuid]) { // Check if user exists to handle potential data inconsistencies
+                userMap[row.uuid].twitches.push(row.twitch);
+            }
+        }
+
+        // Pass 3: Add the detailed twitch account info (top 2) to the details map.
+        for (const row of topTwitchAccountRows) {
+            if (twitchDetailsMap[row.uuid]) { // Check if user exists
+                twitchDetailsMap[row.uuid].push({
+                    twitch: row.twitch,
+                    time: row.time,
+                    live: false
+                });
+            }
+        }
+
+        // --- Step 3: Store Both Datasets in Redis Concurrently ---
+        const finalUserList = Object.values(userMap);
+
+        if (finalUserList.length === 0) {
+            console.log("No user data found to cache.");
+            return;
+        }
+
+        const userSetResult = await redis.call('JSON.SET', 'users', '$', JSON.stringify(finalUserList));
+
+        for(const t of Object.keys(twitchDetailsMap)) {
+            if (twitchDetailsMap[t].length > 0) {
+                redis.call('JSON.SET', `users:twitch_details:${t}`, '$', JSON.stringify(twitchDetailsMap[t]));
+            }
+        }
+
+        if (userSetResult !== 'OK') {
+            console.error("Failed to set 'users' in Redis:", userSetResult);
+        } else {
+            console.log(`Successfully cached data for ${finalUserList.length} users in 'users' key.`);
+        }
+
+    } catch (error) {
+        console.error("An error occurred during updateUserCache:", error);
+    }
+}
+
+export interface NPHResult {
+    rtanph: number;
+    rnph: number;
+    lnph: number;
+    count: number;
+    avg: number;
+    playtime: number;
+    walltime: number;
+    resets: number;
+    totalResets: number;
+    seedsPlayed: number;
+    rpe: number;
+}
+
+export function roundNumber(num: number, decimals: number = 2) {
+    return Math.round(num * Math.pow(10, decimals)) / Math.pow(10, decimals);
+}
+
+interface NetherPaceRow {
+    uuid: string;
+    nether: number;
+    twitch: string;
+    wallTime: number; // Assumed to be in milliseconds
+    playTime: number; // Assumed to be in milliseconds
+    enters: number;
+    isAccurate: boolean | number;
+    time: number;     // UNIX timestamp in seconds
+    resets: number;
+    totalResets: number;
+}
+
+// Type for the final calculated data for a single player
+interface NphData {
+    rtanph: number;      // Nethers per hour (real-time)
+    rnph: number;        // Nethers per hour (raw playtime)
+    lnph: number;        // Nethers per hour (loadless playtime)
+    count: number;       // Total nethers counted
+    avg: number;         // Average nether entry time
+    playtime: number;    // Total playtime in ms
+    walltime: number;    // Total walltime in ms
+    resets: number;      // Total resets during these sessions
+    totalResets: number; // Player's all-time total resets
+    seedsPlayed: number; // Percentage of seeds entered
+    rpe: number;         // Resets per enter
+}
+
+async function calculateAndStoreNph(days: number) {
+    // 1. Fetch data from the database
+    const timePeriod = `INTERVAL ${days * 24} HOUR`;
+    const [results, _] = await conn.execute(
+        `SELECT nethers.uuid, pace.nether as nether, twitch, wallTime, playTime, enters, isAccurate, UNIX_TIMESTAMP(nethers.insertTime) as time, resets, totalResets
+        FROM nethers INNER JOIN pace ON nethers.runId=pace.id 
+        WHERE nethers.insertTime >= NOW() - ${timePeriod} ORDER BY nethers.id DESC;`,
+    );
+
+    const rows = results as NetherPaceRow[];
+
+    // 2. Group results by player UUID
+    const groupedByUuid: Record<string, NetherPaceRow[]> = rows.reduce((acc, row) => {
+        if (!acc[row.uuid]) {
+            acc[row.uuid] = [];
+        }
+        acc[row.uuid].push(row);
+        return acc;
+    }, {} as Record<string, NetherPaceRow[]>);
+
+    const hoursBetween = days * 24;
+
+    // 3. Process each player's grouped data
+    for (const uuid in groupedByUuid) {
+        const playerRows = groupedByUuid[uuid];
+
+        // --- Apply the exact calculation logic from the prompt ---
+        let wallTime = 0;
+        let playTime = 0;
+        let firstTime = 0; // Most recent timestamp (since results are sorted DESC)
+        let lastTime = 0;  // Oldest timestamp processed in the loop
+        let nethers = 0;
+        let resets = 0;
+        let enters = 0;
+        const times: number[] = [];
+
+        for (const row of playerRows) {
+            if (firstTime === 0) {
+                firstTime = row.time;
+            }
+            // `diff` is the time gap between this entry and the previous (newer) one
+            const diff = lastTime - row.time;
+            if (lastTime > 0 && diff > 60 * 60 * hoursBetween) {
+                break;
+            }
+            times.push(row.nether);
+            playTime += row.playTime;
+            wallTime += row.wallTime;
+            lastTime = row.time; // Update `lastTime` to the current (older) timestamp
+            nethers += 1;
+            if (row.resets > 0) {
+                resets += row.resets;
+            }
+            enters += row.enters;
+        }
+
+        // If the loop didn't process any rows for this player, skip them
+        if (nethers === 0) {
+            continue;
+        }
+
+        const avg = calculateAvg(times);
+
+        // RTA (Real-Time Attack) is measured from the first to the last nether.
+        // If only one nether, it's measured from that nether until now.
+        let elapsedRtaMs = 0;
+        if (nethers > 1) {
+            elapsedRtaMs = (firstTime - lastTime) * 1000;
+        } else {
+            elapsedRtaMs = Date.now() - (lastTime * 1000);
+        }
+
+        // Convert times from milliseconds to hours for NPH calculation
+        const elapsedRtaHours = elapsedRtaMs / (1000 * 60 * 60);
+        const totalGameTimeHours = (wallTime + playTime) / (1000 * 60 * 60);
+        const playTimeHours = playTime / (1000 * 60 * 60);
+
+        // Store the final calculated data for the player
+        const nph = {
+            rtanph: roundNumber(elapsedRtaHours > 0 ? nethers / elapsedRtaHours : 0),
+            rnph: roundNumber(totalGameTimeHours > 0 ? nethers / totalGameTimeHours : 0),
+            lnph: roundNumber(playTimeHours > 0 ? nethers / playTimeHours : 0),
+            count: nethers,
+            avg: avg,
+            playtime: playTime,
+            walltime: wallTime,
+            resets: resets,
+            totalResets: playerRows[0].totalResets, // Taken from the most recent record
+            seedsPlayed: roundNumber(resets > 0 ? (enters / resets) * 100 : 0),
+            rpe: roundNumber(resets / nethers) // `nethers` is guaranteed to be > 0 here
+        };
+        redis.call('JSON.SET', `nph:${uuid}:${days}day`, '$', JSON.stringify(nph));
+    }
+    console.log("Cached NPH data for the last", days, "days in Redis.");
+}
+
+async function mmm() {
+    conn = await getConn()
+    // --- Run the main function ---
+    const days = [1, 7, 30]
+    await calculateAndStoreUserData();
+    for (const day of days) {
+        await calculateAndStoreNph(day);
+        await calculateAndStoreLeaderboards(day);
+        await calculateAndStorePlayerStats(day);
+    }
+    await conn.end();
+    await redis.quit();
+}
+
+mmm();

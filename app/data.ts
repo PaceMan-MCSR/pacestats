@@ -39,6 +39,61 @@ async function fetchLeaderboardsFromRedis(days = 30) {
     return parsedData[0];
 }
 
+export async function fetchPlayerStatsFromRedis(uuid: string, days = 30) {
+    const jsonString = await redis.call('JSON.GET', `playerStats:${uuid}:${days}day`, '$');
+    if (!jsonString) {
+        throw new Error(`Player data for ${days} days not found in Redis.`)
+    }
+    const parsedData = JSON.parse(jsonString as string);
+    return parsedData[0];
+}
+
+export async function fetchTwitchesFromRedis(uuid: string) {
+    const jsonString = await redis.call('JSON.GET', `users:twitch_details:${uuid}`, '$');
+    if (!jsonString) {
+        console.error(`Error: Twitch accounts not found in Redis.`);
+        throw new Error(`Twitch accounts not found in Redis.`)
+    }
+    const parsedData = JSON.parse(jsonString as string);
+    return parsedData[0];
+}
+
+export async function fetchNphFromRedis(uuid: string, days: number) {
+    const jsonString = await redis.call('JSON.GET', `nph:${uuid}:${days}day`, '$');
+    if (!jsonString) {
+        return {
+            rtanph: 0,
+            rnph: 0,
+            lnph: 0,
+            count: 0,
+            avg: 0,
+            playtime: 0,
+            walltime: 0,
+            resets: 0,
+            totalResets: 0,
+            seedsPlayed: 0,
+            rpe: 0
+        };
+    }
+    const parsedData = JSON.parse(jsonString as string)[0];
+    if (!parsedData) {
+        return {
+            rtanph: 0,
+            rnph: 0,
+            lnph: 0,
+            count: 0,
+            avg: 0,
+            playtime: 0,
+            walltime: 0,
+            resets: 0,
+            totalResets: 0,
+            seedsPlayed: 0,
+            rpe: 0
+        };
+    }
+    return parsedData;
+}
+
 async function fetchTopLeaderboardsFromRedis(days = 30) {
     const jsonString = await redis.call('JSON.GET', `topLeaderboards:${days}day`, '$');
     if (!jsonString) {
