@@ -7,7 +7,6 @@ import {
     getMinAAQty,
     getMinQty
 } from "@/app/utils";
-import {useEffect, useState} from "react";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Tooltip from "react-bootstrap/Tooltip";
 import {Entry} from "@/app/types";
@@ -23,78 +22,8 @@ export function AvgTable({catName, catId, days, lb, showQty = false, aa = false}
     }
 
     const lbSize = 10
-    const [data, setData] = useState([])
-    const [lowest, setLowest] = useState(0)
-    const [highest, setHighest] = useState(0)
-    const [isLoading, setLoading] = useState(true)
 
-    useEffect(() => {
-        if(lb){
-            setData(lb[CategoryType.AVG][catId])
-            setLoading(false)
-            return
-        }
-        fetch(process.env.NEXT_PUBLIC_HOSTNAME + `/stats/api/getLeaderboard/?category=${catId}&type=average&days=${days}`)
-            .then((res) => res.json())
-            .then((data) => {
-                setData(data)
-                let low = 9999999;
-                let high = 0;
-                for(let i = 0; i < data.length; i++){
-                    if(data[i].qty < low){
-                        low = data[i].qty
-                    }
-                    if(data[i].qty > high){
-                        high = data[i].qty
-                    }
-                }
-                setHighest(high)
-                setLowest(low)
-                setLoading(false)
-            })
-    }, [])
-
-    if(isLoading){
-        return <div className="tableWrapper col-sm-12 col-md-6 col-xl-4 col-xxl-3">
-            <p className="tableHeader">{catName}</p>
-            <table className="table table-dark caption-top">
-                <thead>
-                <tr>
-                    <th id="num">#</th>
-                    <th id="name">Name</th>
-                    {showQty && <th id="qty">Qty</th>}
-                    <th id="avg">Avg</th>
-                </tr>
-                </thead>
-                <tbody>
-                {
-                    Array.from(Array(10).keys()).map((entryIdx) => {
-                        return <tr key={entryIdx}>
-                            <td className="col-1"><p>{entryIdx + 1}</p></td>
-                            <td className="col-10">
-                                <p>
-                                    <img className="avatar dummyAvatar" src="https://mc-heads.net/avatar/COVlD19/8" alt="Loading"/>
-                                </p>
-                                <div className="loadingSkeleton"></div>
-                            </td>
-                            {showQty &&
-                                <td className="col-1" style={{textAlign: "right"}}>
-                                    <p>...</p>
-                                </td>
-                            }
-                            <td className="col-1" style={{textAlign: "right"}}>
-                                <p>
-                                    ...
-                                </p>
-                            </td>
-                        </tr>
-                    })
-                }
-                </tbody>
-            </table>
-        </div>
-    }
-    if (data.length === 0) {
+    if (lb.length === 0) {
         return null
     }
 
@@ -128,7 +57,7 @@ export function AvgTable({catName, catId, days, lb, showQty = false, aa = false}
             </thead>
             <tbody>
             {
-                data.slice(0, lbSize).map((entry, entryIdx) => {
+                lb[CategoryType.AVG][catId].slice(0, lbSize).map((entry: any, entryIdx: any) => {
                     let d = entry as Entry
                     let name = fixDisplayName(d.name)
                     let skinName = d.name

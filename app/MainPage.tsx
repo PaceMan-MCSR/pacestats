@@ -21,7 +21,7 @@ export default function MainPage({searchParams, nph, lb, users}: {
 ) {
     const [showSample, setShowSample] = useState(searchParams["showQty"] === "true")
     const [bastionFort, setBastionFort] = useState(searchParams["bastionFort"] === "true")
-    const showNph = searchParams["nph"] === "true"
+    const showNph = nph && searchParams["nph"] === "true"
     let days: number = parseInt(searchParams["days"] || "30")
     const input = searchParams["category"]
     let catType = CategoryType.COUNT_AVG

@@ -10,6 +10,7 @@ import {
 import mysql from 'mysql2/promise';
 import {Entry, FastestEntry} from "@/app/types";
 import WebSocket from 'ws';
+import Redis from "ioredis";
 
 const NodeCache = require("node-cache");
 
@@ -19,11 +20,35 @@ const cache = new NodeCache({
     useClones: false
 });
 
+const redis =  new Redis(process.env.REDIS_URL!, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+});
+
 const promiseCache = new Map<string, Promise<any>>();
 
-const AsyncLock = require("async-lock");
-//const lock = new AsyncLock();
 let conn : mysql.Connection;
+
+async function fetchLeaderboardsFromRedis(days = 30) {
+    const jsonString = await redis.call('JSON.GET', `leaderboards:${days}day`, '$');
+    if (!jsonString) {
+        console.error(`Error: Lb not found in Redis.`);
+        throw new Error(`Leaderboards for ${days} days not found in Redis.`)
+    }
+    const parsedData = JSON.parse(jsonString as string);
+    return parsedData[0];
+}
+
+async function fetchTopLeaderboardsFromRedis(days = 30) {
+    const jsonString = await redis.call('JSON.GET', `topLeaderboards:${days}day`, '$');
+    if (!jsonString) {
+        console.error(`Error: Top Lb not found in Redis.`);
+        throw new Error(`Top leaderboards for ${days} days not found in Redis.`)
+    }
+    const parsedData = JSON.parse(jsonString as string);
+    return parsedData[0];
+
+}
 
 const connectDb = async () => {
     conn = await mysql.createConnection({
@@ -620,53 +645,8 @@ export const getCached = async <T>(
     }
 }
 
-export const getTrimmedLeaderboards = async (days: number, limit = 10, skipFastest = false) => {
-    const lb = await getCached(getLeaderboards, "getLeaderboards", days + " DAY")
-    const filters = [
-        CategoryType.AVG,
-        CategoryType.COUNT,
-        CategoryType.FASTEST,
-        CategoryType.CONVERSION
-    ]
-    const categories = [
-        "nether",
-        "bastion",
-        "first_structure",
-        "second_structure",
-        "fortress",
-        "first_portal",
-        "second_portal",
-        "stronghold",
-        "end",
-        "finish"
-    ]
-    let leaderboards: { [filter: number]: { [category: string]: Entry[] } } = {}
-    for (const filter of filters) {
-        leaderboards[filter] = {}
-        for (const category of categories) {
-            leaderboards[filter][category] = []
-        }
-    }
-    for (const filter of filters) {
-        if(filter === CategoryType.FASTEST && skipFastest){
-            continue
-        }
-        for (const category of categories) {
-            const data = lb[filter][category]
-            let specific;
-            if(filter === CategoryType.CONVERSION){
-                specific = data.filter((x: Entry) => x.qty >= getMinQty(category, days))
-            } else if (filter === CategoryType.AVG){
-                specific = data.filter((x: Entry) => x.qty >= getMinQty(category, days))
-            } else if (filter === CategoryType.FASTEST){
-                specific = data
-            } else {
-                specific = data
-            }
-            leaderboards[filter][category] = specific.slice(0, limit)
-        }
-    }
-    return leaderboards
+export const getTrimmedLeaderboards = async (days: number) => {
+    return await fetchTopLeaderboardsFromRedis(days);
 }
 
 export const getTrimmedAALB = async (days: number, limit = 10, skipFastest = false) => {
@@ -717,206 +697,7 @@ export const getTrimmedAALB = async (days: number, limit = 10, skipFastest = fal
 }
 
 export const getLeaderboards = async (interval: string = "30 DAY") => {
-    // How far back to look for entries
-    const timePeriod = "INTERVAL " + interval;
-
-    const filters = [
-        CategoryType.AVG,
-        CategoryType.COUNT,
-        CategoryType.FASTEST,
-        CategoryType.CONVERSION
-    ]
-
-    // Define stats categories
-    const categories = [
-        "nether",
-        "bastion",
-        "first_structure",
-        "second_structure",
-        "fortress",
-        "first_portal",
-        "second_portal",
-        "stronghold",
-        "end",
-        "finish"
-    ]
-
-    // Init categories
-    let leaderboards: { [filter: number]: { [category: string]: Entry[] } } = {}
-    for (const filter of filters) {
-        leaderboards[filter] = {}
-        for (const category of categories) {
-            leaderboards[filter][category] = []
-        }
-    }
-
-    const [rows, fields] = await (await getConn()).execute(
-        `SELECT id, nickname, uuid, 
-        nether, bastion, fortress, first_portal, second_portal, stronghold, end, finish,
-        lootBastion, obtainObsidian, obtainCryingObsidian, obtainRod
-        FROM pace WHERE insertTime >= NOW() - ${timePeriod} ORDER BY id DESC;`
-    )
-
-    //const bans = await getCached(getBans, "getBans");
-
-    const nickMap = new Map<string, string>()
-
-    let splitData: {
-        [uuid: string]: {
-            [column: string]: number[]
-        }
-    } = {}
-
-    let uuids: string[] = []
-    // @ts-ignore
-    for (let row of rows) {
-        if (!uuids.includes(row["uuid"])/* && !bans.includes(row["uuid"])*/) {
-            uuids.push(row["uuid"])
-        }
-    }
-
-    for (let uuid of uuids) {
-        splitData[uuid] = {}
-        for (const category of categories) {
-            splitData[uuid][category] = []
-        }
-        splitData[uuid]["first_structure"] = []
-        splitData[uuid]["second_structure"] = []
-        splitData[uuid]["fortress"] = []
-    }
-
-    // @ts-ignore
-    for (let row of rows) {
-        const uuid = row["uuid"]
-        /*if (bans.includes(uuid)) {
-            continue
-        }*/
-        const bastion = row["bastion"]
-        const fortress = row["fortress"]
-        const firstStructure = getFirstStructure(bastion, fortress)
-        const secondStructure = getSecondStructure(bastion, fortress)
-        for (const category of categories) {
-            // Special case: 1st struct
-            if(category === "first_structure"){
-                if(firstStructure !== null){
-                    const rod = row["obtainRod"]
-                    if(firstStructure === fortress && rod !== null && rod < fortress){
-                        splitData[row["uuid"]]["first_structure"].push(rod)
-                    } else {
-                        splitData[row["uuid"]]["first_structure"].push(firstStructure)
-                    }
-                }
-                continue
-            }
-            // Special case: 2nd struct
-            if(category === "second_structure"){
-                if(secondStructure !== null){
-                    const id = row["id"]
-                    if(id >= 187307){ // when context logging was added, march 29th 2024
-                        const rod = row["obtainRod"]
-                        if(secondStructure === bastion && (rod === null || rod > secondStructure)){
-                            continue
-                        }
-                        if(secondStructure === fortress && (fortress - bastion < 50000)){
-                            continue
-                        }
-                        if(secondStructure === fortress && rod !== null && rod < fortress){
-                            splitData[row["uuid"]]["second_structure"].push(rod)
-                        } else {
-                            splitData[row["uuid"]]["second_structure"].push(secondStructure)
-                        }
-                    } else {
-                        splitData[row["uuid"]]["second_structure"].push(secondStructure)
-                    }
-                }
-                continue
-            }
-            if(category === "fortress"){
-                if(fortress !== null){
-                    const rod = row["obtainRod"]
-                    if(rod !== null && rod < fortress){
-                        splitData[row["uuid"]]["fortress"].push(rod)
-                    } else {
-                        splitData[row["uuid"]]["fortress"].push(fortress)
-                    }
-                }
-                continue
-            }
-            // Default, fetch stat from row
-            if (row[category] !== null) {
-                if (!nickMap.has(uuid)) {
-                    nickMap.set(row["uuid"], row["nickname"])
-                }
-                if(!splitData[uuid]){
-                    splitData[uuid] = {}
-                }
-                if(!splitData[uuid][category]){
-                    splitData[uuid][category] = []
-                }
-                splitData[uuid][category].push(row[category])
-            }
-        }
-    }
-
-    for (let uuid in splitData) {
-        for (const cat of categories) {
-            for(const filter of filters) {
-                let val = 0
-                if(!splitData[uuid][cat] || splitData[uuid][cat].length === 0){
-                    continue
-                }
-                if (filter === CategoryType.COUNT) {
-                    val = splitData[uuid][cat].length
-                } else if (filter === CategoryType.AVG) {
-                    val = calculateAvg(splitData[uuid][cat])
-                } else if(filter === CategoryType.FASTEST) {
-                    val = Math.min(...splitData[uuid][cat])
-                } else if(filter === CategoryType.CONVERSION) {
-                    const prev = getPreviousSplit(cat)
-                    if (prev !== null) {
-                        const oldSplit = splitData[uuid][prev].length
-                        const newSplit = splitData[uuid][cat].length
-                        val = (newSplit / oldSplit) * 100
-                        if(val === Infinity){
-                            val = 1
-                        }
-                    }
-                }
-                if(val > 0) {
-                    leaderboards[filter][cat].push({
-                        uuid: uuid,
-                        name: nickMap.get(uuid) as string,
-                        value: val,
-                        qty: splitData[uuid][cat].length,
-                        avg: calculateAvg(splitData[uuid][cat])
-                    })
-                }
-            }
-        }
-    }
-
-
-    // Sort and truncate categories
-    for(const filter of filters) {
-        for (const category of categories) {
-            let cat = leaderboards[filter][category]
-            if(cat == null || cat.length === 0){
-                continue
-            }
-            // remove empty values
-            cat = cat.filter((a) => a.value > 0)
-
-
-            if (filter === CategoryType.AVG || filter === CategoryType.FASTEST) { // sort ascending (avg, fastest)
-                cat = cat.sort((a, b) => a.value - b.value || b.qty - a.qty)
-            } else { // sort descending (qty, conversion)
-                cat = cat.sort((a, b) => b.value - a.value || b.qty - a.qty)
-            }
-
-            leaderboards[filter][category] = cat
-        }
-    }
-    return leaderboards;
+    return await fetchLeaderboardsFromRedis(parseInt(interval.split(" ")[0]));
 };
 
 export const getAALB = async (interval: string = "30 DAY") => {
