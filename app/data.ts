@@ -101,10 +101,10 @@ const ttls = {
         "30 day": 60 * 60
     },
     getTrimmedLeaderboards: {
-        default: 60 * 60,
-        "1 day": 60,
-        "7 day": 60 * 30,
-        "30 day": 60 * 60
+        default: 120,
+        "1 day": 30,
+        "7 day": 30,
+        "30 day": 30
     },
     getFastestLeaderboards: 60 * 30,
     getLiveRuns: 5,
