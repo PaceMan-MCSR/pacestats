@@ -6,7 +6,7 @@ import { UsersContext } from "@/app/contexts";
 
 export function QtyTable({catName, catId, days, lb, aa = false} : {catName: string, catId: string, days: number, lb?: any, aa?: boolean}) {
     const lbSize = 10
-    if(lb.length === 0) {
+    if (lb[CategoryType.COUNT][catId].length === 0) {
         return null
     }
 

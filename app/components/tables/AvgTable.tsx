@@ -23,7 +23,7 @@ export function AvgTable({catName, catId, days, lb, showQty = false, aa = false}
 
     const lbSize = 10
 
-    if (lb.length === 0) {
+    if (lb[CategoryType.AVG][catId].length === 0) {
         return null
     }
 
