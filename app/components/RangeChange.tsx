@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useContext, useTransition } from "react";
+import { useContext, useEffect, useTransition } from "react";
 import { UserColoursContext } from "@/app/contexts";
 import Box from "@mui/material/Box";
 import { getDarkerColor } from "@/app/utils";
@@ -11,7 +11,8 @@ export default function RangeChange() {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
-    const [isPending, startTransition] = useTransition();
+    const [isPendinga, startTransition] = useTransition();
+    const isPending = false;
 
     // Get current 'days' value from URL
     const days = parseInt(searchParams.get('days') || '30');
@@ -34,6 +35,14 @@ export default function RangeChange() {
         });
     };
 
+    useEffect(() => {
+        router.prefetch(`${pathname}?days=1`);
+        router.prefetch(`${pathname}?days=7`);
+        router.prefetch(`${pathname}?days=30`);
+        router.prefetch(`${pathname}?days=9999`);
+        router.prefetch("/stats")
+    }, []);
+
     return (
         <Box
             className="rangeButtons"
@@ -41,7 +50,6 @@ export default function RangeChange() {
                 // Add a style to indicate the loading state
                 opacity: isPending ? 0.7 : 1,
                 transition: 'opacity 0.2s ease-in-out',
-                // Your existing custom colour styles
                 ...(colours?.isCustom ? {
                     '& button': {
                         backgroundColor: `#${colours.fg}`,
