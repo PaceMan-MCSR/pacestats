@@ -39,7 +39,7 @@ export default function FilterChange() {
             <button
                 className={"btn btn-dark filterToggle" + (toggled ? " active" : "")}
                 type="button"
-                onClick={() => setToggled(!toggled)}
+                onMouseDown={() => setToggled(!toggled)}
                 // Also disable the toggle button during navigation
                 disabled={isPending}
             >
@@ -49,7 +49,7 @@ export default function FilterChange() {
                 <div className="filterButtons" id="filterButtons">
                     <button
                         className={"btn mt-3 " + (category === "count_avg" ? "btn-primary" : "btn-dark")}
-                        onClick={() => handleCategoryChange("count_avg")}
+                        onMouseDown={() => handleCategoryChange("count_avg")}
                         disabled={isPending}
                     >
                         Qty + Average
@@ -57,21 +57,21 @@ export default function FilterChange() {
                     <br />
                     <button
                         className={"btn my-3 mx-1 " + (category === "conversion" ? "btn-primary" : "btn-dark")}
-                        onClick={() => handleCategoryChange("conversion")}
+                        onMouseDown={() => handleCategoryChange("conversion")}
                         disabled={isPending}
                     >
                         Conversion
                     </button>
                     <button
                         className={"btn my-3 mx-1 " + (category === "fastest" ? "btn-primary" : "btn-dark")}
-                        onClick={() => handleCategoryChange("fastest")}
+                        onMouseDown={() => handleCategoryChange("fastest")}
                         disabled={isPending}
                     >
                         Fastest
                     </button>
                     <button
                         className={"btn my-3 mx-1 " + (category === "average" ? "btn-primary" : "btn-dark")}
-                        onClick={() => handleCategoryChange("average")}
+                        onMouseDown={() => handleCategoryChange("average")}
                         disabled={isPending}
                     >
                         Average

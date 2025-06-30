@@ -75,28 +75,28 @@ export default function RangeChange() {
         >
             <button
                 className={"btn " + (days === 1 ? "btn-primary" : "btn-dark")}
-                onClick={() => handleDaysChange(1)}
+                onMouseDown={() => handleDaysChange(1)}
                 disabled={isPending} // Disable button during navigation
             >
                 24 hours
             </button>
             <button
                 className={"btn " + (days === 7 ? "btn-primary" : "btn-dark")}
-                onClick={() => handleDaysChange(7)}
+                onMouseDown={() => handleDaysChange(7)}
                 disabled={isPending}
             >
                 7 days
             </button>
             <button
                 className={"btn " + (days === 30 ? "btn-primary" : "btn-dark")}
-                onClick={() => handleDaysChange(30)}
+                onMouseDown={() => handleDaysChange(30)}
                 disabled={isPending}
             >
                 30 days
             </button>
             <button
                 className={"btn " + (days === 9999 ? "btn-primary" : "btn-dark")}
-                onClick={() => handleDaysChange(9999)}
+                onMouseDown={() => handleDaysChange(9999)}
                 disabled={isPending}
             >
                 Lifetime

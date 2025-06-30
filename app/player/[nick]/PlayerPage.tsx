@@ -12,6 +12,7 @@ import { useState } from "react";
 import { UserColoursContext, UsersContext } from "@/app/contexts";
 import { defaultNameColor, getDarkerColor, getDisplayName, getNameColor, getUserColours } from "@/app/utils";
 import Box from "@mui/material/Box";
+import { useRouter } from "next/navigation";
 
 export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data, days, bf, users}: {
     name: string,
@@ -24,11 +25,13 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
     bf: boolean,
     users: any
 }) {
+    const router = useRouter();
     const skinUrl = "https://mc-heads.net/body/" + uuid
     const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
     const [bastionFort, setBastionFort] = useState(bf)
     const nameColor = getNameColor(users, uuid)
     const colours : any = getUserColours(users, uuid)
+    const [pendingMoreRuns, setPendingMoreRuns] = useState(false);
     return (
         <UsersContext.Provider value={users}>
             <UserColoursContext.Provider value={colours}>
@@ -67,7 +70,10 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
                                 <div className="recentContainer mb-2">
                                     <RecentRuns runs={recentRuns}/>
                                     <div className="openRuns">
-                                        <Link href={`/player/${name}/runs`}>
+                                        <Link href={`/player/${name}/runs`} onMouseDown={() => {
+                                            setPendingMoreRuns(true);
+                                            router.push(`/player/${name}/runs`);
+                                        }}>
                                             <Box sx={colours.isCustom ? {
                                                 '& button': {
                                                     backgroundColor: `#${colours.fg} !important`,
@@ -76,8 +82,9 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
                                                 '& button:hover': {
                                                     backgroundColor: `#${getDarkerColor(colours.fg, 0.9)} !important`,
                                                     ...colours.fgText
-                                                }
-                                            } : {}}>
+                                                },
+                                                opacity: pendingMoreRuns ? 0.7 : 1
+                                            } : {opacity: pendingMoreRuns ? 0.7 : 1}}>
                                                 <button className="btn btn-dark">More runs</button>
                                             </Box>
                                         </Link>
