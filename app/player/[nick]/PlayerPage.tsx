@@ -8,7 +8,7 @@ import { Stat } from "@/app/components/profile/Stat";
 import { TwitchEntry } from "@/app/components/profile/TwitchEntry";
 import { NPHStat } from "@/app/components/profile/NPHStat";
 import BastionFort from "@/app/components/BastionFort";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { UserColoursContext, UsersContext } from "@/app/contexts";
 import { defaultNameColor, getDarkerColor, getDisplayName, getNameColor, getUserColours } from "@/app/utils";
 import Box from "@mui/material/Box";
@@ -32,6 +32,11 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
     const nameColor = getNameColor(users, uuid)
     const colours : any = getUserColours(users, uuid)
     const [pendingMoreRuns, setPendingMoreRuns] = useState(false);
+
+    useEffect(() => {
+        router.prefetch(`/player/${name}/runs`);
+    }, []);
+
     return (
         <UsersContext.Provider value={users}>
             <UserColoursContext.Provider value={colours}>
