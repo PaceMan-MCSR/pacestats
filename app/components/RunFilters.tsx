@@ -124,7 +124,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                             }
                                         ]
                                     },
-                                ].map((preset) => (
+                                ].map((preset, idx) => (
                                     <Button
                                         color={"primary"}
                                         variant={"contained"}
@@ -134,6 +134,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                         sx={{
                                             marginRight: 1
                                         }}
+                                        key={idx}
                                     >{preset.label}</Button>
                                 ))}
                         </div>

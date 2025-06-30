@@ -18,7 +18,7 @@ import BastionFort from "@/app/components/BastionFort";
 import RunFilters from "@/app/components/RunFilters";
 import moment from 'moment';
 
-export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
+export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
     const [filters, setFilters] = useState([] as {
         column: string,
         operatorValue: string,
@@ -29,11 +29,14 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
     const ref = useGridApiRef();
     const router = useRouter()
 
-    const rows = runs.filter((run) => {
+    const rows = runs.filter((run: any) => {
         for (const filter of filters) {
             if(filter.column === 'date'){
                 // @ts-ignore
-                const date = run.lastUpdated
+                let date = run.lastUpdated
+                if(typeof date === 'string'){
+                    date = new Date(date);
+                }
                 const filterDate = new Date(filter.value);
                 if (filter.operatorValue === 'before' && date > filterDate) {
                     return false;
@@ -66,6 +69,11 @@ export default function RecentRuns({runs, bf}: { runs: {}[], bf: boolean }) {
             }
         }
         return true;
+    }).map((run: any) => {
+        return {
+            ...run,
+            lastUpdated: typeof run.lastUpdated === 'string' ? new Date(run.lastUpdated) : run.lastUpdated,
+        }
     });
 
     const small = useMediaQuery('(max-width: 768px)');

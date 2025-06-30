@@ -1,4 +1,4 @@
-import mysql, { RowDataPacket } from 'mysql2/promise';
+import mysql from 'mysql2/promise';
 import Redis from 'ioredis';
 import dotenv from 'dotenv';
 
@@ -541,6 +541,7 @@ async function calculateAndStorePlayerStats(days: number) {
         "end",
         "finish"
     ]
+    const pipeline = redis.pipeline();
     for (const user of users) {
         const uuid = user.id;
         const data: { [category: string]: { [filter: number]: { ranking: number, value: number } } } = {}
@@ -563,8 +564,9 @@ async function calculateAndStorePlayerStats(days: number) {
                 }
             }
         }
-        redis.call('JSON.SET', `playerStats:${uuid}:${days}day`, '$', JSON.stringify(data));
+        pipeline.call('JSON.SET', `playerStats:${uuid}:${days}day`, '$', JSON.stringify(data));
     }
+    await pipeline.exec();
     console.log(`\n✅ Successfully cached player stats for ${days} days in Redis.`)
 }
 
@@ -665,11 +667,14 @@ async function calculateAndStoreUserData() {
 
         const userSetResult = await redis.call('JSON.SET', 'users', '$', JSON.stringify(finalUserList));
 
+        const pipeline = redis.pipeline();
+
         for(const t of Object.keys(twitchDetailsMap)) {
             if (twitchDetailsMap[t].length > 0) {
-                redis.call('JSON.SET', `users:twitch_details:${t}`, '$', JSON.stringify(twitchDetailsMap[t]));
+                pipeline.call('JSON.SET', `users:twitch_details:${t}`, '$', JSON.stringify(twitchDetailsMap[t]));
             }
         }
+        await pipeline.exec();
 
         if (userSetResult !== 'OK') {
             console.error("Failed to set 'users' in Redis:", userSetResult);
@@ -680,20 +685,6 @@ async function calculateAndStoreUserData() {
     } catch (error) {
         console.error("An error occurred during updateUserCache:", error);
     }
-}
-
-export interface NPHResult {
-    rtanph: number;
-    rnph: number;
-    lnph: number;
-    count: number;
-    avg: number;
-    playtime: number;
-    walltime: number;
-    resets: number;
-    totalResets: number;
-    seedsPlayed: number;
-    rpe: number;
 }
 
 export function roundNumber(num: number, decimals: number = 2) {
@@ -711,21 +702,6 @@ interface NetherPaceRow {
     time: number;     // UNIX timestamp in seconds
     resets: number;
     totalResets: number;
-}
-
-// Type for the final calculated data for a single player
-interface NphData {
-    rtanph: number;      // Nethers per hour (real-time)
-    rnph: number;        // Nethers per hour (raw playtime)
-    lnph: number;        // Nethers per hour (loadless playtime)
-    count: number;       // Total nethers counted
-    avg: number;         // Average nether entry time
-    playtime: number;    // Total playtime in ms
-    walltime: number;    // Total walltime in ms
-    resets: number;      // Total resets during these sessions
-    totalResets: number; // Player's all-time total resets
-    seedsPlayed: number; // Percentage of seeds entered
-    rpe: number;         // Resets per enter
 }
 
 async function calculateAndStoreNph(days: number) {
@@ -749,6 +725,7 @@ async function calculateAndStoreNph(days: number) {
     }, {} as Record<string, NetherPaceRow[]>);
 
     const hoursBetween = days * 24;
+    const pipeline = redis.pipeline();
 
     // 3. Process each player's grouped data
     for (const uuid in groupedByUuid) {
@@ -819,8 +796,9 @@ async function calculateAndStoreNph(days: number) {
             seedsPlayed: roundNumber(resets > 0 ? (enters / resets) * 100 : 0),
             rpe: roundNumber(resets / nethers) // `nethers` is guaranteed to be > 0 here
         };
-        redis.call('JSON.SET', `nph:${uuid}:${days}day`, '$', JSON.stringify(nph));
+        pipeline.call('JSON.SET', `nph:${uuid}:${days}day`, '$', JSON.stringify(nph));
     }
+    await pipeline.exec()
     console.log("Cached NPH data for the last", days, "days in Redis.");
 }
 

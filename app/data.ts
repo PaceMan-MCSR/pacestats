@@ -57,6 +57,69 @@ export async function fetchTwitchesFromRedis(uuid: string) {
     return parsedData[0];
 }
 
+async function getTheMostRecentOfRuns(uuid: string){
+    const [rows, fields] = await (await getConn()).execute(
+        `SELECT id, nether, bastion, fortress, 
+        CASE
+            WHEN bastion is null and fortress is null THEN null
+            WHEN bastion is null and fortress is not null THEN fortress
+            WHEN bastion is not null and fortress is null THEN bastion 
+            WHEN bastion <= fortress then bastion 
+            ELSE fortress 
+        END as first_structure, 
+        CASE 
+            WHEN bastion is null and fortress is null THEN null
+            WHEN bastion is null and fortress is not null THEN null
+            WHEN bastion is not null and fortress is null THEN null
+            WHEN bastion <= fortress then fortress
+            ELSE bastion 
+        END as second_structure, 
+        first_portal,
+        stronghold, 
+        end,
+        finish, 
+        lastUpdated,
+        vodId,
+        twitch
+    FROM pace
+    WHERE uuid=? AND lastUpdated > NOW() - INTERVAL 1 HOUR ORDER BY id DESC;`,
+        [uuid]
+    )
+    return rows
+}
+
+function mergeRuns(baseRuns: any[], newRuns: any[]): any[] {
+    // 1. Create a Map of the new runs for efficient O(1) lookups by ID.
+    const newRunsMap = new Map<string, any>(newRuns.map(run => [run.id, run]));
+
+    // 2. Iterate through the base runs. If a run exists in our map, use the new
+    //    version and remove it from the map. Otherwise, keep the old version.
+    const updatedRuns = baseRuns.map(run => {
+        if (newRunsMap.has(run.id)) {
+            const updatedRun = newRunsMap.get(run.id)!;
+            newRunsMap.delete(run.id); // Remove it so we know it's been processed
+            return updatedRun;
+        }
+        return run; // Keep the original run
+    });
+
+    // 3. At this point, newRunsMap only contains runs that were not in the base list.
+    //    Append these new runs to the end of our result.
+    const result = [...updatedRuns, ...newRunsMap.values()];
+
+    return result;
+}
+
+export async function fetchAllPlayerRunsFromRedis(uuid: string){
+    const jsonString = await redis.call('JSON.GET', `playerRuns:${uuid}`, '$');
+    if (!jsonString) {
+        return [];
+    }
+    const parsedData = JSON.parse(jsonString as string);
+    const recentRuns = await getTheMostRecentOfRuns(uuid) as any;
+    return mergeRuns(parsedData[0], recentRuns);
+}
+
 export async function fetchNphFromRedis(uuid: string, days: number) {
     const jsonString = await redis.call('JSON.GET', `nph:${uuid}:${days}day`, '$');
     if (!jsonString) {
