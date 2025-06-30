@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useContext, useEffect, useTransition } from "react";
+import { useContext, useEffect, useState, useTransition } from "react";
 import { UserColoursContext } from "@/app/contexts";
 import Box from "@mui/material/Box";
 import { getDarkerColor } from "@/app/utils";
@@ -13,6 +13,7 @@ export default function RangeChange() {
     const searchParams = useSearchParams();
     const [isPendinga, startTransition] = useTransition();
     const isPending = false;
+    const [isLoading, setIsLoading] = useState(true);
 
     // Get current 'days' value from URL
     const days = parseInt(searchParams.get('days') || '30');
@@ -36,11 +37,12 @@ export default function RangeChange() {
     };
 
     useEffect(() => {
+        setIsLoading(false);
         router.prefetch(`${pathname}?days=1`);
         router.prefetch(`${pathname}?days=7`);
         router.prefetch(`${pathname}?days=30`);
         router.prefetch(`${pathname}?days=9999`);
-        router.prefetch("/stats")
+        router.prefetch("/")
     }, []);
 
     return (
@@ -76,28 +78,29 @@ export default function RangeChange() {
             <button
                 className={"btn " + (days === 1 ? "btn-primary" : "btn-dark")}
                 onMouseDown={() => handleDaysChange(1)}
-                disabled={isPending} // Disable button during navigation
+                disabled={isLoading} // Disable button during navigation
             >
                 24 hours
             </button>
             <button
                 className={"btn " + (days === 7 ? "btn-primary" : "btn-dark")}
                 onMouseDown={() => handleDaysChange(7)}
-                disabled={isPending}
+                disabled={isLoading}
             >
                 7 days
             </button>
             <button
                 className={"btn " + (days === 30 ? "btn-primary" : "btn-dark")}
                 onMouseDown={() => handleDaysChange(30)}
-                disabled={isPending}
+                onClick={() => handleDaysChange(30)}
+                disabled={isLoading}
             >
                 30 days
             </button>
             <button
                 className={"btn " + (days === 9999 ? "btn-primary" : "btn-dark")}
                 onMouseDown={() => handleDaysChange(9999)}
-                disabled={isPending}
+                disabled={isLoading}
             >
                 Lifetime
             </button>

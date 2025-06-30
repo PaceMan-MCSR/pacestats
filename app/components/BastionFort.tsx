@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useContext } from "react";
+import { useContext, useEffect, useState } from "react";
 import { UserColoursContext } from "@/app/contexts";
 import Box from "@mui/material/Box";
 import { getDarkerColor } from "@/app/utils";
@@ -11,6 +11,12 @@ export default function BastionFort({bastionFort, setBastionFort}: { bastionFort
     const router = useRouter()
     const paramString = searchParams.toString()
     const colours = useContext(UserColoursContext)
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        setIsLoading(false);
+    }, []);
+
     return <Box sx={colours?.isCustom ?{
         '& button': {
             backgroundColor: `#${colours.fg}`,
@@ -28,6 +34,7 @@ export default function BastionFort({bastionFort, setBastionFort}: { bastionFort
                 backgroundColor: `#${colours.fg}`,
                 ...colours.fgText
             } : {}}
+            disabled={isLoading}
             onClick={() => {
                 const params = new URLSearchParams(paramString)
                 if (bastionFort) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Collapse } from "react-bootstrap";
 
 export default function FilterChange() {
@@ -10,6 +10,7 @@ export default function FilterChange() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const [isPending, startTransition] = useTransition();
+    const [isLoading, setIsLoading] = useState(true);
 
     // Directly get the category from search params, with a default value. This is cleaner.
     const category = searchParams.get('category') || 'count_avg';
@@ -20,12 +21,20 @@ export default function FilterChange() {
     // New navigation handler using the App Router
     const handleCategoryChange = (newCategory: string) => {
         const newParams = new URLSearchParams(searchParams.toString());
-        newParams.set('category', newCategory);
+        if(newCategory === "") {
+            newParams.delete('category'); // Remove the category if it's empty
+        } else {
+            newParams.set('category', newCategory); // Set the new category
+        }
 
         startTransition(() => {
             router.push(`${pathname}?${newParams.toString()}`);
         });
     };
+
+    useEffect(() => {
+        setIsLoading(false);
+    }, []);
 
     return (
         <div
@@ -41,7 +50,7 @@ export default function FilterChange() {
                 type="button"
                 onMouseDown={() => setToggled(!toggled)}
                 // Also disable the toggle button during navigation
-                disabled={isPending}
+                disabled={isLoading}
             >
                 Toggle category
             </button>
@@ -49,8 +58,7 @@ export default function FilterChange() {
                 <div className="filterButtons" id="filterButtons">
                     <button
                         className={"btn mt-3 " + (category === "count_avg" ? "btn-primary" : "btn-dark")}
-                        onMouseDown={() => handleCategoryChange("count_avg")}
-                        disabled={isPending}
+                        onMouseDown={() => handleCategoryChange("")}
                     >
                         Qty + Average
                     </button>
