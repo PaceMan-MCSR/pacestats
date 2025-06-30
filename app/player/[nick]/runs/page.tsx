@@ -14,7 +14,6 @@ export default async function Page({params, searchParams}: {
     params: { nick: string },
     searchParams: { [key: string]: string | undefined }
 }) {
-    const st = Date.now();
     let bastionFort = searchParams["bastionFort"] === "true"
     let nick = params.nick
     if (nick === "jojoe77777" || nick === "jojoe" || nick === "COVID19") nick = "COVlD19"
@@ -43,7 +42,6 @@ export default async function Page({params, searchParams}: {
 
     const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
     const nameColor = getNameColor(userInfo, uuid)
-    console.log(`Fetched runs for ${realNick} in ${Date.now() - st}ms, ${recentRuns.length} runs found.`)
 
     return (<main className="main allRuns">
         <div className="container">
