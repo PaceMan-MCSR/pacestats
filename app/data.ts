@@ -1,14 +1,14 @@
 import {
-    CategoryType, formatTime,
+    CategoryType,
+    formatTime,
     getEventTime,
     getFirstStructure,
     getMinAAQty,
-    getMinQty,
     getSecondStructure,
     roundNumber
 } from "@/app/utils";
 import mysql from 'mysql2/promise';
-import {Entry, FastestEntry} from "@/app/types";
+import { Entry, FastestEntry } from "@/app/types";
 import WebSocket from 'ws';
 import Redis from "ioredis";
 
@@ -82,7 +82,7 @@ async function getTheMostRecentOfRuns(uuid: string){
         vodId,
         twitch
     FROM pace
-    WHERE uuid=? AND lastUpdated > NOW() - INTERVAL 1 HOUR ORDER BY id DESC;`,
+    WHERE uuid=? AND insertTime > NOW() - INTERVAL 1 HOUR ORDER BY id DESC;`,
         [uuid]
     )
     return rows
@@ -110,14 +110,33 @@ function mergeRuns(baseRuns: any[], newRuns: any[]): any[] {
     return result;
 }
 
+const csvDecodeRun = (csv: string): any => {
+    const parts = csv.split(',');
+    return {
+        id: parseInt(parts[0]),
+        nether: parseInt(parts[1]),
+        bastion: parseInt(parts[2]) || null,
+        fortress: parseInt(parts[3]) || null,
+        first_structure: parseInt(parts[4]) || null,
+        second_structure: parseInt(parts[5]) || null,
+        first_portal: parseInt(parts[6]) || null,
+        stronghold: parseInt(parts[7]) || null,
+        end: parseInt(parts[8]) || null,
+        finish: parseInt(parts[9]) || null,
+        lastUpdated: parseInt(parts[10]),
+        vodId: parts[11] || null,
+        twitch: parts[12] || null
+    };
+}
+
 export async function fetchAllPlayerRunsFromRedis(uuid: string){
-    const jsonString = await redis.call('JSON.GET', `playerRuns:${uuid}`, '$');
-    if (!jsonString) {
+    const csv = await redis.call('GET', `playerRunsOptimized:${uuid}`) as string;
+    if (!csv) {
         return [];
     }
-    const parsedData = JSON.parse(jsonString as string);
+    const runs = csv.split("\n").map((run: string) => csvDecodeRun(run));
     const recentRuns = await getTheMostRecentOfRuns(uuid) as any;
-    return mergeRuns(parsedData[0], recentRuns);
+    return mergeRuns(runs, recentRuns);
 }
 
 export async function fetchNphFromRedis(uuid: string, days: number) {
