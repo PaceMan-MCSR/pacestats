@@ -103,9 +103,7 @@ function mergeRuns(baseRuns: any[], newRuns: any[]): any[] {
         return run; // Keep the original run
     });
 
-    // 3. At this point, newRunsMap only contains runs that were not in the base list.
-    //    Append these new runs to the end of our result.
-    const result = [...updatedRuns, ...newRunsMap.values()];
+    const result = [...newRunsMap.values(), ...updatedRuns];
 
     return result;
 }
