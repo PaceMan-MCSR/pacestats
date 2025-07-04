@@ -77,7 +77,8 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
                                     <div className="openRuns">
                                         <Link href={`/player/${name}/runs`} onMouseEnter={() => {
                                             router.prefetch(`/player/${name}/runs`);
-                                        }} onMouseDown={() => {
+                                        }} onMouseDown={(e) => {
+                                            if (e.button !== 0) return; // Only handle left mouse button
                                             setPendingMoreRuns(true);
                                             router.push(`/player/${name}/runs`);
                                         }}>

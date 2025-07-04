@@ -77,21 +77,30 @@ export default function RangeChange() {
         >
             <button
                 className={"btn " + (days === 1 ? "btn-primary" : "btn-dark")}
-                onMouseDown={() => handleDaysChange(1)}
+                onMouseDown={(e) => {
+                    if (e.button !== 0) return; // Only handle left mouse button
+                    handleDaysChange(1)
+                }}
                 disabled={isLoading} // Disable button during navigation
             >
                 24 hours
             </button>
             <button
                 className={"btn " + (days === 7 ? "btn-primary" : "btn-dark")}
-                onMouseDown={() => handleDaysChange(7)}
+                onMouseDown={(e) => {
+                    if (e.button !== 0) return; // Only handle left mouse button
+                    handleDaysChange(7)
+                }}
                 disabled={isLoading}
             >
                 7 days
             </button>
             <button
                 className={"btn " + (days === 30 ? "btn-primary" : "btn-dark")}
-                onMouseDown={() => handleDaysChange(30)}
+                onMouseDown={(e) => {
+                    if (e.button !== 0) return; // Only handle left mouse button
+                    handleDaysChange(30)
+                }}
                 onClick={() => handleDaysChange(30)}
                 disabled={isLoading}
             >
@@ -99,7 +108,10 @@ export default function RangeChange() {
             </button>
             <button
                 className={"btn " + (days === 9999 ? "btn-primary" : "btn-dark")}
-                onMouseDown={() => handleDaysChange(9999)}
+                onMouseDown={(e) => {
+                    if (e.button !== 0) return; // Only handle left mouse button
+                    handleDaysChange(9999)
+                }}
                 disabled={isLoading}
             >
                 Lifetime

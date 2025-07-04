@@ -14,7 +14,8 @@ export default function BoardLink({name, uuid, url, linkUrl}: {name: string, uui
         className="boardLink"
         href={linkUrl}
         onMouseEnter={() => router.prefetch(`/player/${name}`)}
-        onMouseDown={() => {
+        onMouseDown={(e) => {
+            if (e.button !== 0) return; // Only handle left mouse button
             router.push(`/player/${name}`);
             setPending(true);
         }}>
