@@ -57,6 +57,15 @@ export async function fetchTwitchesFromRedis(uuid: string) {
     return parsedData[0];
 }
 
+export async function fetchAllUsersFromRedis() {
+    const jsonString = await redis.call('JSON.GET', `users`, '$');
+    if (!jsonString) {
+        return []
+    }
+    const parsedData = JSON.parse(jsonString as string);
+    return parsedData[0];
+}
+
 async function getTheMostRecentOfRuns(uuid: string){
     const [rows, fields] = await (await getConn()).execute(
         `SELECT id, nether, bastion, fortress, 
@@ -260,7 +269,8 @@ const ttls = {
     getPBs: 10,
     getLowestId: 60,
     getHighestId: 60,
-    getRunsPaginated: 60
+    getRunsPaginated: 60,
+    fetchAllUsersFromRedis: 60
 }
 
 export const getLiveRuns = async () => {

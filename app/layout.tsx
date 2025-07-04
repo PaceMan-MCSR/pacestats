@@ -5,7 +5,7 @@ import "./globals.css";
 import BootstrapLoader from "@/app/components/BootstrapLoader";
 import {inter} from "@/app/styles/fonts";
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v14-appRouter';
-import { getAllUserInfo, getAllUsers, getCached } from "@/app/data";
+import { fetchAllUsersFromRedis, getAllUserInfo, getAllUsers, getCached } from "@/app/data";
 import Header from "@/app/Header";
 
 export const metadata: Metadata = {
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({children}: Readonly<{
     children: React.ReactNode;
 }>) {
-    const users = await getCached(getAllUsers, "getAllUsers");
+    const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis");
     const userInfo = await getCached(getAllUserInfo, "getAllUserInfo");
     return (
         <html lang="en">
