@@ -18,10 +18,10 @@ export function Stat({category, headUrl, name, days, data}: {
     let avg = data[CategoryType.AVG]
     let fastest = data[CategoryType.FASTEST]
     let conversion = data[CategoryType.CONVERSION]
+    const colours = useContext(UserColoursContext)
     if(count === undefined){
         return null;
     }
-    const colours = useContext(UserColoursContext)
     return <Box className="stat mb-4" onClick={() => {setFocus(!focus)}} sx={colours.isCustom ? {
         backgroundColor: `#${colours?.fg} !important`,
         borderColor: `#${getDarkerColor(colours?.fg, 0.6)} !important`,

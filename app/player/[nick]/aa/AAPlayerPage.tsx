@@ -10,7 +10,7 @@ import {NPHStat} from "@/app/components/profile/NPHStat";
 import BastionFort from "@/app/components/BastionFort";
 import {useState} from "react";
 import {AARecentRuns} from "@/app/components/profile/AARecentRuns";
-export default async function AAPlayerPage({name, uuid, recentRuns, twitches, nph, data, days}: {
+export default function AAPlayerPage({name, uuid, recentRuns, twitches, nph, data, days}: {
     name: string,
     uuid: string,
     recentRuns: {},

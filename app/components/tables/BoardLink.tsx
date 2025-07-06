@@ -13,10 +13,10 @@ export default function BoardLink({name, uuid, url, linkUrl}: {name: string, uui
     return <Link
         className="boardLink"
         href={linkUrl}
-        onMouseEnter={() => router.prefetch(`/player/${name}`)}
+        onMouseEnter={() => router.prefetch(linkUrl)}
         onMouseDown={(e) => {
             if (e.button !== 0) return; // Only handle left mouse button
-            router.push(`/player/${name}`);
+            router.push(linkUrl);
             setPending(true);
         }}>
         <p className="playerName" style={{opacity: pending ? 0.7 : 1.0, color: getNameColor(users, uuid)}}>

@@ -2,10 +2,8 @@
 
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
 import {formatIfNotNull} from "@/app/utils";
-import {useRouter} from "next/navigation";
 
-export async function AARecentRuns({runs}: { runs: {} }) {
-    const router = useRouter()
+export function AARecentRuns({runs}: { runs: {} }) {
     return <div className="recentRuns">
         <h4 className="runsHeader">Recent AA paces</h4>
         <div style={{textAlign: "center"}}>
@@ -17,7 +15,7 @@ export async function AARecentRuns({runs}: { runs: {} }) {
         <table className="table table-dark table-bordered table-sm noHover">
             <thead>
             <tr className="paceHeader">
-                <th>Time</th>
+                <th style={{width: "125px"}}>Time</th>
                 <th>
                     <img src="/stats/nether.webp" alt="Nether" className="icon d-md-none"/>
                     <p className="d-none d-md-inline">Nether</p>
