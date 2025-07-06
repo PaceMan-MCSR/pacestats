@@ -61,36 +61,36 @@ export default function FontPicker({output}: {output: any}) {
         <p className="fontExample" style={{fontFamily: selectedFont}}>Font: {selectedFont}</p>
         <Select placeholder="Select font" maxMenuHeight={225}
                 options={fonts as unknown as GroupBase<string>[]} styles={{
-                    option: (baseStyles, state) => ({
+                    option: (baseStyles: any, state: any) => ({
                         ...baseStyles,
                         color: 'rgb(230, 230, 230)',
                         backgroundColor: state.isFocused ? 'rgb(8, 8, 11)' : 'rgb(18, 18, 21)',
                     }),
-                    control: (baseStyles, state) => ({
+                    control: (baseStyles: any, state: any) => ({
                         ...baseStyles,
                         backgroundColor: 'rgb(18, 18, 21)',
                         color: 'white',
                         border: '1px solid rgb(10, 10, 10)',
                     }),
-                    menu: (baseStyles, state) => ({
+                    menu: (baseStyles: any, state: any) => ({
                         ...baseStyles,
                         backgroundColor: 'rgb(18, 18, 21)',
                         border: '1px solid rgb(10, 10, 10)',
                     }),
-                    singleValue: (baseStyles, state) => ({
+                    singleValue: (baseStyles: any, state: any) => ({
                         ...baseStyles,
                         color: 'rgb(230, 230, 230)',
                     }),
-                    indicatorSeparator: (baseStyles, state) => ({
+                    indicatorSeparator: (baseStyles: any, state: any) => ({
                         ...baseStyles,
                         backgroundColor: 'rgb(10, 10, 10)',
                     }),
-                    input: (baseStyles, state) => ({
+                    input: (baseStyles: any, state: any) => ({
                         ...baseStyles,
                         color: 'rgb(230, 230, 230)',
                     })
                 }}
-                theme={(theme) => ({
+                theme={(theme: any) => ({
                     ...theme,
                     colors: {
                         ...theme.colors,

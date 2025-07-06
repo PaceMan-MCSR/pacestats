@@ -6,7 +6,7 @@ import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Tooltip from "react-bootstrap/Tooltip";
 
 function useInterval(callback: () => any, delay: number) {
-    const savedCallback = useRef();
+    const savedCallback = useRef(undefined);
 
     // Remember the latest callback.
     useEffect(() => {

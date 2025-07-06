@@ -328,7 +328,9 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
                 kind: PrefetchKind.FULL
             })
         }
+        // @ts-ignore
         ref.current.subscribeEvent('renderedRowsIntervalChange', resizeHandler);
+        // @ts-ignore
         ref.current.subscribeEvent('rowMouseOver', hoverHandler);
         window.addEventListener('resize', resize);
         return () => {

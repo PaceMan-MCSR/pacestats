@@ -9,7 +9,8 @@ import Link from "next/link";
 import {fixDisplayName} from "@/app/utils";
 import PlayerPage from "@/app/player/[nick]/PlayerPage";
 
-export async function generateMetadata({params}: { params: { nick: string } }) {
+export async function generateMetadata(props: { params: Promise<{ nick: string }> }) {
+    const params = await props.params;
     let nick = params.nick
     if (nick === "jojoe77777" || nick === "jojoe" || nick === "COVID19") nick = "COVlD19"
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", nick)
@@ -40,10 +41,14 @@ export async function generateMetadata({params}: { params: { nick: string } }) {
     }
 }
 
-export default async function Page({params, searchParams}: {
-    params: { nick: string },
-    searchParams: { [key: string]: string | undefined }
-}) {
+export default async function Page(
+    props: {
+        params: Promise<{ nick: string }>,
+        searchParams: Promise<{ [key: string]: string | undefined }>
+    }
+) {
+    const searchParams = await props.searchParams;
+    const params = await props.params;
     let bastionFort = searchParams["bastionFort"] === "true"
     let days: number = parseInt(searchParams["days"] || "30")
     if (isNaN(days)) {

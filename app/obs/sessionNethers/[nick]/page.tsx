@@ -1,13 +1,18 @@
-'use client'
+'use client';
+import { use } from "react";
 
 import '../../../styles/obs.css'
 
 import SessionNethers from "@/app/obs/sessionNethers/[nick]/SessionNethers";
 
-export default function Page({params, searchParams}: {
-    params: { nick: string },
-    searchParams: { [key: string]: string | undefined }
-}) {
+export default function Page(
+    props: {
+        params: Promise<{ nick: string }>,
+        searchParams: Promise<{ [key: string]: string | undefined }>
+    }
+) {
+    const searchParams = use(props.searchParams);
+    const params = use(props.params);
     let hours: number = parseInt(searchParams["hours"] || "24")
     if (isNaN(hours)) {
         hours = 24

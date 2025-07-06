@@ -10,10 +10,14 @@ import {Suspense} from "react";
 import { Button } from "@mui/material";
 import { defaultNameColor, getNameColor } from "@/app/utils";
 
-export default async function Page({params, searchParams}: {
-    params: { nick: string },
-    searchParams: { [key: string]: string | undefined }
-}) {
+export default async function Page(
+    props: {
+        params: Promise<{ nick: string }>,
+        searchParams: Promise<{ [key: string]: string | undefined }>
+    }
+) {
+    const searchParams = await props.searchParams;
+    const params = await props.params;
     let bastionFort = searchParams["bastionFort"] === "true"
     let nick = params.nick
     if (nick === "jojoe77777" || nick === "jojoe" || nick === "COVID19") nick = "COVlD19"

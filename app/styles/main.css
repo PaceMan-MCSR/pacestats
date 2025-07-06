@@ -477,26 +477,6 @@ td p {
     opacity: 1;
 }
 
-.wrapper>div>input::-webkit-input-placeholder:-ms-input-placeholder {
-    color: grey;
-}
-
-.wrapper>div>input::-moz-placeholder:-ms-input-placeholder {
-    color: grey;
-}
-
-.wrapper>div>input:-ms-input-placeholder:-ms-input-placeholder {
-    color: grey;
-}
-
-.wrapper>div>input::placeholder:-ms-input-placeholder {
-    color: grey;
-}
-
-.wrapper>div>input::placeholder::-ms-input-placeholder {
-    color: grey;
-}
-
 .searchBox .clear-icon {
     margin-top: -2px;
 }

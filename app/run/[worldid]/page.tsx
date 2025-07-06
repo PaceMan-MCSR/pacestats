@@ -2,7 +2,8 @@ import RunPage from "@/app/run/[worldid]/RunPage";
 import {getCached, getWorld} from "@/app/data";
 import {formatTime} from "@/app/utils";
 
-export async function generateMetadata({params}: { params: { worldid: string } }) {
+export async function generateMetadata(props: { params: Promise<{ worldid: string }> }) {
+    const params = await props.params;
     const worldId = params.worldid
     const run = await getCached(getWorld, "getWorld", worldId)
     if(run === null) {
@@ -61,8 +62,11 @@ export async function generateMetadata({params}: { params: { worldid: string } }
 }
 
 // wrap in server component so we can generate embed metadata
-export default function Page({params}: {
-    params: { worldid: string }
-}) {
+export default async function Page(
+    props: {
+        params: Promise<{ worldid: string }>
+    }
+) {
+    const params = await props.params;
     return <RunPage params={params} />
 }

@@ -1,13 +1,18 @@
-'use client'
+'use client';
+import { use } from "react";
 
 import '../../../styles/obs.css'
 import Session from "@/app/obs/session/[nick]/Session";
 import CombinedStats from "@/app/obs/combinedStats/[names]/CombinedStats";
 
-export default function Page({params, searchParams}: {
-    params: { names: string },
-    searchParams: { [key: string]: string | undefined }
-}) {
+export default function Page(
+    props: {
+        params: Promise<{ names: string }>,
+        searchParams: Promise<{ [key: string]: string | undefined }>
+    }
+) {
+    const searchParams = use(props.searchParams);
+    const params = use(props.params);
     let hours: number = parseInt(searchParams["hours"] || "24")
     let showAvg: boolean = searchParams["showAvg"] === "true"
     let dynamic: boolean = searchParams["dynamic"] === "true"

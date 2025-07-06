@@ -8,10 +8,13 @@ import ResetScroll from "@/app/components/ResetScroll";
 import {Suspense} from "react";
 import AARecentRuns from "@/app/player/[nick]/runs/aa/AARecentRuns";
 
-export default async function Page({params, searchParams}: {
-    params: { nick: string },
-    searchParams: { [key: string]: string | undefined }
-}) {
+export default async function Page(
+    props: {
+        params: Promise<{ nick: string }>,
+        searchParams: Promise<{ [key: string]: string | undefined }>
+    }
+) {
+    const params = await props.params;
     let nick = params.nick
     if (nick === "jojoe77777" || nick === "jojoe" || nick === "COVID19") nick = "COVlD19"
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", nick)

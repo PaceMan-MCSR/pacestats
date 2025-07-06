@@ -1,13 +1,18 @@
-'use client'
+'use client';
+import { use } from "react";
 
 import '../../../styles/obs.css'
 import Session from "@/app/obs/session/[nick]/Session";
 import CombinedNethers from "@/app/obs/combinedNethers/[names]/CombinedNethers";
 
-export default function Page({params, searchParams}: {
-    params: { names: string },
-    searchParams: { [key: string]: string | undefined }
-}) {
+export default function Page(
+    props: {
+        params: Promise<{ names: string }>,
+        searchParams: Promise<{ [key: string]: string | undefined }>
+    }
+) {
+    const searchParams = use(props.searchParams);
+    const params = use(props.params);
     let hours: number = parseInt(searchParams["hours"] || "24")
     let demo: boolean = searchParams["demo"] === "true"
     let font: string = searchParams["font"] || "Minecraft"
