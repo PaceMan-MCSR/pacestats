@@ -10,10 +10,11 @@ export async function POST(request: NextRequest) {
         if (uuid === null) {
             return NextResponse.json({status: "error", message: "Invalid access key"}, {status: 401});
         }
-        if(body.resets > 20000 || body.resets == body.totalResets){
+        /*if(body.resets > 20000 || body.resets == body.totalResets){
             console.error("Rejecting reset count for  ", uuid, "resets:", body.resets, "totalResets:", body.totalResets, "time:", Date.now())
             return NextResponse.json({status: "error", message: "Rejecting because reset count"}, {status: 400});
-        }
+        }*/
+        body.resets = Math.min(body.resets, 20000)
         const gameData = JSON.parse(body.gameData)
         const worldId = gameData.worldId
         const gameVersion = gameData.gameVersion
