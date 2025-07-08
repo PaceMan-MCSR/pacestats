@@ -32,19 +32,15 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
         };
     });
 
-    const updateUrl = useDebouncedCallback((model: GridPaginationModel) => {
-        const currentParams = new URLSearchParams(Array.from(searchParams.entries()));
-        currentParams.set('page', String(model.page));
-        currentParams.set('pageSize', String(model.pageSize));
-        router.replace(`${pathname}?${currentParams.toString()}`, {scroll: false});
-    }, 20); // 300ms debounce delay
-
     useEffect(() => {
         if (paginationModel.page !== Number(searchParams.get('page') ?? '0') ||
             paginationModel.pageSize !== Number(searchParams.get('pageSize') ?? '25')) {
-            updateUrl(paginationModel);
+            const currentParams = new URLSearchParams(Array.from(searchParams.entries()));
+            currentParams.set('page', String(paginationModel.page));
+            currentParams.set('pageSize', String(paginationModel.pageSize));
+            window.history.replaceState({}, '', `?${currentParams.toString()}`)
         }
-    }, [paginationModel, searchParams, updateUrl]);
+    }, [paginationModel, searchParams]);
 
     const handlePaginationModelChange = (newModel: GridPaginationModel) => {
         setPaginationModel(newModel);

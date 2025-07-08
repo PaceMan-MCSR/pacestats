@@ -20,6 +20,9 @@ export default function FilterChange() {
 
     // New navigation handler using the App Router
     const handleCategoryChange = (newCategory: string) => {
+        if (isPending) return; // Prevent multiple clicks during navigation
+        if (category === newCategory) return; // No change if the category is the same
+        if(category === "count_avg" && newCategory === "") return; // Prevent setting empty category if current is 'count_avg'
         const newParams = new URLSearchParams(searchParams.toString());
         if(newCategory === "") {
             newParams.delete('category'); // Remove the category if it's empty

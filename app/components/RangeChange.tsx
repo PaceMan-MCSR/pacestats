@@ -11,8 +11,7 @@ export default function RangeChange() {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
-    const [isPendinga, startTransition] = useTransition();
-    const isPending = false;
+    const [isPending, startTransition] = useTransition();
     const [isLoading, setIsLoading] = useState(true);
 
     // Get current 'days' value from URL
@@ -23,6 +22,8 @@ export default function RangeChange() {
 
     // This function now uses the router for client-side navigation
     const handleDaysChange = (newDays: number) => {
+        if(isPending) return;
+        if(days === newDays) return;
         // Create a new URLSearchParams object to avoid mutating the read-only one.
         const newParams = new URLSearchParams(searchParams.toString());
         newParams.set("days", newDays.toString());
