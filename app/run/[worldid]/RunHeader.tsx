@@ -23,7 +23,7 @@ export default function RunHeader() {
             <div className="row justify-content-center">
                 <div className="col-12 last-updated">
                     <p className="reset-text">
-                        Run was reset
+                        
                     </p>
                 </div>
             </div>
