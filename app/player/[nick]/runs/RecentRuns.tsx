@@ -2,23 +2,54 @@
 
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
 import { formatIfNotNull } from "@/app/utils";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
     DataGrid,
     DataGridProps,
     GridColDef,
-    useGridApiRef
+    useGridApiRef,
+    GridPaginationModel, GridRowProps, GridRow
 } from '@mui/x-data-grid';
-import React, { useEffect,useState } from "react";
+import React, { useEffect, useState } from "react";
 import useDebouncedCallback from "@restart/hooks/useDebouncedCallback";
 import { useMediaQuery } from "@mui/system";
 import { CircularProgress } from "@mui/material";
-import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 import BastionFort from "@/app/components/BastionFort";
 import RunFilters from "@/app/components/RunFilters";
 import moment from 'moment';
+import Link from "next/link";
 
 export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
+
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+
+    const [paginationModel, setPaginationModel] = useState<GridPaginationModel>(() => {
+        return {
+            page: Number(searchParams.get('page') ?? '0'),
+            pageSize: Number(searchParams.get('pageSize') ?? '25'),
+        };
+    });
+
+    const updateUrl = useDebouncedCallback((model: GridPaginationModel) => {
+        const currentParams = new URLSearchParams(Array.from(searchParams.entries()));
+        currentParams.set('page', String(model.page));
+        currentParams.set('pageSize', String(model.pageSize));
+        router.replace(`${pathname}?${currentParams.toString()}`, {scroll: false});
+    }, 20); // 300ms debounce delay
+
+    useEffect(() => {
+        if (paginationModel.page !== Number(searchParams.get('page') ?? '0') ||
+            paginationModel.pageSize !== Number(searchParams.get('pageSize') ?? '25')) {
+            updateUrl(paginationModel);
+        }
+    }, [paginationModel, searchParams, updateUrl]);
+
+    const handlePaginationModelChange = (newModel: GridPaginationModel) => {
+        setPaginationModel(newModel);
+    };
+
     const [filters, setFilters] = useState([] as {
         column: string,
         operatorValue: string,
@@ -27,14 +58,13 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
     }[])
     const [bastionFort, setBastionFort] = useState(bf)
     const ref = useGridApiRef();
-    const router = useRouter()
 
     const rows = runs.filter((run: any) => {
         for (const filter of filters) {
-            if(filter.column === 'date'){
+            if (filter.column === 'date') {
                 // @ts-ignore
                 let date = run.lastUpdated
-                if(typeof date === 'string'){
+                if (typeof date === 'string') {
                     date = new Date(date);
                 }
                 const filterDate = new Date(filter.value);
@@ -49,7 +79,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
                 }
                 continue;
             }
-            if(!run.hasOwnProperty(filter.column)){
+            if (!run.hasOwnProperty(filter.column)) {
                 return false;
             }
             // @ts-ignore
@@ -101,7 +131,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             field: 'bastion',
             headerName: 'Bastion',
             renderHeader: (params) => {
-                if(small){
+                if (small) {
                     return <img src="/stats/bastion.webp" alt="Bastion" className="icon"/>
                 }
                 return <span>Bastion</span>
@@ -112,7 +142,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             field: 'fortress',
             headerName: 'Fortress',
             renderHeader: (params) => {
-                if(small){
+                if (small) {
                     return <img src="/stats/fortress.webp" alt="Fortress" className="icon"/>
                 }
                 return <span>Fortress</span>
@@ -126,7 +156,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             field: 'first_structure',
             headerName: 'First Struct',
             renderHeader: (params) => {
-                if(small){
+                if (small) {
                     return <img src="/stats/struct1.png" alt="Structure 1" className="icon"/>
                 }
                 return <span>Struct 1</span>
@@ -135,7 +165,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             renderCell: (params) => {
                 const bastion = params.row.bastion;
                 const fortress = params.row.fortress;
-                if(bastion === null && fortress === null){
+                if (bastion === null && fortress === null) {
                     return null;
                 }
                 return formatIfNotNull(Math.min(bastion === null ? Infinity : bastion, fortress === null ? Infinity : fortress));
@@ -145,7 +175,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             field: 'second_structure',
             headerName: 'Second Structure',
             renderHeader: (params) => {
-                if(small){
+                if (small) {
                     return <img src="/stats/struct2.png" alt="Structure 2" className="icon"/>
                 }
                 return <span>Struct 2</span>
@@ -154,7 +184,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             renderCell: (params) => {
                 const bastion = params.row.bastion;
                 const fortress = params.row.fortress;
-                if(bastion === null || fortress === null){
+                if (bastion === null || fortress === null) {
                     return null;
                 }
                 return formatIfNotNull(Math.max(bastion, fortress));
@@ -169,7 +199,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             headerName: 'Date',
             minWidth: 130,
             renderCell: (params) => {
-                if(params.row.twitch !== null){
+                if (params.row.twitch !== null) {
                     return <>
                         <span className="liveIndicator"/>
                         <RelativeTimer start={params.row.lastUpdated / 1000} small={false}/>
@@ -183,7 +213,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             field: 'nether',
             headerName: 'Nether',
             renderHeader: (params) => {
-                if(small){
+                if (small) {
                     return <img src="/stats/nether.webp" alt="Nether" className="icon"/>
                 }
                 return <span>Nether</span>
@@ -196,7 +226,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             field: 'first_portal',
             headerName: 'First Portal',
             renderHeader: (params) => {
-                if(small){
+                if (small) {
                     return <img src="/stats/first_portal.webp" alt="First Portal" className="icon"/>
                 }
                 return <span>First Portal</span>
@@ -207,7 +237,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             field: 'stronghold',
             headerName: 'Stronghold',
             renderHeader: (params) => {
-                if(small){
+                if (small) {
                     return <img src="/stats/stronghold.webp" alt="Stronghold" className="icon"/>
                 }
                 return <span>Stronghold</span>
@@ -218,7 +248,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             field: 'end',
             headerName: 'End',
             renderHeader: (params) => {
-                if(small){
+                if (small) {
                     return <img src="/stats/end.webp" alt="End" className="icon"/>
                 }
                 return <span>End</span>
@@ -229,7 +259,7 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             field: 'finish',
             headerName: 'Finish',
             renderHeader: (params) => {
-                if(small){
+                if (small) {
                     return <img src="/stats/finish.webp" alt="Finish" className="icon"/>
                 }
                 return <span>Finish</span>
@@ -239,8 +269,10 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
     ];
 
     const styles = {
+        backgroundColor: "#181819",
         '& .MuiDataGrid-row': {
             backgroundColor: '#212529',
+            cursor: 'pointer',
         },
         '& .MuiDataGrid-footerContainer': {
             borderTop: '1px solid #16161a',
@@ -267,7 +299,9 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
         },
         '& .MuiDataGrid-cell': {
             borderRight: "0 !important",
-            paddingLeft: "3px"
+            paddingLeft: "3px",
+            color: "white !important",
+            textDecoration: "none !important",
         },
         '& .MuiDataGrid-cell:focus': {
             outline: 'none',
@@ -294,14 +328,20 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
         },
         '& .MuiDataGrid-columnHeaderTitleContainerContent span': {
             userSelect: 'none',
-        }
+        },
+        '& .MuiDataGrid-row:hover': {
+            backgroundColor: '#181819',
+        },
     }
 
     const props: Partial<DataGridProps> = {
         columnHeaderHeight: 40,
         rowHeight: 32,
         rowSelection: false,
-        pageSizeOptions: [{ value: 10, label: '10' }, { value: 25, label: '25' }, { value: 50, label: '50' }, { value: 100, label: '100' }],
+        pageSizeOptions: [{value: 10, label: '10'}, {value: 25, label: '25'}, {value: 50, label: '50'}, {
+            value: 100,
+            label: '100'
+        }],
     }
 
     const actuallyResize = () => {
@@ -320,23 +360,26 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
     }, 200);
 
     useEffect(() => {
+        const api = ref.current;
+        if (!api) {
+            return;
+        }
+
         const resizeHandler = () => {
             resize();
-        }
-        const hoverHandler = (row: any) => {
-            router.prefetch(`/run/${row.id}/`, {
-                kind: PrefetchKind.FULL
-            })
-        }
+        };
         // @ts-ignore
-        ref.current.subscribeEvent('renderedRowsIntervalChange', resizeHandler);
-        // @ts-ignore
-        ref.current.subscribeEvent('rowMouseOver', hoverHandler);
+        const unsubscribe = api.subscribeEvent('renderedRowsIntervalChange', resizeHandler);
         window.addEventListener('resize', resize);
+
         return () => {
+            if (typeof unsubscribe === 'function') {
+                unsubscribe();
+            }
             window.removeEventListener('resize', resize);
-        }
-    }, []);
+        };
+    }, [ref, resize]);
+
 
     return <div className="recentRunsFull paceHeader">
         <div className="row justify-content-center align-content-center">
@@ -366,17 +409,50 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
             columns={columns}
             rows={rows}
             apiRef={ref}
-            onRowClick={(params, e) => {
+            onRowClick={(params) => {
                 router.push("/run/" + params.row.id)
             }}
             disableColumnFilter={true}
             sx={styles}
-            initialState={{
-                pagination: {
-                    paginationModel: { pageSize: 25, page: 0 },
-                },
+            paginationModel={paginationModel}
+            onPaginationModelChange={handlePaginationModelChange}
+            slots={{
+                row: CustomRow
             }}
             {...props}
         />
     </div>
 }
+
+const CustomRow = React.forwardRef<HTMLDivElement, GridRowProps>((props, ref) => {
+    const router = useRouter();
+    return (
+        <Link
+            href={`/run/${props.row.id}`}
+            style={{
+                textDecoration: 'none',
+            }}
+            prefetch={false}
+        >
+            <GridRow
+                ref={ref}
+                {...props}
+                onMouseDownCapture={(event) => {
+                    if (event.button !== 0) {
+                        return;
+                    }
+                    event.preventDefault();
+                    if (event.currentTarget.dataset.id) {
+                        router.push("/run/" + event.currentTarget.dataset.id);
+                    }
+                }}
+                onMouseEnter={(event) => {
+                    if (event.currentTarget.dataset.id) {
+                        router.prefetch("/run/" + event.currentTarget.dataset.id);
+                    }
+                }}
+            />
+        </Link>
+    );
+});
+CustomRow.displayName = 'CustomRow';
