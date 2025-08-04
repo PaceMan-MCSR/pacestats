@@ -972,8 +972,10 @@ async function calculateAndStoreNph(days: number) {
 async function mmm() {
     conn = await getConn()
     // --- Run the main function ---
-    const days = [1, 7, 30]
-    await calculateAndStoreUserData();
+    const days = [9999]
+    if(days[0] !== 9999){
+        await calculateAndStoreUserData();
+    }
     for (const day of days) {
         await calculateAndStoreNph(day);
         await calculateAndStoreLeaderboards(day);
