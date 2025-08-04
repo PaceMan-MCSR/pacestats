@@ -39,6 +39,16 @@ async function fetchLeaderboardsFromRedis(days = 30) {
     return parsedData[0];
 }
 
+export async function fetchFastestLeaderboardsFromRedis(days = 30) {
+    const jsonString = await redis.call('JSON.GET', `fastestLeaderboards:${days}day`, '$');
+    if (!jsonString) {
+        console.error(`Error: Fastest lb not found in Redis.`);
+        throw new Error(`Fastest leaderboards for ${days} days not found in Redis.`)
+    }
+    const parsedData = JSON.parse(jsonString as string);
+    return parsedData[0];
+}
+
 export async function fetchPlayerStatsFromRedis(uuid: string, days = 30) {
     const jsonString = await redis.call('JSON.GET', `playerStats:${uuid}:${days}day`, '$');
     if (!jsonString) {
@@ -190,7 +200,6 @@ async function fetchTopLeaderboardsFromRedis(days = 30) {
     }
     const parsedData = JSON.parse(jsonString as string);
     return parsedData[0];
-
 }
 
 const connectDb = async () => {
@@ -270,7 +279,8 @@ const ttls = {
     getLowestId: 60,
     getHighestId: 60,
     getRunsPaginated: 60,
-    fetchAllUsersFromRedis: 60
+    fetchAllUsersFromRedis: 60,
+    fetchFastestLeaderboardsFromRedis: 60
 }
 
 export const getLiveRuns = async () => {

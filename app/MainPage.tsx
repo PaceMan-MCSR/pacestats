@@ -13,8 +13,9 @@ import BastionFort from "@/app/components/BastionFort";
 import {NPHTable} from "@/app/components/tables/NPHTable";
 import {UsersContext} from "@/app/contexts";
 
-export default function MainPage({searchParams, nph, lb, users}: {
+export default function MainPage({searchParams, nph, lb, fastest, users}: {
     lb: any,
+    fastest: any,
     nph: any,
     users: any,
     searchParams: { [key: string]: string | undefined } }
@@ -132,23 +133,23 @@ export default function MainPage({searchParams, nph, lb, users}: {
             )}
             {catType === CategoryType.FASTEST && (
                 <div className="row stats-row">
-                    <FastestTable catName="Fastest Nether" catId="nether" days={days}/>
+                    <FastestTable catName="Fastest Nether" catId="nether" days={days} lb={fastest}/>
                     {bastionFort && (
-                        <FastestTable catName="Fastest Bastion" catId="bastion" days={days}/>
+                        <FastestTable catName="Fastest Bastion" catId="bastion" days={days} lb={fastest}/>
                     )}
                     {bastionFort && (
-                        <FastestTable catName="Fastest Fortress" catId="fortress" days={days}/>
+                        <FastestTable catName="Fastest Fortress" catId="fortress" days={days} lb={fastest}/>
                     )}
                     {!bastionFort && (
-                        <FastestTable catName="Fastest Structure 1" catId="first_structure" days={days}/>
+                        <FastestTable catName="Fastest Structure 1" catId="first_structure" days={days} lb={fastest}/>
                     )}
                     {!bastionFort && (
-                        <FastestTable catName="Fastest Structure 2" catId="second_structure" days={days}/>
+                        <FastestTable catName="Fastest Structure 2" catId="second_structure" days={days} lb={fastest}/>
                     )}
-                    <FastestTable catName="Fastest First Portal" catId="first_portal" days={days}/>
-                    <FastestTable catName="Fastest Stronghold" catId="stronghold" days={days}/>
-                    <FastestTable catName="Fastest End Enter" catId="end" days={days}/>
-                    <FastestTable catName="Fastest Completion" catId="finish" days={days}/>
+                    <FastestTable catName="Fastest First Portal" catId="first_portal" days={days} lb={fastest}/>
+                    <FastestTable catName="Fastest Stronghold" catId="stronghold" days={days} lb={fastest}/>
+                    <FastestTable catName="Fastest End Enter" catId="end" days={days} lb={fastest}/>
+                    <FastestTable catName="Fastest Completion" catId="finish" days={days} lb={fastest}/>
                 </div>
             )}
             {catType === CategoryType.CONVERSION && (

@@ -707,7 +707,7 @@ async function calculateAndStoreFastest(days: number) {
         // remove empty values
         cat = cat.filter((a) => a.value > 0)
         cat = cat.sort((a, b) => a.value - b.value)
-        leaderboards[category] = cat
+        leaderboards[category] = cat.slice(0, 10)
     }
     redis.call('JSON.SET', `fastestLeaderboards:${days}day`, '$', JSON.stringify(leaderboards));
     console.log(`\n✅ Successfully cached fastest leaderboards for ${days} days in Redis.`)
