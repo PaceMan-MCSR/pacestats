@@ -2,7 +2,6 @@ import mysql from 'mysql2/promise';
 import Redis from 'ioredis';
 import dotenv from 'dotenv';
 
-// --- Setup and Configuration ---
 dotenv.config({ path: ".env.local" });
 
 const mysqlConfig = {
@@ -49,7 +48,7 @@ export const processAndSaveAllPlayerRuns = async (): Promise<void> => {
             acc[run.uuid] = "";
         }
         //acc[run.uuid].push(run);
-        acc[run.uuid] += csvEncodeRun(run) + '\n'; // Concatenate runs for the player);
+        acc[run.uuid] += csvEncodeRun(run) + '\n';
         return acc;
     }, {});
 
@@ -57,7 +56,6 @@ export const processAndSaveAllPlayerRuns = async (): Promise<void> => {
     const pipeline = redis.pipeline();
 
     for (const [uuid, runs] of Object.entries(runsByPlayer)) {
-        //pipeline.call('JSON.SET', `playerRuns:${uuid}`, '$', JSON.stringify(runs));
         pipeline.call('SET', `playerRunsOptimized:${uuid}`, (runs as string).trim()); // Store runs as a single string
     }
     console.log(`Processed runs for ${Object.keys(runsByPlayer).length} players in ${Date.now() - st1}ms.`);
@@ -96,6 +94,7 @@ const csvDecodeRun = (csv: string): any => {
     };
 }
 
+// just for perf benchmarking
 export const decodeAllRuns = async (): Promise<void> => {
     const st1 = Date.now();
     console.log('Decoding all runs from Redis...');
@@ -103,10 +102,9 @@ export const decodeAllRuns = async (): Promise<void> => {
     console.log(`Found ${keys.length} player runs in Redis.`);
 
     for (const key of keys) {
-        const runs = await redis.call('GET', key) as any;//await redis.get(key);
+        const runs = await redis.call('GET', key) as any;
         for(const run of runs.split('\n')){
             const decodedRun = csvDecodeRun(run);
-            //console.log(decodedRun); // Process the decoded run as needed
         }
     }
     console.log(`Decoded all runs in ${Date.now() - st1}ms.`);
@@ -114,13 +112,12 @@ export const decodeAllRuns = async (): Promise<void> => {
     console.log('Finished decoding all runs.');
 }
 
-async function mmm() {
+async function main() {
     conn = await getConn()
-    // --- Run the main function ---
     await processAndSaveAllPlayerRuns();
     //await decodeAllRuns();
     await conn.end();
     await redis.quit();
 }
 
-mmm();
+main();
