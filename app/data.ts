@@ -28,6 +28,13 @@ const boundedInteger = (value: unknown, fallback: number, min: number, max: numb
 const boundedEnvInteger = (value: string | undefined, fallback: number, min: number, max: number) =>
     boundedInteger(value, fallback, min, max);
 
+// mysql2 sends JavaScript numbers through the prepared-statement protocol as
+// DOUBLE. MySQL 8.0 assigns integer types to LIMIT markers (and retains inferred
+// marker types), which can reject those DOUBLE bindings with ER_WRONG_ARGUMENTS.
+// These values are already range-checked integers; sending their decimal form
+// lets MySQL cast them to the marker's inferred integer/interval type.
+const mysqlIntegerParam = (value: number): string => String(value);
+
 const intervalDays = (value: string | number, fallback = 30) => {
     const parsed = typeof value === "number"
         ? value
@@ -1229,7 +1236,7 @@ export const getAllAAData = async (interval: string = "30 DAY", filterCategory: 
          WHERE insertTime >= NOW() - INTERVAL ? DAY
          ORDER BY insertTime DESC, id DESC
          LIMIT ?;`,
-        [safeDays, safeLimit]
+        [mysqlIntegerParam(safeDays), mysqlIntegerParam(safeLimit)]
     )
     return rows
 }
@@ -1244,7 +1251,7 @@ export const getPlayerRuns = async (uuid: string, limit : number = 5) => {
         `SELECT id, nickname, uuid, twitch, nether, bastion, fortress, first_portal, stronghold, end, finish,
         lastUpdated, worldId, vodId, UNIX_TIMESTAMP(insertTime) AS time
         FROM pace WHERE uuid=? AND bastion > 0 AND fortress > 0 ORDER BY id DESC LIMIT ?;`,
-        [uuid, safeLimit]
+        [uuid, mysqlIntegerParam(safeLimit)]
     )
     return rows
 }
@@ -1255,7 +1262,7 @@ export const getRecentAARuns = async (uuid: string, limit : number = 5) => {
         `SELECT id, nickname, uuid, twitch, nether, bastion, fortress, stronghold, end, elytra, credits, finish,
         lastUpdated, NULL AS vodId, UNIX_TIMESTAMP(insertTime) AS time
         FROM aa WHERE uuid=? AND elytra > 0 ORDER BY id DESC LIMIT ?;`,
-        [uuid, safeLimit]
+        [uuid, mysqlIntegerParam(safeLimit)]
     )
     return rows
 }
@@ -1281,7 +1288,7 @@ export const getAllPlayerRuns = async (uuid: string, limit : number = 100) => {
         stronghold, end, finish, lastUpdated, worldId, vodId, vodOffset,
         UNIX_TIMESTAMP(insertTime) AS time, UNIX_TIMESTAMP(lastUpdated) AS updatedTime
         FROM pace WHERE uuid=? ORDER BY id DESC LIMIT ?;`,
-        [uuid, safeLimit]
+        [uuid, mysqlIntegerParam(safeLimit)]
     )
     return rows
 }
@@ -1383,7 +1390,7 @@ export const getAllPlayerRunsByPeriod = async (uuid: string, days: number, limit
     }
     const [rows, fields] = await (await getConn()).execute(
         query,
-        [uuid, safeDays, safeLimit]
+        [uuid, mysqlIntegerParam(safeDays), mysqlIntegerParam(safeLimit)]
     )
     return rows
 }
@@ -1397,7 +1404,7 @@ export const getNethersByPeriod = async (uuid: string, days: number, limit : num
     }
     const [rows, fields] = await (await getConn()).execute(
         query,
-        [uuid, safeDays, safeLimit]
+        [uuid, mysqlIntegerParam(safeDays), mysqlIntegerParam(safeLimit)]
     )
     return rows
 }
@@ -1430,7 +1437,7 @@ export const getRecentTimestamps = async (uuid: string, limit : number = 5, only
     }
     const [rows, fields] = await (await getConn()).execute(
         query,
-        [uuid, safeLimit]
+        [uuid, mysqlIntegerParam(safeLimit)]
     )
     return rows
 }
@@ -1666,7 +1673,7 @@ const calculateAALeaderboardsFromDatabase = async (interval: string = "30 DAY") 
         `SELECT id, nickname, uuid, 
         nether, bastion, fortress, stronghold, end, elytra, credits, finish
         FROM aa WHERE insertTime >= NOW() - INTERVAL ? DAY ORDER BY insertTime DESC, id DESC;`,
-        [safeDays]
+        [mysqlIntegerParam(safeDays)]
     )
 
     const nickMap = new Map<string, string>()
@@ -1805,7 +1812,7 @@ export const getNPHLeaderboards = async (days: number) => {
 
     const [rows, _] = await (await getConn()).execute<any[]>(
         query,
-        [safeDays]
+        [mysqlIntegerParam(safeDays)]
     );
     const nickMap = new Map<string, string>()
     let uuids: string[] = []
@@ -1900,7 +1907,7 @@ export const getFastestLeaderboards = async (interval: string = "30 DAY") => {
         nether, bastion, fortress, first_portal, second_portal, stronghold, end, finish,
         lootBastion, obtainObsidian, obtainCryingObsidian, obtainRod
         FROM pace WHERE insertTime >= NOW() - INTERVAL ? DAY ORDER BY insertTime DESC, id DESC;`,
-        [safeDays]
+        [mysqlIntegerParam(safeDays)]
     )
 
     const nickMap = new Map<string, string>()
@@ -2023,7 +2030,7 @@ export const getRecentNethers = async (uuid: string, limit: number = 100, liveOn
     }
     const [results, _] = await (await getConn()).execute<any[]>(
         query,
-        [uuid, safeLimit]
+        [uuid, mysqlIntegerParam(safeLimit)]
     );
 
     return results;
@@ -2044,7 +2051,7 @@ export const getNPH = async (uuid: string, hours: number, hoursBetween: number, 
     }
     const [results, _] = await (await getConn()).execute<any[]>(
         query,
-        [uuid, safeHours, MAX_SESSION_ROWS + 1]
+        [uuid, mysqlIntegerParam(safeHours), mysqlIntegerParam(MAX_SESSION_ROWS + 1)]
     );
 
     if (results.length === 0) {
@@ -2180,7 +2187,7 @@ export const getAllPlayerRunsByHours = async (
          WHERE uuid=? AND insertTime >= NOW() - INTERVAL ? HOUR ${liveClause}
          ORDER BY insertTime DESC, id DESC
          LIMIT ?;`,
-        [uuid, safeHours, safeLimit]
+        [uuid, mysqlIntegerParam(safeHours), mysqlIntegerParam(safeLimit)]
     );
     return rows;
 }
@@ -2488,7 +2495,7 @@ export const getPlayerRunsPage = async (
          WHERE uuid=? ${cursorClause}
          ORDER BY id DESC
          LIMIT ?;`,
-        [...parameters, safeLimit + 1]
+        [...parameters, mysqlIntegerParam(safeLimit + 1)]
     );
 
     const hasMore = result.length > safeLimit;
@@ -2518,7 +2525,7 @@ export const getAAPlayerRunsPage = async (
          WHERE uuid=? ${cursorClause}
          ORDER BY id DESC
          LIMIT ?;`,
-        [...parameters, safeLimit + 1]
+        [...parameters, mysqlIntegerParam(safeLimit + 1)]
     );
 
     const hasMore = result.length > safeLimit;
