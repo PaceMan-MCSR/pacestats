@@ -62,12 +62,10 @@ export function ConversionTable({catName, catId, days, lb, showQty = false, aa =
                 lb[CategoryType.CONVERSION][catId].slice(0, lbSize).map((entry: any, entryIdx: any) => {
                     let d = entry as Entry
                     let name = fixDisplayName(d.name)
-                    let skinName = d.name
                     if(showQty && name.length > 12){
                         name = name.slice(0, 12)
                     }
                     let value: number = d.value
-                    let url = "https://mc-heads.net/avatar/" + skinName + "/8"
                     let count: string = d.qty.toString()
                     let linkUrl = "/player/" + name + "/"
                     if(aa){
@@ -77,7 +75,7 @@ export function ConversionTable({catName, catId, days, lb, showQty = false, aa =
                     return <tr key={entryIdx}>
                         <td className="col-1"><p>{entryIdx + 1}</p></td>
                         <td className="col-10">
-                            <BoardLink name={name} uuid={d.uuid} url={url} linkUrl={linkUrl}/>
+                            <BoardLink name={name} uuid={d.uuid} linkUrl={linkUrl} lowPriority={entryIdx >= 3}/>
                         </td>
                         {showQty &&
                             <td className="col-1" style={{textAlign: "right"}}>

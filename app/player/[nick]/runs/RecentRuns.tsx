@@ -2,379 +2,270 @@
 
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
 import { formatIfNotNull } from "@/app/utils";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import {
-    DataGrid,
-    DataGridProps,
-    GridColDef,
-    useGridApiRef,
-    GridPaginationModel, GridRowProps, GridRow
-} from '@mui/x-data-grid';
-import React, { useEffect, useState } from "react";
-import useDebouncedCallback from "@restart/hooks/useDebouncedCallback";
+import { useRouter } from "next/navigation";
+import type {GridPaginationModel} from '@mui/x-data-grid';
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useMediaQuery } from "@mui/system";
-import { CircularProgress } from "@mui/material";
 import BastionFort from "@/app/components/BastionFort";
 import RunFilters from "@/app/components/RunFilters";
 import moment from 'moment';
 import Link from "next/link";
+import {IconButton, LinearProgress, TablePagination} from "@mui/material";
 
-export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
+type RunFilter = {
+    column: string;
+    operatorValue: string;
+    value: any;
+    inMs: number;
+};
 
-    const router = useRouter();
-    const pathname = usePathname();
-    const searchParams = useSearchParams();
+type RunsPage = {
+    rows: any[];
+    rowCount: number;
+    fetchedAt: number;
+};
 
-    const [paginationModel, setPaginationModel] = useState<GridPaginationModel>(() => {
-        return {
-            page: Number(searchParams.get('page') ?? '0'),
-            pageSize: Number(searchParams.get('pageSize') ?? '25'),
-        };
-    });
+const PAGE_CACHE_TTL_MS = 30_000;
+const MAX_CACHED_PAGES = 12;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-    useEffect(() => {
-        if (paginationModel.page !== Number(searchParams.get('page') ?? '0') ||
-            paginationModel.pageSize !== Number(searchParams.get('pageSize') ?? '25')) {
-            const currentParams = new URLSearchParams(Array.from(searchParams.entries()));
-            currentParams.set('page', String(paginationModel.page));
-            currentParams.set('pageSize', String(paginationModel.pageSize));
-            window.history.replaceState({}, '', `?${currentParams.toString()}`)
-        }
-    }, [paginationModel, searchParams]);
-
-    const handlePaginationModelChange = (newModel: GridPaginationModel) => {
-        setPaginationModel(newModel);
+function FastPaginationActions({count, page, rowsPerPage, onPageChange, getItemAriaLabel}: any) {
+    const lastPage = Math.max(0, Math.ceil(count / rowsPerPage) - 1);
+    const changePage = (event: React.PointerEvent<HTMLButtonElement>, targetPage: number) => {
+        if (!event.isPrimary || event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.focus();
+        onPageChange(event, targetPage);
     };
 
-    const [filters, setFilters] = useState([] as {
-        column: string,
-        operatorValue: string,
-        value: string,
-        inMs: number,
-    }[])
-    const [bastionFort, setBastionFort] = useState(bf)
-    const ref = useGridApiRef();
+    return <div className="fastRunsPaginationActions">
+        <IconButton
+            aria-label={getItemAriaLabel('previous')}
+            disabled={page === 0}
+            onPointerDown={(event) => changePage(event, page - 1)}
+            onClick={(event) => {
+                if (event.detail === 0) onPageChange(event, page - 1);
+            }}
+            onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onPageChange(event, page - 1);
+                }
+            }}
+        >
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24">
+                <path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+            </svg>
+        </IconButton>
+        <IconButton
+            aria-label={getItemAriaLabel('next')}
+            disabled={page >= lastPage}
+            onPointerDown={(event) => changePage(event, page + 1)}
+            onClick={(event) => {
+                if (event.detail === 0) onPageChange(event, page + 1);
+            }}
+            onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onPageChange(event, page + 1);
+                }
+            }}
+        >
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24">
+                <path fill="currentColor" d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+            </svg>
+        </IconButton>
+    </div>;
+}
+const RUN_TIME_FIELDS = [
+    'nether', 'bastion', 'fortress', 'first_structure', 'second_structure',
+    'first_portal', 'stronghold', 'end', 'finish',
+] as const;
 
-    const rows = runs.filter((run: any) => {
-        for (const filter of filters) {
-            if (filter.column === 'date') {
-                // @ts-ignore
-                let date = run.lastUpdated
-                if (typeof date === 'string') {
-                    date = new Date(date);
-                }
-                const filterDate = new Date(filter.value);
-                if (filter.operatorValue === 'before' && date > filterDate) {
-                    return false;
-                }
-                if (filter.operatorValue === 'after' && date < filterDate) {
-                    return false;
-                }
-                if (filter.operatorValue === 'during' && moment(date).toDate().toDateString() !== moment(filterDate).toDate().toDateString()) {
-                    return false;
-                }
-                continue;
-            }
-            if (!run.hasOwnProperty(filter.column)) {
-                return false;
-            }
-            // @ts-ignore
-            const time = run[filter.column];
-            const filterTime = filter.inMs;
-            if (filter.operatorValue === 'lessThan' && (time == null || time >= filterTime)) {
-                return false;
-            }
-            if (filter.operatorValue === 'greaterThan' && time <= filterTime) {
-                return false;
-            }
-            if (filter.operatorValue === 'isNotEmpty' && time == null) {
-                return false;
-            }
-            if (filter.operatorValue === 'isEmpty' && time != null) {
-                return false;
-            }
-        }
-        return true;
-    }).map((run: any) => {
-        return {
-            ...run,
-            lastUpdated: typeof run.lastUpdated === 'string' ? new Date(run.lastUpdated) : run.lastUpdated,
-        }
-    });
+const prepareRunForDisplay = (run: any, gridIndex: number) => {
+    const lastUpdated = typeof run.lastUpdated === 'string' ? new Date(run.lastUpdated) : run.lastUpdated;
+    const start = Number(lastUpdated) / 1000;
+    return {
+        ...run,
+        _gridId: gridIndex,
+        lastUpdated,
+        _relativeDate: moment.unix(start).fromNow()
+            .replace("minutes", "mins")
+            .replace("seconds", "secs"),
+        _dateTitle: moment.unix(start).format("MMMM Do YYYY, h:mm:ss a"),
+        _formattedTimes: Object.fromEntries(
+            RUN_TIME_FIELDS.map((field) => [field, formatIfNotNull(run[field])])
+        ),
+    };
+};
 
-    const small = useMediaQuery('(max-width: 768px)');
-    const [isLoading, setIsLoading] = useState(true);
+export default function RecentRuns({uuid, bf, initialPaginationModel}: {
+    uuid: string,
+    bf: boolean,
+    initialPaginationModel: GridPaginationModel,
+}) {
+
+    const router = useRouter();
+    const [paginationModel, setPaginationModel] = useState<GridPaginationModel>(initialPaginationModel);
 
     useEffect(() => {
-        setIsLoading(false);
+        const updateUrl = () => {
+            const currentParams = new URLSearchParams(window.location.search);
+            if (paginationModel.page !== Number(currentParams.get('page') ?? '0') ||
+                paginationModel.pageSize !== Number(currentParams.get('pageSize') ?? '25')) {
+                currentParams.set('page', String(paginationModel.page));
+                currentParams.set('pageSize', String(paginationModel.pageSize));
+                window.history.replaceState({}, '', `?${currentParams.toString()}`)
+            }
+        };
+        if ('requestIdleCallback' in window) {
+            const idleId = window.requestIdleCallback(updateUrl, {timeout: 1_000});
+            return () => window.cancelIdleCallback(idleId);
+        }
+        const timeoutId = setTimeout(updateUrl, 0);
+        return () => clearTimeout(timeoutId);
+    }, [paginationModel]);
+
+    const [filters, setFilters] = useState<RunFilter[]>([])
+    const [rows, setRows] = useState<any[]>([]);
+    const [rowCount, setRowCount] = useState(0);
+    const [isLoading, setIsLoading] = useState(true);
+    const [bastionFort, setBastionFort] = useState(bf)
+    const pageCache = useRef(new Map<string, RunsPage>());
+    const pendingPages = useRef(new Map<string, Promise<RunsPage>>());
+
+    const serializedFilters = JSON.stringify(filters.flatMap((filter) => {
+        if (filter.column === 'date') {
+            const date = moment(filter.value);
+            if (!date.isValid()) return [];
+            if (filter.operatorValue === 'during') {
+                return [{
+                    column: filter.column,
+                    operatorValue: filter.operatorValue,
+                    value: date.clone().startOf('day').valueOf(),
+                    endValue: date.clone().add(1, 'day').startOf('day').valueOf(),
+                }];
+            }
+            return [{column: filter.column, operatorValue: filter.operatorValue, value: date.valueOf()}];
+        }
+        if (["lessThan", "greaterThan"].includes(filter.operatorValue) && !Number.isFinite(filter.inMs)) return [];
+        return [{
+            column: filter.column,
+            operatorValue: filter.operatorValue,
+            ...(["isNotEmpty", "isEmpty"].includes(filter.operatorValue) ? {} : {value: filter.inMs}),
+        }];
+    }));
+
+    const pageKey = useCallback((page: number, pageSize: number, pageFilters: string) =>
+        `${uuid}:${pageSize}:${page}:${pageFilters}`, [uuid]);
+
+    const cachedPage = useCallback((key: string) => {
+        const cached = pageCache.current.get(key);
+        if (!cached) return null;
+        if (Date.now() - cached.fetchedAt > PAGE_CACHE_TTL_MS) {
+            pageCache.current.delete(key);
+            return null;
+        }
+        // Refresh insertion order so the map also acts as a small LRU cache.
+        pageCache.current.delete(key);
+        pageCache.current.set(key, cached);
+        return cached;
     }, []);
 
-    useEffect(() => {
-        actuallyResize()
-    }, [bastionFort, filters])
+    const loadPage = useCallback((page: number, pageSize: number, pageFilters: string) => {
+        const key = pageKey(page, pageSize, pageFilters);
+        const cached = cachedPage(key);
+        if (cached) return Promise.resolve(cached);
 
-    const sharedProps: Partial<GridColDef> = {
-        type: 'custom',
-        disableColumnMenu: small,
-        align: 'right',
-        renderCell: (params) => {
-            return formatIfNotNull(params.row[params.field]);
-        },
-    }
+        const pending = pendingPages.current.get(key);
+        if (pending) return pending;
 
-    const bastionFortColumns: GridColDef[] = [
-        {
-            field: 'bastion',
-            headerName: 'Bastion',
-            renderHeader: (params) => {
-                if (small) {
-                    return <img src="/stats/bastion.webp" alt="Bastion" className="icon"/>
-                }
-                return <span>Bastion</span>
-            },
-            ...sharedProps,
-        },
-        {
-            field: 'fortress',
-            headerName: 'Fortress',
-            renderHeader: (params) => {
-                if (small) {
-                    return <img src="/stats/fortress.webp" alt="Fortress" className="icon"/>
-                }
-                return <span>Fortress</span>
-            },
-            ...sharedProps
-        }
-    ]
-
-    const firstSecondColumns: GridColDef[] = [
-        {
-            field: 'first_structure',
-            headerName: 'First Struct',
-            renderHeader: (params) => {
-                if (small) {
-                    return <img src="/stats/struct1.png" alt="Structure 1" className="icon"/>
-                }
-                return <span>Struct 1</span>
-            },
-            ...sharedProps,
-            renderCell: (params) => {
-                const bastion = params.row.bastion;
-                const fortress = params.row.fortress;
-                if (bastion === null && fortress === null) {
-                    return null;
-                }
-                return formatIfNotNull(Math.min(bastion === null ? Infinity : bastion, fortress === null ? Infinity : fortress));
-            },
-        },
-        {
-            field: 'second_structure',
-            headerName: 'Second Structure',
-            renderHeader: (params) => {
-                if (small) {
-                    return <img src="/stats/struct2.png" alt="Structure 2" className="icon"/>
-                }
-                return <span>Struct 2</span>
-            },
-            ...sharedProps,
-            renderCell: (params) => {
-                const bastion = params.row.bastion;
-                const fortress = params.row.fortress;
-                if (bastion === null || fortress === null) {
-                    return null;
-                }
-                return formatIfNotNull(Math.max(bastion, fortress));
-            }
-        }
-    ]
-
-    const columns: GridColDef[] = [
-        {
-            field: 'time',
-            filterable: false,
-            headerName: 'Date',
-            minWidth: 130,
-            renderCell: (params) => {
-                if (params.row.twitch !== null) {
-                    return <>
-                        <span className="liveIndicator"/>
-                        <RelativeTimer start={params.row.lastUpdated / 1000} small={false}/>
-                    </>
-                }
-                return <RelativeTimer start={params.row.lastUpdated / 1000} small={false}/>
-            },
-            disableColumnMenu: small
-        },
-        {
-            field: 'nether',
-            headerName: 'Nether',
-            renderHeader: (params) => {
-                if (small) {
-                    return <img src="/stats/nether.webp" alt="Nether" className="icon"/>
-                }
-                return <span>Nether</span>
-            },
-            ...sharedProps
-        },
-        bastionFort ? bastionFortColumns[0] : firstSecondColumns[0],
-        bastionFort ? bastionFortColumns[1] : firstSecondColumns[1],
-        {
-            field: 'first_portal',
-            headerName: 'First Portal',
-            renderHeader: (params) => {
-                if (small) {
-                    return <img src="/stats/first_portal.webp" alt="First Portal" className="icon"/>
-                }
-                return <span>First Portal</span>
-            },
-            ...sharedProps
-        },
-        {
-            field: 'stronghold',
-            headerName: 'Stronghold',
-            renderHeader: (params) => {
-                if (small) {
-                    return <img src="/stats/stronghold.webp" alt="Stronghold" className="icon"/>
-                }
-                return <span>Stronghold</span>
-            },
-            ...sharedProps
-        },
-        {
-            field: 'end',
-            headerName: 'End',
-            renderHeader: (params) => {
-                if (small) {
-                    return <img src="/stats/end.webp" alt="End" className="icon"/>
-                }
-                return <span>End</span>
-            },
-            ...sharedProps
-        },
-        {
-            field: 'finish',
-            headerName: 'Finish',
-            renderHeader: (params) => {
-                if (small) {
-                    return <img src="/stats/finish.webp" alt="Finish" className="icon"/>
-                }
-                return <span>Finish</span>
-            },
-            ...sharedProps
-        }
-    ];
-
-    const styles = {
-        backgroundColor: "#181819",
-        '& .MuiDataGrid-row': {
-            backgroundColor: '#212529',
-            cursor: 'pointer',
-        },
-        '& .MuiDataGrid-footerContainer': {
-            borderTop: '1px solid #16161a',
-        },
-        '& .MuiToolbar-root': {
-            color: 'rgb(230, 230, 230)',
-        },
-        '& .MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': {
-            marginBottom: '0',
-        },
-        '& .MuiDataGrid-row--borderBottom': {
-            backgroundColor: '#1d1d1d !important',
-        },
-        '& .MuiDataGrid-columnSeparator': {
-            color: '#444455 !important',
-            right: "-5.5px"
-        },
-        '& .MuiDataGrid-columnHeader, .MuiDataGrid-filler': {
-            backgroundColor: '#181819 !important',
-            borderBottom: '0 !important'
-        },
-        '& .MuiDataGrid-iconButtonContainer': {
-            display: 'none',
-        },
-        '& .MuiDataGrid-cell': {
-            borderRight: "0 !important",
-            paddingLeft: "3px",
-            color: "white !important",
-            textDecoration: "none !important",
-        },
-        '& .MuiDataGrid-cell:focus': {
-            outline: 'none',
-        },
-        '& .MuiDataGrid-columnHeader, .MuiDataGrid-cell--textLeft, .MuiDataGrid-cell--textRight': {
-            borderRight: '1px solid #16161a !important',
-        },
-        fontFamily: 'Inter, sans-serif',
-        fontWeight: 500,
-        fontSize: '15px',
-        color: 'rgba(230, 230, 230)',
-        '& .MuiDataGrid-columnsContainer': {
-            backgroundColor: '#1d1d1d',
-        },
-        '& .MuiDataGrid-columnsContainer, .MuiDataGrid-cell': {
-            borderTop: '1px solid #16161a !important',
-        },
-        border: '2px solid #26262a',
-        '& .MuiDataGrid-scrollbar, .MuiDataGrid-filler': {
-            display: 'none'
-        },
-        '& .MuiDataGrid-menuIcon .MuiSvgIcon-root': {
-            color: '#AAAABB',
-        },
-        '& .MuiDataGrid-columnHeaderTitleContainerContent span': {
-            userSelect: 'none',
-        },
-        '& .MuiDataGrid-row:hover': {
-            backgroundColor: '#181819',
-        },
-    }
-
-    const props: Partial<DataGridProps> = {
-        columnHeaderHeight: 40,
-        rowHeight: 32,
-        rowSelection: false,
-        pageSizeOptions: [{value: 10, label: '10'}, {value: 25, label: '25'}, {value: 50, label: '50'}, {
-            value: 100,
-            label: '100'
-        }],
-    }
-
-    const actuallyResize = () => {
-        ref.current?.autosizeColumns({
-            includeHeaders: true,
-            includeOutliers: true,
-            expand: true,
+        const params = new URLSearchParams({
+            uuid,
+            page: String(page),
+            pageSize: String(pageSize),
+            filters: pageFilters,
         });
-    }
+        const request = fetch(`/stats/api/getPlayerRuns/?${params}`)
+            .then(async (response) => {
+                if (!response.ok) throw new Error(`Run history request failed with ${response.status}`);
+                const result = await response.json();
+                const loadedPage: RunsPage = {
+                    rows: result.rows.map(prepareRunForDisplay),
+                    rowCount: result.rowCount,
+                    fetchedAt: Date.now(),
+                };
+                pageCache.current.set(key, loadedPage);
+                while (pageCache.current.size > MAX_CACHED_PAGES) {
+                    const oldestKey = pageCache.current.keys().next().value;
+                    if (oldestKey === undefined) break;
+                    pageCache.current.delete(oldestKey);
+                }
+                return loadedPage;
+            })
+            .finally(() => pendingPages.current.delete(key));
+        pendingPages.current.set(key, request);
+        return request;
+    }, [cachedPage, pageKey, uuid]);
 
-    const resize = useDebouncedCallback(() => {
-        actuallyResize()
-        setTimeout(() => {
-            actuallyResize()
-        }, 200);
-    }, 200);
+    const handlePaginationModelChange = useCallback((newModel: GridPaginationModel) => {
+        if (newModel.page === paginationModel.page && newModel.pageSize === paginationModel.pageSize) return;
+
+        const cached = cachedPage(pageKey(newModel.page, newModel.pageSize, serializedFilters));
+        if (cached) {
+            // Apply cached rows in the same React batch as the page model.
+            setRows(cached.rows);
+            setRowCount(cached.rowCount);
+            setIsLoading(false);
+        } else {
+            setIsLoading(true);
+        }
+        setPaginationModel(newModel);
+    }, [cachedPage, pageKey, paginationModel, serializedFilters]);
 
     useEffect(() => {
-        const api = ref.current;
-        if (!api) {
-            return;
-        }
+        let active = true;
+        const {page, pageSize} = paginationModel;
+        const key = pageKey(page, pageSize, serializedFilters);
+        loadPage(page, pageSize, serializedFilters)
+            .then((loadedPage) => {
+                if (!active) return;
+                setRows(loadedPage.rows);
+                setRowCount(loadedPage.rowCount);
+                setIsLoading(false);
 
-        const resizeHandler = () => {
-            resize();
-        };
-        // @ts-ignore
-        const unsubscribe = api.subscribeEvent('renderedRowsIntervalChange', resizeHandler);
-        window.addEventListener('resize', resize);
+                if ((page + 1) * pageSize < loadedPage.rowCount) {
+                    void loadPage(page + 1, pageSize, serializedFilters).catch(() => {
+                        // Prefetch failures are retried normally if the user visits the page.
+                    });
+                }
+            })
+            .catch((error) => {
+                if (!active) return;
+                console.error(error);
+                setIsLoading(false);
+            });
 
         return () => {
-            if (typeof unsubscribe === 'function') {
-                unsubscribe();
-            }
-            window.removeEventListener('resize', resize);
+            active = false;
         };
-    }, [ref, resize]);
+    }, [cachedPage, loadPage, pageKey, paginationModel, serializedFilters]);
+
+    const small = useMediaQuery('(max-width: 768px)');
+    const fastColumns = React.useMemo(() => [
+        {field: 'time', label: 'Date', icon: null},
+        {field: 'nether', label: 'Nether', icon: '/stats/nether.webp'},
+        bastionFort
+            ? {field: 'bastion', label: 'Bastion', icon: '/stats/bastion.webp'}
+            : {field: 'first_structure', label: 'Struct 1', icon: '/stats/struct1.png'},
+        bastionFort
+            ? {field: 'fortress', label: 'Fortress', icon: '/stats/fortress.webp'}
+            : {field: 'second_structure', label: 'Struct 2', icon: '/stats/struct2.png'},
+        {field: 'first_portal', label: 'First Portal', icon: '/stats/first_portal.webp'},
+        {field: 'stronghold', label: 'Stronghold', icon: '/stats/stronghold.webp'},
+        {field: 'end', label: 'End', icon: '/stats/end.webp'},
+        {field: 'finish', label: 'Finish', icon: '/stats/finish.webp'},
+    ], [bastionFort]);
 
 
     return <div className="recentRunsFull paceHeader">
@@ -387,7 +278,11 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
         </div>
         <div className="row justify-content-center align-content-center">
             <div className="col-12">
-                <RunFilters bf={bastionFort} filters={filters} setFilters={setFilters}/>
+                <RunFilters bf={bastionFort} filters={filters} setFilters={(newFilters) => {
+                    setFilters(newFilters);
+                    setIsLoading(true);
+                    setPaginationModel((current) => current.page === 0 ? current : {...current, page: 0});
+                }}/>
             </div>
         </div>
         <div className="liveDescription" style={{
@@ -395,60 +290,64 @@ export default function RecentRuns({runs, bf}: { runs: any, bf: boolean }) {
         }}>
             <span className="liveIndicator"/>= Live
         </div>
-        {isLoading && <div className="loading" style={{marginTop: "10px", display: "flex", justifyContent: "center"}}>
-            <CircularProgress sx={{margin: "auto"}}/>
-        </div>}
         <div style={{textAlign: "right", marginRight: "2px"}}>
-            <p style={{lineHeight: 0}}>{rows.length} results</p>
+            <p style={{lineHeight: 0}}>{rowCount} results</p>
         </div>
-        <DataGrid
-            columns={columns}
-            rows={rows}
-            apiRef={ref}
-            onRowClick={(params) => {
-                router.push("/run/" + params.row.id)
-            }}
-            disableColumnFilter={true}
-            sx={styles}
-            paginationModel={paginationModel}
-            onPaginationModelChange={handlePaginationModelChange}
-            slots={{
-                row: CustomRow
-            }}
-            {...props}
-        />
+        <div style={{height: "3px"}}>
+            {isLoading && rows.length > 0 && <LinearProgress aria-label="Loading run history"/>}
+        </div>
+        <div className="fastRunsGrid" role="grid" aria-busy={isLoading}>
+            <div className="fastRunsGridHeader" role="row">
+                {fastColumns.map((column) => (
+                    <div className="fastRunsGridCell" role="columnheader" key={column.field}>
+                        {small && column.icon
+                            ? <img src={column.icon} alt={column.label} className="icon"/>
+                            : column.label}
+                    </div>
+                ))}
+            </div>
+            <div role="rowgroup">
+                {rows.map((run) => (
+                    <Link
+                        className="fastRunsGridRow"
+                        role="row"
+                        href={`/run/${run.id}`}
+                        prefetch={false}
+                        key={run._gridId}
+                        onMouseEnter={() => router.prefetch(`/run/${run.id}`)}
+                    >
+                        {fastColumns.map((column) => {
+                            if (column.field === 'time') {
+                                const start = Number(run.lastUpdated) / 1000;
+                                return <div className="fastRunsGridCell fastRunsGridDate" role="gridcell" key={column.field}>
+                                    {run.twitch !== null && <span className="liveIndicator"/>}
+                                    {Date.now() / 1000 - start < 60
+                                        ? <RelativeTimer start={start}/>
+                                        : <span title={run._dateTitle}>{run._relativeDate}</span>}
+                                </div>;
+                            }
+                            return <div className="fastRunsGridCell" role="gridcell" key={column.field}>
+                                {run._formattedTimes[column.field]}
+                            </div>;
+                        })}
+                    </Link>
+                ))}
+                {!isLoading && rows.length === 0 && <div className="fastRunsGridEmpty">No rows</div>}
+            </div>
+            <TablePagination
+                component="div"
+                className="fastRunsGridPagination"
+                count={rowCount}
+                page={paginationModel.page}
+                rowsPerPage={paginationModel.pageSize}
+                rowsPerPageOptions={PAGE_SIZE_OPTIONS}
+                ActionsComponent={FastPaginationActions}
+                onPageChange={(_, page) => handlePaginationModelChange({...paginationModel, page})}
+                onRowsPerPageChange={(event) => handlePaginationModelChange({
+                    page: 0,
+                    pageSize: Number(event.target.value),
+                })}
+            />
+        </div>
     </div>
 }
-
-const CustomRow = React.forwardRef<HTMLDivElement, GridRowProps>((props, ref) => {
-    const router = useRouter();
-    return (
-        <Link
-            href={`/run/${props.row.id}`}
-            style={{
-                textDecoration: 'none',
-            }}
-            prefetch={false}
-        >
-            <GridRow
-                ref={ref}
-                {...props}
-                onMouseDownCapture={(event) => {
-                    if (event.button !== 0) {
-                        return;
-                    }
-                    event.preventDefault();
-                    if (event.currentTarget.dataset.id) {
-                        router.push("/run/" + event.currentTarget.dataset.id);
-                    }
-                }}
-                onMouseEnter={(event) => {
-                    if (event.currentTarget.dataset.id) {
-                        router.prefetch("/run/" + event.currentTarget.dataset.id);
-                    }
-                }}
-            />
-        </Link>
-    );
-});
-CustomRow.displayName = 'CustomRow';

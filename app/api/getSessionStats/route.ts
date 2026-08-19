@@ -5,6 +5,7 @@ import {
     getAllNamesByTwitch,
     getSessionStats,
 } from "@/app/data";
+import {jsonResponse} from "@/app/api/_utils";
 
 export async function GET(request: NextRequest) {
     let name = request.nextUrl.searchParams.get("name")
@@ -17,7 +18,6 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({error: "Unknown user"}, { status: 404 });
         }
     }
-    const days = Math.ceil(hours / 24)
-
-    return NextResponse.json(await getCached(getSessionStats, "getSessionStats", names.uuid, hours, hoursBetween), { status: 200 });
+    const stats = await getCached(getSessionStats, "getSessionStats", names.uuid, hours, hoursBetween);
+    return jsonResponse(stats, {cacheSeconds: 10, staleSeconds: 20});
 }

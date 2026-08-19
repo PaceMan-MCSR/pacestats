@@ -5,6 +5,7 @@ import {
     getAllNamesByTwitch,
     jude,
 } from "@/app/data";
+import {jsonResponse} from "@/app/api/_utils";
 
 export async function GET(request: NextRequest) {
     let name = request.nextUrl.searchParams.get("name")
@@ -16,5 +17,5 @@ export async function GET(request: NextRequest) {
         }
     }
     const runs = await getCached(jude, "jude", names.uuid)
-    return NextResponse.json(runs, { status: 200 });
+    return jsonResponse(runs, {cacheSeconds: 30, staleSeconds: 60});
 }

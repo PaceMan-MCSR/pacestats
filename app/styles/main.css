@@ -1,9 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
-
 @font-face {
     font-family: 'Minecraft';
     src: url('/stats/mc.ttf') format('truetype');
+    font-display: optional;
 }
 
 #body {
@@ -64,7 +62,38 @@ td p {
 }
 
 .tableWrapper {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 520px;
     padding-bottom: 55px;
+}
+
+.leaderboardSkeletonBar,
+.leaderboardSkeletonAvatar {
+    display: inline-block;
+    background: rgb(44, 44, 49);
+    border-radius: 4px;
+    vertical-align: middle;
+}
+
+.leaderboardSkeletonTitle {
+    width: 9rem;
+    height: 1em;
+}
+
+.leaderboardSkeletonAvatar {
+    width: 24px;
+    height: 24px;
+    margin: -3px 10px 0 0;
+}
+
+.leaderboardSkeletonName {
+    width: min(7rem, calc(100% - 34px));
+    height: 0.8em;
+}
+
+.leaderboardSkeletonValue {
+    width: 2rem;
+    height: 0.8em;
 }
 
 .playerStats .goBack {
@@ -395,6 +424,82 @@ td p {
     background-color: rgb(20, 20, 23);
 }
 
+.playerSearchTheme[data-custom] .searchBox .wrapper,
+.playerSearchTheme[data-custom] .searchBox .wrapper input {
+    background-color: var(--search-background) !important;
+}
+
+.playerSearchTheme[data-custom] .searchBox .wrapper div input,
+.playerSearchTheme[data-custom] .searchBox .wrapper div input::placeholder {
+    color: var(--search-foreground) !important;
+}
+
+.playerSearchTheme[data-custom] .searchBox .wrapper div svg path {
+    fill: var(--search-foreground) !important;
+}
+
+.playerSearchTheme[data-custom] .searchBox .wrapper div ul li {
+    background-color: var(--search-result-background) !important;
+}
+
+.playerSearchTheme[data-custom] .searchBox .wrapper div ul li:hover {
+    background-color: var(--search-result-hover) !important;
+}
+
+.hamburgerButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 8px;
+    border: 0;
+    background: transparent;
+}
+
+.hamburgerButton svg {
+    width: 24px;
+    height: 24px;
+    fill: #ddddee;
+}
+
+.mobileDrawerRoot {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+}
+
+.mobileDrawerBackdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    border: 0;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.mobileDrawer {
+    position: relative;
+    width: 260px;
+    height: 100%;
+    padding-top: 8px;
+    box-shadow: 0 8px 10px -5px rgba(0, 0, 0, 0.2), 0 16px 24px 2px rgba(0, 0, 0, 0.14);
+}
+
+.mobileDrawer > a {
+    display: block;
+    min-height: 48px;
+    padding: 12px 16px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.mobileDrawer > a:hover,
+.mobileDrawer > a:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.mobileDrawer .searchWrapper {
+    margin: 4px 5px 0;
+}
+
 .avatarSmall {
     display: inline-block;
     margin-left: 2px;
@@ -603,10 +708,6 @@ td p {
 
 .obsSetup .fontWarning {
     margin-top: 5px;
-}
-
-.material-symbols-outlined {
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
 .obsSetup .info-icon {
@@ -818,4 +919,115 @@ td p {
 
 .nphOptions div span .MuiSlider-markLabel{
     color: rgb(230, 230, 230);
+}
+
+.fastRunsGrid {
+    overflow: hidden;
+    border: 2px solid #26262a;
+    background: #181819;
+    color: rgb(230, 230, 230);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.fastRunsGridHeader,
+.fastRunsGridRow {
+    display: grid;
+    grid-template-columns: minmax(130px, 1.4fr) repeat(7, minmax(0, 1fr));
+}
+
+.fastRunsGridHeader {
+    min-height: 40px;
+    align-items: center;
+    background: #181819;
+}
+
+.fastRunsGridRow {
+    min-height: 32px;
+    align-items: stretch;
+    background: #212529;
+    color: white;
+    text-decoration: none;
+    content-visibility: auto;
+    contain-intrinsic-size: 32px;
+}
+
+.fastRunsGridRow:hover {
+    background: #181819;
+    color: white;
+    text-decoration: none;
+}
+
+.fastRunsGridCell {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 5px 0 3px;
+    border-top: 1px solid #16161a;
+    border-right: 1px solid #16161a;
+    white-space: nowrap;
+}
+
+.fastRunsGridCell:first-child {
+    justify-content: flex-start;
+}
+
+.fastRunsGridCell:last-child {
+    border-right: 0;
+}
+
+.fastRunsGridHeader .fastRunsGridCell {
+    border-top: 0;
+    color: rgba(230, 230, 230);
+    justify-content: flex-end;
+    padding: 0 7px 0 3px;
+    font-size: 14px;
+    user-select: none;
+}
+
+.fastRunsGridHeader .fastRunsGridCell:first-child {
+    justify-content: flex-start;
+    padding-left: 10px;
+}
+
+.fastRunsGridDate .liveIndicator {
+    flex: 0 0 auto;
+}
+
+.fastRunsGridEmpty {
+    padding: 48px 12px;
+    border-top: 1px solid #16161a;
+    text-align: center;
+}
+
+.fastRunsGridPagination {
+    border-top: 1px solid #16161a;
+    background: #181819;
+    color: rgb(230, 230, 230) !important;
+}
+
+.fastRunsGridPagination .MuiTablePagination-toolbar,
+.fastRunsGridPagination .MuiTablePagination-selectLabel,
+.fastRunsGridPagination .MuiTablePagination-displayedRows,
+.fastRunsGridPagination .MuiTablePagination-select,
+.fastRunsGridPagination .MuiTablePagination-selectIcon,
+.fastRunsGridPagination .MuiInputBase-root,
+.fastRunsGridPagination .MuiIconButton-root {
+    color: rgb(230, 230, 230) !important;
+}
+
+.fastRunsGridPagination .MuiTablePagination-selectLabel,
+.fastRunsGridPagination .MuiTablePagination-displayedRows {
+    margin-bottom: 0;
+}
+
+.fastRunsGridPagination .MuiIconButton-root.Mui-disabled {
+    color: rgba(230, 230, 230, 0.3) !important;
+}
+
+.fastRunsPaginationActions {
+    display: flex;
+    margin-left: 20px;
 }

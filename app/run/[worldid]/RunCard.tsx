@@ -6,11 +6,11 @@ import {useRunStore} from "@/app/run/[worldid]/RunStore";
 import Image from "next/image";
 
 function CardLine({data, split}: { data: any, split: string }) {
+    const embed = useRunStore(state => state.vodEmbed)
     if(data[split] == null){
         return null
     }
     const splitOffset = Math.floor(data.vodOffset + (data[split + "Rta"] / 1000) + 2)
-    const embed = useRunStore(state => state.vodEmbed)
     if(data.vodId === null || embed === undefined) {
         return <div className="card-line">
             <Image priority={true} className="icon" width={40} height={40} src={"/stats/" + split + ".webp"} alt={split}/>

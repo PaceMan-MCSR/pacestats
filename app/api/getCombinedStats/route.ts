@@ -1,110 +1,77 @@
 import {NextRequest, NextResponse} from "next/server";
 import {
     getCached,
-    getAllNamesByNick,
-    getAllNamesByTwitch,
-    getAllPlayerRunsByPeriod, calculateAvg,
+    getCombinedSplitAggregates,
+    resolveCombinedPlayerUuids,
 } from "@/app/data";
-import {formatTime, getFirstStructure, getSecondStructure} from "@/app/utils";
+import type {CombinedSplitAggregate} from "@/app/data";
+import {formatTime} from "@/app/utils";
+import {integerParam, validationErrorResponse} from "@/app/api/_utils";
+
+const categories = [
+    "nether",
+    "bastion",
+    "fortress",
+    "first_structure",
+    "second_structure",
+    "first_portal",
+    "stronghold",
+    "end",
+    "finish",
+] as const;
+
+const namesParam = (request: NextRequest) =>
+    (request.nextUrl.searchParams.get("names") ?? "")
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean);
 
 export async function GET(request: NextRequest) {
-    let names = (request.nextUrl.searchParams.get("names") || "").split(",").map(n => n.trim())
-    let hours = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hours") || "24"))
-    let hoursBetween = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hoursBetween") || "6"))
-    let start = parseInt(request.nextUrl.searchParams.get("start") || "0")
+    try {
+        const names = namesParam(request);
+        const hours = integerParam(request.nextUrl.searchParams, "hours", {defaultValue: 24, min: 1});
+        const hoursBetween = integerParam(request.nextUrl.searchParams, "hoursBetween", {defaultValue: 6, min: 1});
+        const start = integerParam(request.nextUrl.searchParams, "start", {
+            defaultValue: 0,
+            min: 0,
+            max: Number.MAX_SAFE_INTEGER,
+        });
 
-    const days = Math.ceil(hours / 24)
-
-    let lastTime = 0
-
-    const categories = [
-        "nether",
-        "bastion",
-        "fortress",
-        "first_structure",
-        "second_structure",
-        "first_portal",
-        "stronghold",
-        "end",
-        "finish"
-    ]
-
-    const splits = new Map<string, number[]>()
-    for (const category of categories) {
-        splits.set(category, [])
-
-    }
-
-    let response: { [category: string] : {count: number, avg: string} } = {}
-
-    for(let name of names){
-        let n = await getCached(getAllNamesByNick, "getAllNamesByNick", name)
-        if(n === null){
-            n = await getCached(getAllNamesByTwitch, "getAllNamesByTwitch", name)
-            if(n === null) {
-                return NextResponse.json({error: "Unknown user: " + n}, {status: 404});
-            }
+        const resolution = await getCached(
+            resolveCombinedPlayerUuids,
+            "resolveCombinedPlayerUuids",
+            names
+        );
+        if (resolution.unknown.length > 0) {
+            return NextResponse.json(
+                {error: `Unknown user: ${resolution.unknown[0]}`},
+                {status: 404}
+            );
         }
-        let runs = await getCached(getAllPlayerRunsByPeriod, "getAllPlayerRunsByPeriod", n.uuid, days)
-        for(let run of runs){
-            if(start > 0 && run.time < start){
-                continue
-            }
-            let diff = lastTime - run.time
-            if(lastTime > 0 && diff > 60 * 60 * hoursBetween){
-                break
-            }
-            if(Date.now() / 1000 - run.time > 60 * 60 * hours){
-                break
-            }
-            const bastion = run["bastion"]
-            const fortress = run["fortress"]
-            const firstStructure = getFirstStructure(bastion, fortress)
-            const secondStructure = getSecondStructure(bastion, fortress)
-            const rod = run["obtainRod"] || null
-            if(firstStructure != null){
-                if(firstStructure === fortress && rod !== null && rod < fortress){
-                    splits.get("first_structure")?.push(rod)
-                } else {
-                    splits.get("first_structure")?.push(firstStructure)
-                }
-            }
-            if(secondStructure != null){
-                const id = run["id"]
-                if(id >= 187307){ // when context logging was added, march 29th 2024
-                    if(!(secondStructure === bastion && (rod === null || rod > secondStructure)) && !(secondStructure === fortress && (fortress - bastion < 50000))){
-                        if(secondStructure === fortress && rod !== null && rod < fortress){
-                            splits.get("second_structure")?.push(rod)
-                        } else {
-                            splits.get("second_structure")?.push(secondStructure)
-                        }
-                    }
-                } else {
-                    splits.get("second_structure")?.push(secondStructure)
-                }
-            }
 
-            for (const category of categories) {
-                if(category === "first_structure" || category === "second_structure"){
-                    continue
-                }
-                if(run[category] != null){
-                    splits.get(category)?.push(run[category])
-                }
-            }
-            lastTime = run.time
+        const aggregates = await getCached(
+            getCombinedSplitAggregates,
+            "getCombinedSplitAggregates",
+            resolution.uuids,
+            hours,
+            hoursBetween,
+            start
+        ) as CombinedSplitAggregate[];
+        const aggregateByCategory = new Map(
+            aggregates.map((aggregate) => [aggregate.category, aggregate])
+        );
+        const response: Record<string, {count: number; avg: string}> = {};
+        for (const category of categories) {
+            const aggregate = aggregateByCategory.get(category);
+            response[category] = {
+                count: aggregate?.count ?? 0,
+                avg: formatTime(aggregate?.average ?? 0),
+            };
         }
+        return NextResponse.json(response, {status: 200});
+    } catch (error) {
+        const invalid = validationErrorResponse(error);
+        if (invalid) return invalid;
+        throw error;
     }
-
-    for (const category of categories) {
-        const data = splits.get(category) as number[]
-        const count = data.length
-        if(count === 0){
-            response[category] = {count: 0, avg: "0:00"}
-        } else {
-            response[category] = {count: count, avg: formatTime(calculateAvg(data))}
-        }
-    }
-
-    return NextResponse.json(response, { status: 200 });
 }

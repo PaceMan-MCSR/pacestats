@@ -327,7 +327,7 @@ export const getDisplayName = (users: {
     color: string
 }[], uuid: string, fallback: string) => {
     const user = users?.find(u => u.uuid === uuid)
-    return user ? user.displayName : fallback
+    return user?.displayName || fallback
 }
 
 export const getContrastColor = (hex: string) => {
@@ -399,4 +399,27 @@ export const getUserColours = (users: {
         name: user.color,
         isCustom: true
     }
+}
+
+export function normalizeDays(value: string | undefined, fallback = 30): number {
+    const parsed = Number.parseInt(value || String(fallback), 10);
+    return parsed === 1 || parsed === 7 || parsed === 30 || parsed === 9999
+        ? parsed
+        : fallback;
+}
+
+export function filterUsersForPayload(users: any[], ...sources: any[]): any[] {
+    const uuids = new Set<string>();
+    const pending = [...sources];
+    while (pending.length > 0) {
+        const value = pending.pop();
+        if (!value || typeof value !== "object") continue;
+        if (typeof value.uuid === "string") uuids.add(value.uuid);
+        if (Array.isArray(value)) {
+            pending.push(...value);
+        } else {
+            pending.push(...Object.values(value));
+        }
+    }
+    return users.filter(user => uuids.has(user.uuid));
 }

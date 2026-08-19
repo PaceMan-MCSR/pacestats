@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useContext, useEffect, useState, useTransition } from "react";
+import { useContext, useTransition } from "react";
 import { UserColoursContext } from "@/app/contexts";
 import Box from "@mui/material/Box";
 import { getDarkerColor } from "@/app/utils";
@@ -12,7 +12,6 @@ export default function RangeChange() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const [isPending, startTransition] = useTransition();
-    const [isLoading, setIsLoading] = useState(true);
 
     // Get current 'days' value from URL
     const days = parseInt(searchParams.get('days') || '30');
@@ -37,14 +36,12 @@ export default function RangeChange() {
         });
     };
 
-    useEffect(() => {
-        setIsLoading(false);
-        router.prefetch(`${pathname}?days=1`);
-        router.prefetch(`${pathname}?days=7`);
-        router.prefetch(`${pathname}?days=30`);
-        router.prefetch(`${pathname}?days=9999`);
-        router.prefetch("/")
-    }, []);
+    const prefetchDays = (newDays: number) => {
+        if (days === newDays) return;
+        const newParams = new URLSearchParams(searchParams.toString());
+        newParams.set("days", newDays.toString());
+        router.prefetch(`${pathname}?${newParams.toString()}`);
+    };
 
     return (
         <Box
@@ -78,42 +75,49 @@ export default function RangeChange() {
         >
             <button
                 className={"btn " + (days === 1 ? "btn-primary" : "btn-dark")}
+                onMouseEnter={() => prefetchDays(1)}
+                onFocus={() => prefetchDays(1)}
                 onMouseDown={(e) => {
                     if (e.button !== 0) return; // Only handle left mouse button
                     handleDaysChange(1)
                 }}
-                disabled={isLoading} // Disable button during navigation
+                disabled={isPending}
             >
                 24 hours
             </button>
             <button
                 className={"btn " + (days === 7 ? "btn-primary" : "btn-dark")}
+                onMouseEnter={() => prefetchDays(7)}
+                onFocus={() => prefetchDays(7)}
                 onMouseDown={(e) => {
                     if (e.button !== 0) return; // Only handle left mouse button
                     handleDaysChange(7)
                 }}
-                disabled={isLoading}
+                disabled={isPending}
             >
                 7 days
             </button>
             <button
                 className={"btn " + (days === 30 ? "btn-primary" : "btn-dark")}
+                onMouseEnter={() => prefetchDays(30)}
+                onFocus={() => prefetchDays(30)}
                 onMouseDown={(e) => {
                     if (e.button !== 0) return; // Only handle left mouse button
                     handleDaysChange(30)
                 }}
-                onClick={() => handleDaysChange(30)}
-                disabled={isLoading}
+                disabled={isPending}
             >
                 30 days
             </button>
             <button
                 className={"btn " + (days === 9999 ? "btn-primary" : "btn-dark")}
+                onMouseEnter={() => prefetchDays(9999)}
+                onFocus={() => prefetchDays(9999)}
                 onMouseDown={(e) => {
                     if (e.button !== 0) return; // Only handle left mouse button
                     handleDaysChange(9999)
                 }}
-                disabled={isLoading}
+                disabled={isPending}
             >
                 Lifetime
             </button>

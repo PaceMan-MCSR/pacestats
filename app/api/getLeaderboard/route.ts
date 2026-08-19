@@ -1,7 +1,7 @@
-import {NextRequest, NextResponse} from "next/server";
-import {getCached, getLeaderboards} from "@/app/data";
+import {NextRequest} from "next/server";
+import {fetchLeaderboardCategoryFromRedis, getCached} from "@/app/data";
 import {CategoryType, getMinQty} from "@/app/utils";
-import {Entry} from "@/app/types";
+import {jsonResponse} from "@/app/api/_utils";
 
 export async function GET(request: NextRequest) {
     let days = parseInt(request.nextUrl.searchParams.get("days") || "30")
@@ -16,18 +16,25 @@ export async function GET(request: NextRequest) {
     if (days !== 1 && days !== 7 && days !== 30 && days !== 9999) {
         days = 30
     }
-    const data = (await getCached(getLeaderboards, "getLeaderboards", days + " day"))
-    let specific;
+    let filter = CategoryType.COUNT;
+    let minimumQty = 0;
     if(type === "conversion"){
-        specific = data[CategoryType.CONVERSION][category]
-        specific = specific.filter((x: Entry) => x.qty >= getMinQty(category, days))
+        filter = CategoryType.CONVERSION;
+        minimumQty = getMinQty(category, days);
     } else if (type === "average"){
-        specific = data[CategoryType.AVG][category]
-        specific = specific.filter((x: Entry) => x.qty >= getMinQty(category, days))
+        filter = CategoryType.AVG;
+        minimumQty = getMinQty(category, days);
     } else if (type === "fastest"){
-        specific = data[CategoryType.FASTEST][category]
-    } else {
-        specific = data[CategoryType.COUNT][category]
+        filter = CategoryType.FASTEST;
     }
-    return NextResponse.json(specific.slice(0, limit), { status: 200 });
+    const specific = await getCached(
+        fetchLeaderboardCategoryFromRedis,
+        "fetchLeaderboardCategoryFromRedis",
+        days,
+        category,
+        filter,
+        limit,
+        minimumQty
+    );
+    return jsonResponse(specific, {cacheSeconds: 60, staleSeconds: 120});
 }

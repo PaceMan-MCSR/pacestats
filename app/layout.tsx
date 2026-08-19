@@ -1,11 +1,7 @@
 import type {Metadata} from "next";
-import "bootstrap/dist/css/bootstrap.min.css";
-import "./styles/main.css"
 import "./globals.css";
-import BootstrapLoader from "@/app/components/BootstrapLoader";
-import {inter} from "@/app/styles/fonts";
+import {inter} from "@/app/styles/inter";
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v14-appRouter';
-import { fetchAllUsersFromRedis, getAllUserInfo, getAllUsers, getCached } from "@/app/data";
 import Header from "@/app/Header";
 
 export const metadata: Metadata = {
@@ -13,20 +9,61 @@ export const metadata: Metadata = {
     description: "Stats from PaceMan data",
 };
 
-export default async function RootLayout({children}: Readonly<{
+const criticalThemeCss = `
+    html, body, #body {
+        min-height: 100%;
+        background-color: rgb(18, 18, 21) !important;
+        color: rgb(230, 230, 230);
+    }
+    .main {
+        color: rgb(230, 230, 230);
+        padding-top: 10px;
+    }
+    main .header {
+        margin: 20px 0 5px;
+        text-align: center;
+        font-size: 2.2em;
+    }
+    main .subheader {
+        margin-bottom: 40px;
+        text-align: center;
+    }
+    .topRow, .rangeButtons, .filterGroup, .footer {
+        text-align: center;
+    }
+    .topRow .btn, .rangeButtons .btn {
+        margin: 0 8px 10px;
+    }
+    .rangeButtons {
+        margin-top: 20px;
+        margin-bottom: 10px;
+    }
+    .filterGroup {
+        margin-bottom: 40px;
+    }
+    .filterToggle {
+        margin-top: 5px;
+        margin-bottom: 5px;
+    }
+    .footer {
+        background-color: rgb(18, 18, 21);
+        color: rgb(230, 230, 230);
+        padding: 10px;
+    }
+`;
+
+export default function RootLayout({children}: Readonly<{
     children: React.ReactNode;
 }>) {
-    const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis");
-    const userInfo = await getCached(getAllUserInfo, "getAllUserInfo");
     return (
-        <html lang="en">
+        <html lang="en" data-bs-theme="dark" style={{backgroundColor: "rgb(18, 18, 21)"}}>
         <head>
             <meta name="darkreader-lock"/>
+            <style id="critical-theme">{criticalThemeCss}</style>
         </head>
-        <body className={inter.className} id="body">
+        <body className={inter.className} id="body" style={{backgroundColor: "rgb(18, 18, 21)"}}>
         <AppRouterCacheProvider>
-            <BootstrapLoader/>
-            <Header users={users} userInfo={userInfo}/>
+            <Header/>
             {children}
         </AppRouterCacheProvider>
         </body>
