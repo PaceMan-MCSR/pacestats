@@ -317,6 +317,17 @@ td p {
     opacity: 1.0 !important;
 }
 
+/*
+ * Bootstrap's dark theme makes its default tooltip light with dark text. These
+ * tooltips use a custom dark background, so restore a high-contrast foreground.
+ */
+.hoursTooltip,
+.dynamicTooltip,
+.timeTooltip,
+.nphTooltip {
+    --bs-tooltip-color: rgb(230, 230, 230);
+}
+
 .recentRuns .runsHeader {
     text-align: center;
 }
