@@ -2,6 +2,11 @@ nav {
     display: none !important;
 }
 
-main, body, #body {
-    background-color: rgb(255, 255, 255, 0) !important;
+/*
+ * OBS captures the document canvas, so clearing only the body still leaves the
+ * root layout's dark html background visible. The :root specificity also
+ * overrides the critical theme rule injected by the shared layout.
+ */
+html:root, body, body#body, main {
+    background-color: transparent !important;
 }
