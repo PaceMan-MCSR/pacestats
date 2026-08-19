@@ -1,7 +1,17 @@
 @font-face {
     font-family: 'Minecraft';
     src: url('/stats/mc.ttf') format('truetype');
-    font-display: optional;
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Inter';
+    src: url('/stats/fonts/inter-latin-v1.woff2') format('woff2');
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
 }
 
 #body {
