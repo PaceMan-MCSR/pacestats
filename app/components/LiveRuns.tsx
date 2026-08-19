@@ -6,7 +6,7 @@ import useSWR from "swr";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 
-export async function LiveRuns() {
+export function LiveRuns() {
     const router = useRouter()
 
     const getRefreshInterval = () => {

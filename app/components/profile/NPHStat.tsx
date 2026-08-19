@@ -37,6 +37,7 @@ export function NPHStat({nick, headUrl, days, data}: {
     }
 }) {
     const colours = useContext(UserColoursContext)
+    const [focus, setFocus] = useState(false);
     if(data === null) {
         return <Box className="stat nph mb-4" sx={colours.isCustom ? {
             backgroundColor: `#${colours?.fg} !important`,
@@ -51,8 +52,6 @@ export function NPHStat({nick, headUrl, days, data}: {
             <p style={{lineHeight: 1.4}}>{nick} does not have any enters with the latest version of PaceMan Tracker.</p>
         </Box>
     }
-    const [focus, setFocus] = useState(false);
-
     return <Box className="stat nph mb-4" onClick={() => {setFocus(!focus)}} sx={colours.isCustom ? {
         backgroundColor: `#${colours?.fg} !important`,
         borderColor: `#${getDarkerColor(colours?.fg, 0.6)} !important`,

@@ -1,75 +1,65 @@
-import mysql from 'mysql2/promise';
-import Redis from 'ioredis';
-import dotenv from 'dotenv';
-import { FastestEntry } from "@/app/types";
+import { randomUUID } from "node:crypto";
+import mysql, { type Connection } from "mysql2/promise";
+import Redis from "ioredis";
+import dotenv from "dotenv";
+import { type FastestEntry } from "@/app/types";
+import {
+    acquireRedisLock,
+    deleteKeysIfLeaseHeld,
+    envInt,
+    LockUnavailableError,
+    publishStagedEntries,
+    replaceManifest,
+    scanKeys,
+    setHashIfLeaseHeld,
+    setStringIfLeaseHeld,
+    stageJsonEntries,
+    type RedisLease,
+    type StagedKey,
+} from "./cache-runtime";
 
 interface QtyStats {
     min: number;
     good: number;
 }
 
-export const minQtys = new Map<number, { [days: string]: QtyStats }>([
+export const minQtys = new Map<number, { [category: string]: QtyStats }>([
     [1, {
-        nether: {min: 5, good: 30},
-        bastion: {min: 3, good: 10},
-        fortress: {min: 1, good: 5},
-        first_structure: {min: 3, good: 10},
-        second_structure: {min: 1, good: 5},
-        first_portal: {min: 1, good: 5},
-        stronghold: {min: 1, good: 3},
-        end: {min: 1, good: 2},
-        finish: {min: 1, good: 2}
+        nether: {min: 5, good: 30}, bastion: {min: 3, good: 10}, fortress: {min: 1, good: 5},
+        first_structure: {min: 3, good: 10}, second_structure: {min: 1, good: 5}, first_portal: {min: 1, good: 5},
+        stronghold: {min: 1, good: 3}, end: {min: 1, good: 2}, finish: {min: 1, good: 2},
     }],
     [7, {
-        nether: {min: 30, good: 80},
-        bastion: {min: 5, good: 20},
-        fortress: {min: 3, good: 10},
-        first_structure: {min: 5, good: 20},
-        second_structure: {min: 3, good: 10},
-        first_portal: {min: 1, good: 5},
-        stronghold: {min: 2, good: 4},
-        end: {min: 1, good: 2},
-        finish: {min: 1, good: 2}
+        nether: {min: 30, good: 80}, bastion: {min: 5, good: 20}, fortress: {min: 3, good: 10},
+        first_structure: {min: 5, good: 20}, second_structure: {min: 3, good: 10}, first_portal: {min: 1, good: 5},
+        stronghold: {min: 2, good: 4}, end: {min: 1, good: 2}, finish: {min: 1, good: 2},
     }],
     [30, {
-        nether: {min: 200, good: 700},
-        bastion: {min: 50, good: 80},
-        fortress: {min: 5, good: 20},
-        first_structure: {min: 30, good: 80},
-        second_structure: {min: 5, good: 20},
-        first_portal: {min: 5, good: 15},
-        stronghold: {min: 3, good: 5},
-        end: {min: 1, good: 2},
-        finish: {min: 1, good: 2}
+        nether: {min: 200, good: 700}, bastion: {min: 50, good: 80}, fortress: {min: 5, good: 20},
+        first_structure: {min: 30, good: 80}, second_structure: {min: 5, good: 20}, first_portal: {min: 5, good: 15},
+        stronghold: {min: 3, good: 5}, end: {min: 1, good: 2}, finish: {min: 1, good: 2},
     }],
     [9999, {
-        nether: {min: 500, good: 2000},
-        bastion: {min: 50, good: 600},
-        fortress: {min: 30, good: 100},
-        first_structure: {min: 50, good: 600},
-        second_structure: {min: 30, good: 100},
-        first_portal: {min: 10, good: 60},
-        stronghold: {min: 5, good: 30},
-        end: {min: 4, good: 8},
-        finish: {min: 3, good: 5}
-    }]
-])
+        nether: {min: 500, good: 2000}, bastion: {min: 50, good: 600}, fortress: {min: 30, good: 100},
+        first_structure: {min: 50, good: 600}, second_structure: {min: 30, good: 100}, first_portal: {min: 10, good: 60},
+        stronghold: {min: 5, good: 30}, end: {min: 4, good: 8}, finish: {min: 3, good: 5},
+    }],
+]);
 
-export function getMinQty(category: string, days: number) {
+export function getMinQty(category: string, days: number): number {
     return minQtys.get(days)?.[category]?.min || 0;
 }
 
-// --- Setup and Configuration ---
 dotenv.config({ path: ".env.local" });
 
 const mysqlConfig = {
-    host: process.env.DB_HOST, port: 3306, user: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD, database: process.env.DB_NAME,
+    host: process.env.DB_HOST,
+    port: 3306,
+    user: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    connectTimeout: envInt("CACHE_DB_CONNECT_TIMEOUT_MS", 15_000),
 };
-const getConn = () => mysql.createConnection(mysqlConfig);
-const redisUrl = process.env.REDIS_URL;
-let redis = new Redis(redisUrl!);
-let conn: any = null;
 
 export enum CategoryType {
     COUNT,
@@ -98,873 +88,1246 @@ interface PaceRow {
     stronghold: number | null;
     end: number | null;
     finish: number | null;
-    lootBastion: number | null;
-    obtainObsidian: number | null;
-    obtainCryingObsidian: number | null;
     obtainRod: number | null;
     insertTime: Date;
 }
 
-export const getFirstStructure = (bastion: number | null, fortress: number | null) : number | null => {
-    if (bastion !== null && fortress == null) {
-        return bastion
-    } else if (bastion == null && fortress !== null) {
-        return fortress
-    }
-    if (bastion !== null && fortress !== null) {
-        if (bastion < fortress) {
-            return bastion
-        } else {
-            return fortress
-        }
-    }
-    return null
-}
-
-export const getSecondStructure = (bastion: number | null, fortress: number | null) : number | null => {
-    if(bastion === null || fortress === null){
-        return null;
-    }
-    if (bastion < fortress) {
-        return fortress
-    } else {
-        return bastion
-    }
-}
-
-function getPreviousSplit(split: string) {
-    switch (split) {
-        case "bastion":
-            return "nether"
-        case "fortress":
-            return "bastion"
-        case "first_structure":
-            return "nether"
-        case "second_structure":
-            return "first_structure"
-        case "first_portal":
-            return "second_structure"
-        case "stronghold":
-            return "first_portal"
-        case "end":
-            return "stronghold"
-        case "finish":
-            return "end"
-        default:
-            return null
-    }
-}
-
-export function calculateAvg(data: number[]): number {
-    if(data == null || data.length === 0) return 0
-    data = data.sort((a, b) => a - b)
-    const length = data.length
-    const p98 = length >= 50 ? Math.floor(length * 0.98) : length
-    return data.slice(0, p98).reduce((a, b) => a + b, 0) / p98 || 0
-}
-
-async function calculateAndStoreLeaderboards(days: number = 30) {
-    console.log("Starting leaderboard calculation process...");
-    try {
-        console.log("Connecting to MySQL and fetching data for the last 30 days...");
-        let paceRows: PaceRow[] = [];
-        if(days !== 9999) {
-            const timePeriod = `INTERVAL ${days} DAY`;
-            const [rows] = await conn.execute(
-                `SELECT id, nickname, uuid,
-            nether, bastion, fortress, first_portal, second_portal, stronghold, end, finish,
-            lootBastion, obtainObsidian, obtainCryingObsidian, obtainRod
-            FROM pace WHERE insertTime >= NOW() - ${timePeriod} ORDER BY id DESC;`
-            );
-            paceRows = rows as PaceRow[];
-        } else {
-            const [rows] = await conn.execute(
-                `SELECT id, nickname, uuid,
-            nether, bastion, fortress, first_portal, second_portal, stronghold, end, finish,
-            lootBastion, obtainObsidian, obtainCryingObsidian, obtainRod
-            FROM pace ORDER BY id DESC;`
-            );
-            paceRows = rows as PaceRow[];
-        }
-        console.log(`Fetched ${paceRows.length} rows from the database.`);
-
-        const filters = [
-            CategoryType.AVG,
-            CategoryType.COUNT,
-            CategoryType.FASTEST,
-            CategoryType.CONVERSION
-        ]
-
-        // Define stats categories
-        const categories = [
-            "nether",
-            "bastion",
-            "first_structure",
-            "second_structure",
-            "fortress",
-            "first_portal",
-            "second_portal",
-            "stronghold",
-            "end",
-            "finish"
-        ]
-
-        // Init categories
-        let leaderboards: { [filter: number]: { [category: string]: Entry[] } } = {}
-        for (const filter of filters) {
-            leaderboards[filter] = {}
-            for (const category of categories) {
-                leaderboards[filter][category] = []
-            }
-        }
-
-        const nickMap = new Map<string, string>()
-
-        let splitData: {
-            [uuid: string]: {
-                [column: string]: number[]
-            }
-        } = {}
-
-        let uuids: string[] = []
-        // @ts-ignore
-        for (let row of paceRows) {
-            if (!uuids.includes(row["uuid"])/* && !bans.includes(row["uuid"])*/) {
-                uuids.push(row["uuid"])
-            }
-        }
-
-        for (let uuid of uuids) {
-            splitData[uuid] = {}
-            for (const category of categories) {
-                splitData[uuid][category] = []
-            }
-            splitData[uuid]["first_structure"] = []
-            splitData[uuid]["second_structure"] = []
-            splitData[uuid]["fortress"] = []
-        }
-
-        // @ts-ignore
-        for (let row of paceRows) {
-            const uuid = row["uuid"]
-            /*if (bans.includes(uuid)) {
-                continue
-            }*/
-            const bastion = row["bastion"]
-            const fortress = row["fortress"]
-            const firstStructure = getFirstStructure(bastion, fortress)
-            const secondStructure = getSecondStructure(bastion, fortress)
-            for (const category of categories) {
-                // Special case: 1st struct
-                if(category === "first_structure"){
-                    if(firstStructure !== null){
-                        const rod = row["obtainRod"]
-                        if(firstStructure === fortress && rod !== null && rod < fortress){
-                            splitData[row["uuid"]]["first_structure"].push(rod)
-                        } else {
-                            splitData[row["uuid"]]["first_structure"].push(firstStructure)
-                        }
-                    }
-                    continue
-                }
-                // Special case: 2nd struct
-                if(category === "second_structure"){
-                    if(secondStructure !== null){
-                        const id = row["id"]
-                        if(id >= 187307){ // when context logging was added, march 29th 2024
-                            const rod = row["obtainRod"]
-                            if(secondStructure === bastion && (rod === null || rod > secondStructure)){
-                                continue
-                            }
-                            // @ts-ignore
-                            if(secondStructure === fortress && (fortress - bastion < 50000)){
-                                continue
-                            }
-                            if(secondStructure === fortress && rod !== null && rod < fortress){
-                                splitData[row["uuid"]]["second_structure"].push(rod)
-                            } else {
-                                splitData[row["uuid"]]["second_structure"].push(secondStructure)
-                            }
-                        } else {
-                            splitData[row["uuid"]]["second_structure"].push(secondStructure)
-                        }
-                    }
-                    continue
-                }
-                if(category === "fortress"){
-                    if(fortress !== null){
-                        const rod = row["obtainRod"]
-                        if(rod !== null && rod < fortress){
-                            splitData[row["uuid"]]["fortress"].push(rod)
-                        } else {
-                            splitData[row["uuid"]]["fortress"].push(fortress)
-                        }
-                    }
-                    continue
-                }
-                // Default, fetch stat from row
-                // @ts-ignore
-                if (row[category] !== null) {
-                    if (!nickMap.has(uuid)) {
-                        nickMap.set(row["uuid"], row["nickname"])
-                    }
-                    if(!splitData[uuid]){
-                        splitData[uuid] = {}
-                    }
-                    if(!splitData[uuid][category]){
-                        splitData[uuid][category] = []
-                    }
-                    // @ts-ignore
-                    splitData[uuid][category].push(row[category])
-                }
-            }
-        }
-
-        for (let uuid in splitData) {
-            for (const cat of categories) {
-                for(const filter of filters) {
-                    let val = 0
-                    if(!splitData[uuid][cat] || splitData[uuid][cat].length === 0){
-                        continue
-                    }
-                    if (filter === CategoryType.COUNT) {
-                        val = splitData[uuid][cat].length
-                    } else if (filter === CategoryType.AVG) {
-                        val = calculateAvg(splitData[uuid][cat])
-                    } else if(filter === CategoryType.FASTEST) {
-                        val = Math.max(1, Math.min(...splitData[uuid][cat]))
-                    } else if(filter === CategoryType.CONVERSION) {
-                        const prev = getPreviousSplit(cat)
-                        if (prev !== null) {
-                            const oldSplit = splitData[uuid][prev].length
-                            const newSplit = splitData[uuid][cat].length
-                            val = (newSplit / oldSplit) * 100
-                            if(val === Infinity){
-                                val = 1
-                            }
-                        }
-                    }
-                    if(val > 0) {
-                        leaderboards[filter][cat].push({
-                            uuid: uuid,
-                            name: nickMap.get(uuid) as string,
-                            value: val,
-                            qty: splitData[uuid][cat].length,
-                            avg: calculateAvg(splitData[uuid][cat])
-                        })
-                    }
-                }
-            }
-        }
-
-
-        // Sort and truncate categories
-        for(const filter of filters) {
-            for (const category of categories) {
-                let cat = leaderboards[filter][category]
-                if(cat == null || cat.length === 0){
-                    continue
-                }
-                // remove empty values
-                cat = cat.filter((a) => a.value > 0)
-
-
-                if (filter === CategoryType.AVG || filter === CategoryType.FASTEST) { // sort ascending (avg, fastest)
-                    cat = cat.sort((a, b) => a.value - b.value || b.qty - a.qty)
-                } else { // sort descending (qty, conversion)
-                    cat = cat.sort((a, b) => b.value - a.value || b.qty - a.qty)
-                }
-
-                leaderboards[filter][category] = cat
-            }
-        }
-
-        // cache top 10
-        let topLeaderboards: { [filter: number]: { [category: string]: Entry[] } } = {}
-        for (const filter of filters) {
-            topLeaderboards[filter] = {}
-            for (const category of categories) {
-                topLeaderboards[filter][category] = []
-            }
-        }
-
-        for (const filter of filters) {
-            for (const category of categories) {
-                const data = leaderboards[filter][category]
-                let specific;
-                if(filter === CategoryType.CONVERSION){
-                    specific = data.filter((x: Entry) => x.qty >= getMinQty(category, days))
-                } else if (filter === CategoryType.AVG){
-                    specific = data.filter((x: Entry) => x.qty >= getMinQty(category, days))
-                } else if (filter === CategoryType.FASTEST){
-                    specific = data
-                } else {
-                    specific = data
-                }
-                topLeaderboards[filter][category] = specific.slice(0, 10)
-            }
-        }
-
-        const res1 = await redis.call('JSON.SET', `topLeaderboards:${days}day`, '$', JSON.stringify(topLeaderboards));
-        if (res1 !== 'OK') {
-            throw new Error(`Failed to store top leaderboards for ${days} days in Redis.`);
-        }
-        console.log(`\n✅ Successfully cached top leaderboards for ${days} days in Redis.`);
-
-        // --- 6. CACHE THE FINAL RESULT IN REDIS ---
-        console.log("Storing calculated leaderboards in Redis...");
-        const redisKey = `leaderboards:${days}day`; // A descriptive key
-        const result = await redis.call('JSON.SET', redisKey, '$', JSON.stringify(leaderboards));
-
-        if (result === 'OK') {
-            console.log(`\n✅ Successfully calculated and cached leaderboards in Redis at key '${redisKey}'`);
-        } else {
-            throw new Error('Failed to store leaderboards in Redis.');
-        }
-
-    } catch (error) {
-        console.error("\n❌ An error occurred during the process:", error);
-        process.exit(1);
-    }
-}
-
-async function calculateAndStoreNames() {
-    try {
-        // --- Step 1: Run two optimized queries in parallel ---
-
-        // Query A: Get the MOST RECENT nickname for EACH distinct UUID.
-        // This is a common pattern: Group by uuid to find the max(id), then join back
-        // to the table to get the nickname associated with that specific row.
-        const latestNicknamesQuery = `
-            SELECT p.uuid, p.nickname
-            FROM pace p
-            INNER JOIN (
-                SELECT uuid, MAX(id) as max_id
-                FROM pace
-                GROUP BY uuid
-            ) as latest
-            ON p.uuid = latest.uuid AND p.id = latest.max_id;
-        `;
-
-        // Query B: Get all non-null twitch usernames for each UUID.
-        const allTwitchesQuery = `
-            SELECT uuid, twitch
-            FROM pace
-            WHERE twitch IS NOT NULL;
-        `;
-
-        // Execute both queries concurrently using Promise.all for maximum speed
-        const [
-            [latestNicknameRows],
-            [twitchRows]
-        ] = await Promise.all([
-            conn.execute(latestNicknamesQuery),
-            conn.execute(allTwitchesQuery)
-        ]);
-
-        // --- Step 2: Combine the results efficiently in memory ---
-
-        // Create a map for quick lookup of nicknames by UUID.
-        const nameMap: { [uuid: string]: any } = {};
-
-        // First, populate the map with all UUIDs and their latest nicknames.
-        // This ensures every user is included, even if they have no twitch accounts linked.
-        for (const row of latestNicknameRows) {
-            nameMap[row.uuid] = {
-                id: row.uuid,
-                nick: row.nickname,
-                twitches: [], // Initialize with an empty array
-            };
-        }
-
-        // Now, iterate through the twitch data and add it to the existing user objects.
-        for (const row of twitchRows) {
-            // Since we already populated all users, we can be sure nameMap[row.uuid] exists.
-            // (Unless there's a data integrity issue where a twitch entry exists for a non-existent UUID)
-            if (nameMap[row.uuid]) {
-                nameMap[row.uuid].twitches.push(row.twitch);
-            }
-        }
-
-        // --- Step 3: Store the final result in Redis ---
-
-        const finalUserList = Object.values(nameMap);
-
-        if (finalUserList.length === 0) {
-            console.log("No user data found to cache.");
-            return;
-        }
-
-        const res = await redis.call('JSON.SET', 'users', '$', JSON.stringify(finalUserList));
-        if (res !== 'OK') {
-            console.error("Failed to set users in Redis:", res);
-            return;
-        }
-
-        console.log(`User names for ${finalUserList.length} users cached in Redis successfully.`);
-
-    } catch (error) {
-        console.error("An error occurred in calculateAndStoreNames:", error);
-    }
-}
-
-async function calculateAndStorePlayerStats(days: number) {
-    const users = JSON.parse(await redis.call('JSON.GET', `users`, '$') as string)[0];
-    const lb = JSON.parse(await redis.call('JSON.GET', `leaderboards:${days}day`, '$') as string)[0];
-
-    const filters = [
-        CategoryType.AVG,
-        CategoryType.COUNT,
-        CategoryType.FASTEST,
-        CategoryType.CONVERSION
-    ]
-
-    const categories = [
-        "nether",
-        "bastion",
-        "first_structure",
-        "second_structure",
-        "fortress",
-        "first_portal",
-        "second_portal",
-        "stronghold",
-        "end",
-        "finish"
-    ]
-    for (const user of users) {
-        const uuid = user.id;
-        const data: { [category: string]: { [filter: number]: { ranking: number, value: number } } } = {}
-        for (const category of categories) {
-            data[category] = {}
-        }
-        for(const filter of filters) {
-            for (const category of categories) {
-                let minQty = getMinQty(category, days)
-                if(filter === CategoryType.FASTEST || filter === CategoryType.COUNT){
-                    minQty = 0;
-                }
-                const board = lb[filter][category]
-                let i = 0
-                for (const entry of board) {
-                    if (entry.qty === 0) continue;
-                    if (entry.qty < minQty && entry.uuid !== uuid) continue;
-                    i++;
-                    if (entry.uuid === uuid) {
-                        data[category][filter] = {ranking: entry.qty < minQty ? -1 : i, value: entry.value}
-                        break
-                    }
-                }
-            }
-        }
-        redis.call('JSON.SET', `playerStats:${uuid}:${days}day`, '$', JSON.stringify(data));
-    }
-    console.log(`\n✅ Successfully cached player stats for ${days} days in Redis.`)
-}
-
-async function calculateAndStoreFastest(days: number) {
-    const timePeriod = `INTERVAL ${days} DAY`;
-
-    const categories = [
-        "nether",
-        "bastion",
-        "first_structure",
-        "second_structure",
-        "fortress",
-        "first_portal",
-        "second_portal",
-        "stronghold",
-        "end",
-        "finish"
-    ]
-
-    // Init categories
-    let leaderboards: { [category: string]: FastestEntry[] } = {}
-    for (const category of categories) {
-        leaderboards[category] = []
-    }
-
-    const [rows, fields] = await (await getConn()).execute(
-        `SELECT id, nickname, uuid, 
-        nether, bastion, fortress, first_portal, second_portal, stronghold, end, finish,
-        lootBastion, obtainObsidian, obtainCryingObsidian, obtainRod
-        FROM pace WHERE insertTime >= NOW() - ${timePeriod} ORDER BY id DESC;`
-    )
-
-    const nickMap = new Map<string, string>()
-
-    let splitData: {
-        [uuid: string]: {
-            [column: string]: { time: number, id: number }[]
-        }
-    } = {}
-
-    let uuids: string[] = []
-    // @ts-ignore
-    for (let row of rows) {
-        if (!uuids.includes(row["uuid"])) {
-            uuids.push(row["uuid"])
-        }
-    }
-
-    for (let uuid of uuids) {
-        splitData[uuid] = {}
-        for (const category of categories) {
-            splitData[uuid][category] = []
-        }
-        splitData[uuid]["first_structure"] = []
-        splitData[uuid]["second_structure"] = []
-    }
-
-    // @ts-ignore
-    for (let row of rows) {
-        const uuid = row["uuid"]
-        const bastion = row["bastion"]
-        const fortress = row["fortress"]
-        const firstStructure = getFirstStructure(bastion, fortress)
-        const secondStructure = getSecondStructure(bastion, fortress)
-        for (const category of categories) {
-            // Special case: 1st struct
-            if(category === "first_structure"){
-                if(firstStructure !== null){
-                    splitData[row["uuid"]]["first_structure"].push({time: firstStructure, id: row["id"]})
-                }
-                continue
-            }
-            // Special case: 2nd struct
-            if(category === "second_structure"){
-                if(secondStructure !== null){
-                    const id = row["id"]
-                    if(id >= 187307){ // when context logging was added, march 29th 2024
-                        const rod = row["obtainRod"]
-                        if(secondStructure === bastion){
-                            continue;
-                        }
-                        /*if(secondStructure === bastion && (rod === null || rod > secondStructure)){
-                            continue
-                        }*/
-                        if(secondStructure === fortress && (fortress - bastion < 50000)){
-                            continue
-                        }
-                    }
-                    splitData[row["uuid"]]["second_structure"].push({time: secondStructure, id: row["id"]})
-                }
-                continue
-            }
-            // Default, fetch stat from row
-            if (row[category] !== null) {
-                if (!nickMap.has(uuid)) {
-                    nickMap.set(row["uuid"], row["nickname"])
-                }
-                if(!splitData[uuid]){
-                    splitData[uuid] = {}
-                }
-                if(!splitData[uuid][category]){
-                    splitData[uuid][category] = []
-                }
-                splitData[uuid][category].push({time: row[category], id: row["id"]})
-            }
-        }
-    }
-
-    for (let uuid in splitData) {
-        for (const cat of categories) {
-            let val = 0
-            if(!splitData[uuid][cat] || splitData[uuid][cat].length === 0){
-                continue
-            }
-            val = Math.min(...splitData[uuid][cat].map((a) => a.time))
-            if(val > 0) {
-                // @ts-ignore
-                let runId = splitData[uuid][cat].find((a) => a.time === val).id
-                leaderboards[cat].push({
-                    uuid: uuid,
-                    name: nickMap.get(uuid) as string,
-                    value: val,
-                    runId: runId
-                })
-            }
-        }
-    }
-
-
-    // Sort and truncate categories
-    for (const category of categories) {
-        let cat = leaderboards[category]
-        if(cat == null || cat.length === 0){
-            continue
-        }
-        // remove empty values
-        cat = cat.filter((a) => a.value > 0)
-        cat = cat.sort((a, b) => a.value - b.value)
-        leaderboards[category] = cat.slice(0, 10)
-    }
-    redis.call('JSON.SET', `fastestLeaderboards:${days}day`, '$', JSON.stringify(leaderboards));
-    console.log(`\n✅ Successfully cached fastest leaderboards for ${days} days in Redis.`)
-}
-
-async function calculateAndStoreUserData() {
-    try {
-        // Query A: Get the latest nickname for each UUID.
-        const latestNicknamesQuery = `
-        SELECT p.uuid, p.nickname
-        FROM pace p
-        INNER JOIN (
-            SELECT uuid, MAX(id) as max_id
-            FROM pace
-            GROUP BY uuid
-        ) as latest ON p.uuid = latest.uuid AND p.id = latest.max_id;
-    `;
-
-        // Query B: Get all unique (uuid, twitch) pairs for the simple list.
-        const allTwitchesQuery = `
-        SELECT DISTINCT uuid, twitch
-        FROM pace
-        WHERE twitch IS NOT NULL;
-    `;
-
-        // Query C: Get the top 2 most recent, unique twitch accounts per user using a window function.
-        const topTwitchAccountsQuery = `
-        SELECT uuid, twitch, time
-        FROM (
-            SELECT
-                uuid,
-                twitch,
-                UNIX_TIMESTAMP(latest_time) as time,
-                ROW_NUMBER() OVER(PARTITION BY uuid ORDER BY latest_time DESC) as rn
-            FROM (
-                -- This inner query finds the most recent timestamp for each unique (uuid, twitch) pair
-                SELECT uuid, twitch, MAX(insertTime) as latest_time
-                FROM pace
-                WHERE twitch IS NOT NULL
-                GROUP BY uuid, twitch
-            ) as unique_recent_twitches
-        ) as ranked_twitches
-        WHERE rn <= 2;
-    `;
-
-        const [
-            [latestNicknameRows],
-            [twitchRows],
-            [topTwitchAccountRows]
-        ] = await Promise.all([
-            conn.execute(latestNicknamesQuery),
-            conn.execute(allTwitchesQuery),
-            conn.execute(topTwitchAccountsQuery)
-        ]);
-
-        const userMap: Record<string, any> = {};
-        const twitchDetailsMap: any = {};
-
-        for (const row of latestNicknameRows) {
-            userMap[row.uuid] = {
-                id: row.uuid,
-                nick: row.nickname,
-                twitches: [],
-            };
-            twitchDetailsMap[row.uuid] = [];
-        }
-
-        for (const row of twitchRows) {
-            if (userMap[row.uuid]) {
-                userMap[row.uuid].twitches.push(row.twitch);
-            }
-        }
-
-        for (const row of topTwitchAccountRows) {
-            if (twitchDetailsMap[row.uuid]) {
-                twitchDetailsMap[row.uuid].push({
-                    twitch: row.twitch,
-                    time: row.time,
-                    live: false
-                });
-            }
-        }
-
-        const finalUserList = Object.values(userMap);
-
-        if (finalUserList.length === 0) {
-            console.log("No user data found to cache.");
-            return;
-        }
-
-        const userSetResult = await redis.call('JSON.SET', 'users', '$', JSON.stringify(finalUserList));
-
-        for(const t of Object.keys(twitchDetailsMap)) {
-            if (twitchDetailsMap[t].length > 0) {
-                redis.call('JSON.SET', `users:twitch_details:${t}`, '$', JSON.stringify(twitchDetailsMap[t]));
-            }
-        }
-
-        if (userSetResult !== 'OK') {
-            console.error("Failed to set 'users' in Redis:", userSetResult);
-        } else {
-            console.log(`Successfully cached data for ${finalUserList.length} users in 'users' key.`);
-        }
-
-    } catch (error) {
-        console.error("An error occurred during updateUserCache:", error);
-    }
-}
-
-export interface NPHResult {
-    rtanph: number;
-    rnph: number;
-    lnph: number;
-    count: number;
-    avg: number;
-    playtime: number;
-    walltime: number;
-    resets: number;
-    totalResets: number;
-    seedsPlayed: number;
-    rpe: number;
-}
-
-export function roundNumber(num: number, decimals: number = 2) {
-    return Math.round(num * Math.pow(10, decimals)) / Math.pow(10, decimals);
+interface AaRow {
+    id: number;
+    nickname: string;
+    uuid: string;
+    nether: number | null;
+    bastion: number | null;
+    fortress: number | null;
+    stronghold: number | null;
+    end: number | null;
+    elytra: number | null;
+    credits: number | null;
+    finish: number | null;
+    insertTime: Date;
 }
 
 interface NetherPaceRow {
+    id: number;
     uuid: string;
     nether: number;
-    twitch: string;
-    wallTime: number; // Assumed to be in milliseconds
-    playTime: number; // Assumed to be in milliseconds
+    wallTime: number;
+    playTime: number;
     enters: number;
-    isAccurate: boolean | number;
-    time: number;     // UNIX timestamp in seconds
+    time: number;
     resets: number;
     totalResets: number;
 }
 
-// Type for the final calculated data for a single player
-interface NphData {
-    rtanph: number;      // Nethers per hour (real-time)
-    rnph: number;        // Nethers per hour (raw playtime)
-    lnph: number;        // Nethers per hour (loadless playtime)
-    count: number;       // Total nethers counted
-    avg: number;         // Average nether entry time
-    playtime: number;    // Total playtime in ms
-    walltime: number;    // Total walltime in ms
-    resets: number;      // Total resets during these sessions
-    totalResets: number; // Player's all-time total resets
-    seedsPlayed: number; // Percentage of seeds entered
-    rpe: number;         // Resets per enter
+interface CachedUser {
+    id: string;
+    nick: string;
+    twitches: string[];
+    displayName?: string | null;
+    color?: string | null;
+    bgColor?: string | null;
 }
 
-async function calculateAndStoreNph(days: number) {
-    // 1. Fetch data from the database
-    const timePeriod = `INTERVAL ${days * 24} HOUR`;
-    const [results, _] = await conn.execute(
-        `SELECT nethers.uuid, pace.nether as nether, twitch, wallTime, playTime, enters, isAccurate, UNIX_TIMESTAMP(nethers.insertTime) as time, resets, totalResets
-        FROM nethers INNER JOIN pace ON nethers.runId=pace.id
-        WHERE nethers.insertTime >= NOW() - ${timePeriod} ORDER BY nethers.id DESC;`,
+interface IdentityOutboxClaim {
+    scope: "identity";
+    entityId: string;
+    token: string;
+}
+
+type Leaderboards = { [filter: number]: { [category: string]: Entry[] } };
+
+interface CachePacer {
+    rowBatchSize: number;
+    delayMs: number;
+    lease?: RedisLease;
+}
+
+async function pacingPause(pacer: CachePacer): Promise<void> {
+    if (pacer.delayMs <= 0) return;
+    pacer.lease?.assertHeld();
+    await new Promise<void>((resolve) => setTimeout(resolve, pacer.delayMs));
+    pacer.lease?.assertHeld();
+}
+
+const paceCategories = [
+    "nether", "bastion", "first_structure", "second_structure", "fortress",
+    "first_portal", "second_portal", "stronghold", "end", "finish",
+] as const;
+const aaCategories = ["nether", "bastion", "fortress", "stronghold", "end", "elytra", "credits", "finish"] as const;
+const filters = [CategoryType.AVG, CategoryType.COUNT, CategoryType.FASTEST, CategoryType.CONVERSION] as const;
+
+export const getFirstStructure = (bastion: number | null, fortress: number | null): number | null => {
+    if (bastion !== null && fortress === null) return bastion;
+    if (bastion === null && fortress !== null) return fortress;
+    if (bastion !== null && fortress !== null) return Math.min(bastion, fortress);
+    return null;
+};
+
+export const getSecondStructure = (bastion: number | null, fortress: number | null): number | null => {
+    if (bastion === null || fortress === null) return null;
+    return Math.max(bastion, fortress);
+};
+
+function getPreviousSplit(split: string): string | null {
+    switch (split) {
+        case "bastion": return "nether";
+        case "fortress": return "bastion";
+        case "first_structure": return "nether";
+        case "second_structure": return "first_structure";
+        case "first_portal": return "second_structure";
+        case "stronghold": return "first_portal";
+        case "end": return "stronghold";
+        case "finish": return "end";
+        default: return null;
+    }
+}
+
+function getPreviousAaSplit(split: string): string | null {
+    switch (split) {
+        case "bastion": return "nether";
+        case "fortress": return "bastion";
+        case "stronghold": return "fortress";
+        case "end": return "stronghold";
+        case "elytra": return "end";
+        case "credits": return "elytra";
+        case "finish": return "credits";
+        default: return null;
+    }
+}
+
+function calculateAvgInPlace(data: number[]): number {
+    if (!data || data.length === 0) return 0;
+    data.sort((a, b) => a - b);
+    const p98 = data.length >= 50 ? Math.floor(data.length * 0.98) : data.length;
+    let sum = 0;
+    for (let index = 0; index < p98; index++) sum += data[index];
+    return sum / p98 || 0;
+}
+
+export function calculateAvg(data: number[]): number {
+    return calculateAvgInPlace([...data]);
+}
+
+function roundNumber(num: number, decimals = 2): number {
+    return Math.round(num * Math.pow(10, decimals)) / Math.pow(10, decimals);
+}
+
+function initLeaderboards(categories: readonly string[]): Leaderboards {
+    const leaderboards: Leaderboards = {};
+    for (const filter of filters) {
+        leaderboards[filter] = {};
+        for (const category of categories) leaderboards[filter][category] = [];
+    }
+    return leaderboards;
+}
+
+function sortLeaderboardsInPlace(leaderboards: Leaderboards, categories: readonly string[]): void {
+    for (const filter of filters) {
+        for (const category of categories) {
+            leaderboards[filter][category].sort(
+                filter === CategoryType.AVG || filter === CategoryType.FASTEST
+                    ? (a, b) => a.value - b.value || b.qty - a.qty
+                    : (a, b) => b.value - a.value || b.qty - a.qty,
+            );
+        }
+    }
+}
+
+function topLeaderboards(leaderboards: Leaderboards, categories: readonly string[], days: number): Leaderboards {
+    const top = initLeaderboards(categories);
+    for (const filter of filters) {
+        for (const category of categories) {
+            const board = leaderboards[filter][category];
+            const eligible = filter === CategoryType.AVG || filter === CategoryType.CONVERSION
+                ? board.filter((entry) => entry.qty >= getMinQty(category, days))
+                : board;
+            top[filter][category] = eligible.slice(0, 10);
+        }
+    }
+    return top;
+}
+
+function partitionRowsByDays<T extends { insertTime: Date }>(
+    rows: T[],
+    days: readonly number[],
+    asOfMs: number,
+): Map<number, T[]> {
+    const partitions = new Map(days.map((day) => [day, [] as T[]]));
+    for (const row of rows) {
+        const ageMs = asOfMs - row.insertTime.getTime();
+        for (const day of days) {
+            if (day === 9999 || ageMs <= day * 86_400_000) partitions.get(day)!.push(row);
+        }
+    }
+    return partitions;
+}
+
+function partitionNetherRowsByDays(
+    rows: NetherPaceRow[],
+    days: readonly number[],
+    asOfMs: number,
+): Map<number, NetherPaceRow[]> {
+    const partitions = new Map(days.map((day) => [day, [] as NetherPaceRow[]]));
+    const asOfSeconds = asOfMs / 1_000;
+    for (const row of rows) {
+        const ageSeconds = asOfSeconds - row.time;
+        for (const day of days) {
+            if (day === 9999 || ageSeconds <= day * 86_400) partitions.get(day)!.push(row);
+        }
+    }
+    return partitions;
+}
+
+type PaceMinimum = {time: number; id: number; insertTime: Date};
+type PacePlayerAccumulator = {
+    name: string;
+    splits: Record<string, number[]>;
+    minima: Record<string, PaceMinimum | undefined>;
+};
+
+function accumulatePaceRow(players: Map<string, PacePlayerAccumulator>, row: PaceRow): void {
+    let player = players.get(row.uuid);
+    if (!player) {
+        player = {
+            name: row.nickname,
+            splits: Object.fromEntries(paceCategories.map((category) => [category, []])) as Record<string, number[]>,
+            minima: {},
+        };
+        players.set(row.uuid, player);
+    }
+    const latestName = player.minima.__latestName;
+    if (!latestName || row.insertTime > latestName.insertTime || (
+        row.insertTime.getTime() === latestName.insertTime.getTime() && row.id > latestName.id
+    )) {
+        player.name = row.nickname;
+        player.minima.__latestName = {time: 0, id: row.id, insertTime: row.insertTime};
+    }
+
+    const recordMinimum = (category: string, time: number | null) => {
+        if (time === null) return;
+        const existing = player!.minima[category];
+        if (
+            !existing
+            || time < existing.time
+            || (time === existing.time && (
+                row.insertTime > existing.insertTime
+                || (row.insertTime.getTime() === existing.insertTime.getTime() && row.id > existing.id)
+            ))
+        ) player!.minima[category] = {time, id: row.id, insertTime: row.insertTime};
+    };
+
+    const firstStructure = getFirstStructure(row.bastion, row.fortress);
+    const secondStructure = getSecondStructure(row.bastion, row.fortress);
+    recordMinimum("first_structure", firstStructure);
+    if (firstStructure !== null) {
+        player.splits.first_structure.push(
+            firstStructure === row.fortress && row.obtainRod !== null && row.obtainRod < row.fortress
+                ? row.obtainRod
+                : firstStructure,
+        );
+    }
+    if (secondStructure !== null) {
+        if (row.id < 187307) {
+            player.splits.second_structure.push(secondStructure);
+            recordMinimum("second_structure", secondStructure);
+        } else if (
+            !(secondStructure === row.bastion && (row.obtainRod === null || row.obtainRod > secondStructure))
+            && !(secondStructure === row.fortress && row.fortress - row.bastion! < 50_000)
+        ) {
+            recordMinimum("second_structure", secondStructure);
+            player.splits.second_structure.push(
+                secondStructure === row.fortress && row.obtainRod !== null && row.obtainRod < row.fortress
+                    ? row.obtainRod
+                    : secondStructure,
+            );
+        }
+    }
+    if (row.fortress !== null) {
+        player.splits.fortress.push(
+            row.obtainRod !== null && row.obtainRod < row.fortress ? row.obtainRod : row.fortress,
+        );
+    }
+    for (const category of paceCategories) {
+        if (category === "first_structure" || category === "second_structure" || category === "fortress") continue;
+        const value = row[category];
+        if (value !== null) {
+            player.splits[category].push(value);
+            recordMinimum(category, value);
+        }
+    }
+    recordMinimum("fortress", row.fortress);
+}
+
+function finalizePacePlayers(players: Map<string, PacePlayerAccumulator>, days: number): {
+    full: Leaderboards;
+    top: Leaderboards;
+    fastest: { [category: string]: FastestEntry[] };
+} {
+    const leaderboards = initLeaderboards(paceCategories);
+    for (const [uuid, player] of players) {
+        for (const category of paceCategories) {
+            const values = player.splits[category];
+            if (values.length === 0) continue;
+            const qty = values.length;
+            const avg = calculateAvgInPlace(values);
+            const fastest = values[0];
+            const previous = getPreviousSplit(category);
+            const conversion = previous === null
+                ? 0
+                : player.splits[previous].length === 0
+                    ? 1
+                    : (qty / player.splits[previous].length) * 100;
+            const valuesByFilter: Record<number, number> = {
+                [CategoryType.COUNT]: qty,
+                [CategoryType.AVG]: avg,
+                [CategoryType.FASTEST]: Math.max(1, fastest),
+                [CategoryType.CONVERSION]: conversion,
+            };
+
+            for (const filter of filters) {
+                const value = valuesByFilter[filter];
+                if (value <= 0) continue;
+                leaderboards[filter][category].push({uuid, name: player.name, value, qty, avg});
+            }
+        }
+    }
+
+    sortLeaderboardsInPlace(leaderboards, paceCategories);
+    const top = topLeaderboards(leaderboards, paceCategories, days);
+    const fastest: { [category: string]: FastestEntry[] } = Object.fromEntries(
+        paceCategories.map((category) => [category, []]),
     );
-
-    const rows = results as NetherPaceRow[];
-
-    // 2. Group results by player UUID
-    const groupedByUuid: Record<string, NetherPaceRow[]> = rows.reduce((acc, row) => {
-        if (!acc[row.uuid]) {
-            acc[row.uuid] = [];
+    for (const [uuid, player] of players) {
+        for (const category of paceCategories) {
+            const minimum = player.minima[category];
+            if (!minimum || minimum.time <= 0) continue;
+            fastest[category].push({
+                uuid,
+                name: player.name,
+                value: minimum.time,
+                runId: minimum.id,
+            });
         }
-        acc[row.uuid].push(row);
-        return acc;
-    }, {} as Record<string, NetherPaceRow[]>);
+    }
+    for (const category of paceCategories) {
+        fastest[category].sort((a, b) => a.value - b.value);
+        // Keep 100 entries for the public API; the front page gets its own
+        // top-ten copy in the compact cache below.
+        fastest[category] = fastest[category].slice(0, 100);
+        // Keep the front page on the same compact top-leaderboard read used by
+        // its other views while retaining the run ID needed for clickable times.
+        const detailsByUuid = new Map(
+            leaderboards[CategoryType.FASTEST][category].map((entry) => [entry.uuid, entry]),
+        );
+        top[CategoryType.FASTEST][category] = fastest[category].slice(0, 10).map((entry) => ({
+            ...detailsByUuid.get(entry.uuid)!,
+            ...entry,
+        }));
+    }
+    return {full: leaderboards, top, fastest};
+}
 
-    const hoursBetween = days * 24;
+async function calculateLeaderboards(rows: PaceRow[], days: number, pacer?: CachePacer): Promise<{
+    full: Leaderboards;
+    top: Leaderboards;
+    fastest: { [category: string]: FastestEntry[] };
+}> {
+    const players = new Map<string, PacePlayerAccumulator>();
+    for (let index = 0; index < rows.length; index++) {
+        accumulatePaceRow(players, rows[index]);
+        if (pacer && (index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
+    }
+    return finalizePacePlayers(players, days);
+}
 
-    // 3. Process each player's grouped data
-    for (const uuid in groupedByUuid) {
-        const playerRows = groupedByUuid[uuid];
+async function calculateAaLeaderboards(rows: AaRow[], pacer?: CachePacer): Promise<Leaderboards> {
+    const leaderboards = initLeaderboards(aaCategories);
+    const nickMap = new Map<string, string>();
+    const splitData = new Map<string, Record<string, number[]>>();
 
-        // --- Apply the exact calculation logic from the prompt ---
-        let wallTime = 0;
-        let playTime = 0;
-        let firstTime = 0; // Most recent timestamp (since results are sorted DESC)
-        let lastTime = 0;  // Oldest timestamp processed in the loop
-        let nethers = 0;
-        let resets = 0;
-        let enters = 0;
-        const times: number[] = [];
+    for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
+        if (pacer && index > 0 && index % pacer.rowBatchSize === 0) await pacingPause(pacer);
+        if ((row.nether as number) < 120_000 && row.end === null) continue;
+        if (row.credits !== null && row.elytra === null) continue;
+        if (!nickMap.has(row.uuid)) nickMap.set(row.uuid, row.nickname);
+        let player = splitData.get(row.uuid);
+        if (!player) {
+            player = Object.fromEntries(aaCategories.map((category) => [category, []])) as Record<string, number[]>;
+            splitData.set(row.uuid, player);
+        }
+        for (const category of aaCategories) {
+            const value = row[category];
+            if (value !== null) player[category].push(value);
+        }
+    }
 
-        for (const row of playerRows) {
-            if (firstTime === 0) {
-                firstTime = row.time;
+    for (const [uuid, player] of splitData) {
+        for (const category of aaCategories) {
+            const values = player[category];
+            if (values.length === 0) continue;
+            const qty = values.length;
+            const avg = calculateAvgInPlace(values);
+            const fastest = values[0];
+            const previous = getPreviousAaSplit(category);
+            const conversion = previous === null
+                ? 0
+                : player[previous].length === 0
+                    ? 1
+                    : (qty / player[previous].length) * 100;
+            const valuesByFilter: Record<number, number> = {
+                [CategoryType.COUNT]: qty,
+                [CategoryType.AVG]: avg,
+                [CategoryType.FASTEST]: fastest,
+                [CategoryType.CONVERSION]: conversion,
+            };
+            for (const filter of filters) {
+                const value = valuesByFilter[filter];
+                if (value <= 0) continue;
+                leaderboards[filter][category].push({ uuid, name: nickMap.get(uuid) || "", value, qty, avg });
             }
-            // `diff` is the time gap between this entry and the previous (newer) one
-            const diff = lastTime - row.time;
-            if (lastTime > 0 && diff > 60 * 60 * hoursBetween) {
-                break;
+        }
+    }
+
+    sortLeaderboardsInPlace(leaderboards, aaCategories);
+    return leaderboards;
+}
+
+function calculatePlayerStats(users: CachedUser[], leaderboards: Leaderboards, days: number): Array<[string, unknown]> {
+    const dataByUuid = new Map<string, Record<string, Record<number, { ranking: number; value: number }>>>();
+    for (const user of users) {
+        dataByUuid.set(
+            user.id,
+            Object.fromEntries(paceCategories.map((category) => [category, {}])) as Record<string, Record<number, { ranking: number; value: number }>>,
+        );
+    }
+
+    for (const filter of filters) {
+        for (const category of paceCategories) {
+            const minQty = filter === CategoryType.FASTEST || filter === CategoryType.COUNT
+                ? 0
+                : getMinQty(category, days);
+            let eligibleRank = 0;
+            for (const entry of leaderboards[filter][category]) {
+                if (entry.qty === 0) continue;
+                const player = dataByUuid.get(entry.uuid);
+                if (entry.qty < minQty) {
+                    if (player) player[category][filter] = { ranking: -1, value: entry.value };
+                } else {
+                    eligibleRank++;
+                    if (player) player[category][filter] = { ranking: eligibleRank, value: entry.value };
+                }
             }
-            times.push(row.nether);
-            playTime += row.playTime;
-            wallTime += row.wallTime;
-            lastTime = row.time; // Update `lastTime` to the current (older) timestamp
-            nethers += 1;
-            if (row.resets > 0) {
-                resets += row.resets;
-            }
-            enters += row.enters;
         }
+    }
 
-        // If the loop didn't process any rows for this player, skip them
-        if (nethers === 0) {
-            continue;
-        }
+    return [...dataByUuid].map(([uuid, data]) => [`playerStats:${uuid}:${days}day`, data]);
+}
 
-        const avg = calculateAvg(times);
+type NphAccumulator = {
+    wallTime: number;
+    playTime: number;
+    firstTime: number;
+    lastTime: number;
+    latestId: number;
+    resets: number;
+    enters: number;
+    totalResets: number;
+    times: number[];
+};
 
-        // RTA (Real-Time Attack) is measured from the first to the last nether.
-        // If only one nether, it's measured from that nether until now.
-        let elapsedRtaMs = 0;
-        if (nethers > 1) {
-            elapsedRtaMs = (firstTime - lastTime) * 1000;
-        } else {
-            elapsedRtaMs = Date.now() - (lastTime * 1000);
-        }
+function accumulateNphRow(grouped: Map<string, NphAccumulator>, row: NetherPaceRow): void {
+    let player = grouped.get(row.uuid);
+    if (!player) {
+        player = {
+            wallTime: 0,
+            playTime: 0,
+            firstTime: row.time,
+            lastTime: row.time,
+            latestId: row.id,
+            resets: 0,
+            enters: 0,
+            totalResets: row.totalResets,
+            times: [],
+        };
+        grouped.set(row.uuid, player);
+    }
+    player.times.push(row.nether);
+    player.playTime += row.playTime;
+    player.wallTime += row.wallTime;
+    if (row.time < player.lastTime) player.lastTime = row.time;
+    if (row.time > player.firstTime || (row.time === player.firstTime && row.id > player.latestId)) {
+        player.firstTime = row.time;
+        player.latestId = row.id;
+        player.totalResets = row.totalResets;
+    }
+    if (row.resets > 0) player.resets += row.resets;
+    player.enters += row.enters;
+}
 
-        // Convert times from milliseconds to hours for NPH calculation
-        const elapsedRtaHours = elapsedRtaMs / (1000 * 60 * 60);
-        const totalGameTimeHours = (wallTime + playTime) / (1000 * 60 * 60);
-        const playTimeHours = playTime / (1000 * 60 * 60);
-
-        // Store the final calculated data for the player
-        const nph = {
+function finalizeNph(grouped: Map<string, NphAccumulator>, days: number, asOfMs: number): Array<[string, unknown]> {
+    const output: Array<[string, unknown]> = [];
+    for (const [uuid, player] of grouped) {
+        const nethers = player.times.length;
+        if (nethers === 0) continue;
+        const elapsedRtaMs = nethers > 1
+            ? (player.firstTime - player.lastTime) * 1000
+            : asOfMs - player.lastTime * 1000;
+        const elapsedRtaHours = elapsedRtaMs / 3_600_000;
+        const totalGameTimeHours = (player.wallTime + player.playTime) / 3_600_000;
+        const playTimeHours = player.playTime / 3_600_000;
+        output.push([`nph:${uuid}:${days}day`, {
             rtanph: roundNumber(elapsedRtaHours > 0 ? nethers / elapsedRtaHours : 0),
             rnph: roundNumber(totalGameTimeHours > 0 ? nethers / totalGameTimeHours : 0),
             lnph: roundNumber(playTimeHours > 0 ? nethers / playTimeHours : 0),
             count: nethers,
-            avg: avg,
-            playtime: playTime,
-            walltime: wallTime,
-            resets: resets,
-            totalResets: playerRows[0].totalResets, // Taken from the most recent record
-            seedsPlayed: roundNumber(resets > 0 ? (enters / resets) * 100 : 0),
-            rpe: roundNumber(resets / nethers) // `nethers` is guaranteed to be > 0 here
-        };
-        redis.call('JSON.SET', `nph:${uuid}:${days}day`, '$', JSON.stringify(nph));
+            avg: calculateAvgInPlace(player.times),
+            playtime: player.playTime,
+            walltime: player.wallTime,
+            resets: player.resets,
+            totalResets: player.totalResets,
+            seedsPlayed: roundNumber(player.resets > 0 ? (player.enters / player.resets) * 100 : 0),
+            rpe: roundNumber(player.resets / nethers),
+        }]);
     }
-    console.log("Cached NPH data for the last", days, "days in Redis.");
+    return output;
 }
 
-async function main() {
-    const full = process.argv.includes('--full');
-    conn = await getConn()
-    let days = [1, 7, 30]
-    if(full){
-        days = [9999]
-    } else {
-        await calculateAndStoreUserData();
+async function calculateNph(
+    rows: NetherPaceRow[],
+    days: number,
+    asOfMs: number,
+    pacer?: CachePacer,
+): Promise<Array<[string, unknown]>> {
+    const cutoffSeconds = days === 9999 ? Number.NEGATIVE_INFINITY : asOfMs / 1000 - days * 86_400;
+    const grouped = new Map<string, NphAccumulator>();
+    for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
+        if (row.time >= cutoffSeconds) accumulateNphRow(grouped, row);
+        if (pacer && (index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
     }
-    for (const day of days) {
-        await calculateAndStoreNph(day);
-        await calculateAndStoreLeaderboards(day);
-        await calculateAndStorePlayerStats(day);
-        await calculateAndStoreFastest(day);
-    }
-    await conn.end();
-    await redis.quit();
-    process.exit();
+    return finalizeNph(grouped, days, asOfMs);
 }
-main();
+
+async function fetchUserData(conn: Connection): Promise<{users: CachedUser[]; details: Array<[string, unknown]>}> {
+    const latestNicknamesQuery = `
+        SELECT p.uuid, p.nickname
+        FROM pace p
+        INNER JOIN (
+            SELECT uuid, MAX(id) AS max_id FROM pace GROUP BY uuid
+        ) latest
+            ON p.uuid = latest.uuid AND p.id = latest.max_id;
+    `;
+    const twitchAccountsQuery = `
+        SELECT uuid, twitch, UNIX_TIMESTAMP(MAX(insertTime)) AS time
+        FROM pace
+        WHERE twitch IS NOT NULL
+        GROUP BY uuid, twitch
+        ORDER BY uuid, time DESC;
+    `;
+    const userCustomizationQuery = `SELECT uuid, displayName, color, bgColor FROM users;`;
+    const [latestNicknameRows] = await conn.execute(latestNicknamesQuery) as any;
+    const [twitchRows] = await conn.execute(twitchAccountsQuery) as any;
+    const [customizationRows] = await conn.execute(userCustomizationQuery) as any;
+    const usersByUuid = new Map<string, CachedUser>();
+    const topTwitches = new Map<string, Array<{ twitch: string; time: number; live: boolean }>>();
+
+    for (const row of latestNicknameRows) {
+        usersByUuid.set(row.uuid, {
+            id: row.uuid,
+            nick: row.nickname,
+            twitches: [],
+            displayName: null,
+            color: null,
+            bgColor: null,
+        });
+        topTwitches.set(row.uuid, []);
+    }
+    for (const row of twitchRows) {
+        const user = usersByUuid.get(row.uuid);
+        if (!user) continue;
+        user.twitches.push(row.twitch);
+        const details = topTwitches.get(row.uuid)!;
+        if (details.length < 2) details.push({ twitch: row.twitch, time: row.time, live: false });
+    }
+    for (const row of customizationRows) {
+        const user = usersByUuid.get(row.uuid);
+        if (!user) continue;
+        user.displayName = row.displayName;
+        user.color = row.color;
+        user.bgColor = row.bgColor;
+    }
+
+    const details: Array<[string, unknown]> = [];
+    for (const [uuid, accounts] of topTwitches) {
+        if (accounts.length > 0) details.push([`users:twitch_details:${uuid}`, accounts]);
+    }
+    return { users: [...usersByUuid.values()], details };
+}
+
+async function readIdentityOutboxClaims(conn: Connection): Promise<IdentityOutboxClaim[]> {
+    const [rows] = await conn.execute(
+        `SELECT scope, entityId, token
+         FROM cache_invalidation_outbox
+         WHERE scope='identity'
+         ORDER BY entityId ASC;`,
+    );
+    return rows as IdentityOutboxClaim[];
+}
+
+async function acknowledgeIdentityOutboxClaims(
+    conn: Connection,
+    claims: IdentityOutboxClaim[],
+    batchSize: number,
+): Promise<void> {
+    for (let offset = 0; offset < claims.length; offset += batchSize) {
+        const batch = claims.slice(offset, offset + batchSize);
+        const tuples = batch.map(() => "(?,?,?)").join(",");
+        await conn.execute(
+            `DELETE FROM cache_invalidation_outbox WHERE (scope, entityId, token) IN (${tuples});`,
+            batch.flatMap(({scope, entityId, token}) => [scope, entityId, token]),
+        );
+    }
+}
+
+async function findChangedIdentityUuids(
+    conn: Connection,
+    previousAsOf: Date,
+    previousMaximumId: number,
+    asOf: Date,
+    maximumId: number,
+    claims: IdentityOutboxClaim[],
+): Promise<Set<string>> {
+    const changed = new Set(claims.map(({entityId}) => entityId));
+    const [insertedRows] = await conn.execute(
+        `SELECT DISTINCT uuid FROM pace WHERE id > ? AND id <= ?;`,
+        [previousMaximumId, maximumId],
+    ) as any;
+    const [updatedRows] = await conn.execute(
+        `SELECT DISTINCT uuid
+         FROM pace
+         WHERE lastUpdated >= ? AND lastUpdated <= ?;`,
+        [previousAsOf, asOf],
+    ) as any;
+    for (const row of [...insertedRows, ...updatedRows]) changed.add(row.uuid);
+    return changed;
+}
+
+async function refreshChangedUserData(
+    conn: Connection,
+    existingUsers: CachedUser[],
+    changedUuids: Set<string>,
+    sqlBatchSize: number,
+): Promise<{users: CachedUser[]; details: Array<[string, unknown]>}> {
+    const usersByUuid = new Map(existingUsers.map((user) => [user.id, {...user, twitches: [...user.twitches]}]));
+    const latestRows: any[] = [];
+    const twitchRows: any[] = [];
+    const customizationRows: any[] = [];
+    const ordered = [...changedUuids].sort();
+
+    for (let offset = 0; offset < ordered.length; offset += sqlBatchSize) {
+        const batch = ordered.slice(offset, offset + sqlBatchSize);
+        const placeholders = batch.map(() => "?").join(",");
+        const [latest] = await conn.execute(
+            `SELECT p.uuid, p.nickname
+             FROM pace p
+             INNER JOIN (
+                 SELECT uuid, MAX(id) AS max_id
+                 FROM pace
+                 WHERE uuid IN (${placeholders})
+                 GROUP BY uuid
+             ) selected ON selected.max_id=p.id;`,
+            batch,
+        ) as any;
+        const [twitches] = await conn.execute(
+            `SELECT uuid, twitch, UNIX_TIMESTAMP(MAX(insertTime)) AS time
+             FROM pace
+             WHERE uuid IN (${placeholders}) AND twitch IS NOT NULL
+             GROUP BY uuid, twitch
+             ORDER BY uuid, time DESC;`,
+            batch,
+        ) as any;
+        const [customizations] = await conn.execute(
+            `SELECT uuid, displayName, color, bgColor FROM users WHERE uuid IN (${placeholders});`,
+            batch,
+        ) as any;
+        latestRows.push(...latest);
+        twitchRows.push(...twitches);
+        customizationRows.push(...customizations);
+    }
+
+    for (const uuid of changedUuids) usersByUuid.delete(uuid);
+    for (const row of latestRows) {
+        usersByUuid.set(row.uuid, {
+            id: row.uuid,
+            nick: row.nickname,
+            twitches: [],
+            displayName: null,
+            color: null,
+            bgColor: null,
+        });
+    }
+    const topTwitches = new Map<string, Array<{twitch: string; time: number; live: boolean}>>();
+    for (const row of twitchRows) {
+        const user = usersByUuid.get(row.uuid);
+        if (!user) continue;
+        user.twitches.push(row.twitch);
+        const accounts = topTwitches.get(row.uuid) || [];
+        if (accounts.length < 2) accounts.push({twitch: row.twitch, time: row.time, live: false});
+        topTwitches.set(row.uuid, accounts);
+    }
+    for (const row of customizationRows) {
+        const user = usersByUuid.get(row.uuid);
+        if (!user) continue;
+        user.displayName = row.displayName;
+        user.color = row.color;
+        user.bgColor = row.bgColor;
+    }
+    return {
+        users: [...usersByUuid.values()],
+        details: [...topTwitches].map(([uuid, accounts]) => [`users:twitch_details:${uuid}`, accounts]),
+    };
+}
+
+async function fetchPaceRows(conn: Connection, cutoff: Date | null, asOf: Date): Promise<PaceRow[]> {
+    const where = cutoff ? "WHERE insertTime >= ? AND insertTime <= ?" : "WHERE insertTime <= ?";
+    const [rows] = await conn.execute(
+        `SELECT id, nickname, uuid, nether, bastion, fortress, first_portal, second_portal,
+            stronghold, end, finish, obtainRod, insertTime
+         FROM pace ${where} ORDER BY insertTime DESC, id DESC;`,
+        cutoff ? [cutoff, asOf] : [asOf],
+    );
+    return rows as PaceRow[];
+}
+
+async function fetchAaRows(conn: Connection, cutoff: Date | null, asOf: Date): Promise<AaRow[]> {
+    const where = cutoff ? "WHERE insertTime >= ? AND insertTime <= ?" : "WHERE insertTime <= ?";
+    const [rows] = await conn.execute(
+        `SELECT id, nickname, uuid, nether, bastion, fortress, stronghold, end, elytra, credits, finish, insertTime
+         FROM aa ${where} ORDER BY insertTime DESC, id DESC;`,
+        cutoff ? [cutoff, asOf] : [asOf],
+    );
+    return rows as AaRow[];
+}
+
+async function fetchNetherRows(conn: Connection, cutoff: Date | null, asOf: Date): Promise<NetherPaceRow[]> {
+    const where = cutoff
+        ? "WHERE nethers.insertTime >= ? AND nethers.insertTime <= ?"
+        : "WHERE nethers.insertTime <= ?";
+    const [rows] = await conn.execute(
+        `SELECT nethers.id, nethers.uuid, pace.nether AS nether, wallTime, playTime, enters,
+            UNIX_TIMESTAMP(nethers.insertTime) AS time, resets, totalResets
+         FROM nethers INNER JOIN pace ON nethers.runId = pace.id
+         ${where} ORDER BY nethers.insertTime DESC, nethers.id DESC;`,
+        cutoff ? [cutoff, asOf] : [asOf],
+    );
+    return rows as NetherPaceRow[];
+}
+
+function mergeLeaderboards(target: Leaderboards, source: Leaderboards, categories: readonly string[]): void {
+    for (const filter of filters) {
+        for (const category of categories) target[filter][category].push(...source[filter][category]);
+    }
+}
+
+function applyCachedNames(
+    leaderboards: Leaderboards,
+    categories: readonly string[],
+    users: CachedUser[],
+    fastest?: {[category: string]: FastestEntry[]},
+): void {
+    const names = new Map(users.map((user) => [user.id, user.nick]));
+    for (const filter of filters) {
+        for (const category of categories) {
+            for (const entry of leaderboards[filter][category]) entry.name = names.get(entry.uuid) || entry.name;
+        }
+    }
+    if (fastest) {
+        for (const category of categories) {
+            for (const entry of fastest[category]) entry.name = names.get(entry.uuid) || entry.name;
+        }
+    }
+}
+
+async function buildFullPaceCaches(
+    conn: Connection,
+    asOf: Date,
+    sqlBatchSize: number,
+    lease: RedisLease,
+    pacer: CachePacer,
+): Promise<{
+    leaderboards: {full: Leaderboards; top: Leaderboards; fastest: {[category: string]: FastestEntry[]}};
+    rowCount: number;
+}> {
+    const players = new Map<string, PacePlayerAccumulator>();
+    const [maximumRows] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM pace") as any;
+    const maximumId = Number(maximumRows[0].maximumId);
+    let lastId = 0;
+    let rowCount = 0;
+    while (true) {
+        await lease.verifyHeld();
+        const [rawRows] = await conn.execute(
+            `SELECT id, nickname, uuid, nether, bastion, fortress, first_portal, second_portal,
+                stronghold, end, finish, obtainRod, insertTime
+             FROM pace
+             WHERE id > ? AND id <= ? AND insertTime <= ?
+             ORDER BY id ASC
+             LIMIT ${sqlBatchSize};`,
+            [lastId, maximumId, asOf],
+        );
+        const rows = rawRows as PaceRow[];
+        if (rows.length === 0) break;
+        for (let index = 0; index < rows.length; index++) {
+            accumulatePaceRow(players, rows[index]);
+            rowCount++;
+            if ((index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
+        }
+        const last = rows[rows.length - 1];
+        lastId = last.id;
+        if (rows.length < sqlBatchSize) break;
+        await pacingPause(pacer);
+    }
+    return {leaderboards: finalizePacePlayers(players, 9999), rowCount};
+}
+
+async function buildFullAaCache(
+    conn: Connection,
+    asOf: Date,
+    sqlBatchSize: number,
+    lease: RedisLease,
+    pacer: CachePacer,
+): Promise<{leaderboards: Leaderboards; rowCount: number}> {
+    const leaderboards = initLeaderboards(aaCategories);
+    let currentUuid: string | null = null;
+    let currentRows: AaRow[] = [];
+    let lastUuid: string | null = null;
+    let lastId = 0;
+    let rowCount = 0;
+    const flushPlayer = async () => {
+        if (currentRows.length === 0) return;
+        mergeLeaderboards(leaderboards, await calculateAaLeaderboards(currentRows, pacer), aaCategories);
+        currentRows = [];
+    };
+    while (true) {
+        await lease.verifyHeld();
+        const cursor = lastUuid === null ? "" : "AND (uuid > ? OR (uuid = ? AND id > ?))";
+        const params = lastUuid === null ? [asOf] : [asOf, lastUuid, lastUuid, lastId];
+        const [rawRows] = await conn.execute(
+            `SELECT id, nickname, uuid, nether, bastion, fortress, stronghold, end, elytra, credits, finish, insertTime
+             FROM aa WHERE insertTime <= ? ${cursor}
+             ORDER BY uuid ASC, id ASC LIMIT ${sqlBatchSize};`,
+            params,
+        );
+        const rows = rawRows as AaRow[];
+        if (rows.length === 0) break;
+        for (const row of rows) {
+            if (currentUuid !== null && row.uuid !== currentUuid) await flushPlayer();
+            currentUuid = row.uuid;
+            currentRows.push(row);
+            rowCount++;
+        }
+        const last = rows[rows.length - 1];
+        lastUuid = last.uuid;
+        lastId = last.id;
+        if (rows.length < sqlBatchSize) break;
+        await pacingPause(pacer);
+    }
+    await flushPlayer();
+    sortLeaderboardsInPlace(leaderboards, aaCategories);
+    return {leaderboards, rowCount};
+}
+
+async function buildFullNphCache(
+    conn: Connection,
+    asOf: Date,
+    asOfMs: number,
+    sqlBatchSize: number,
+    lease: RedisLease,
+    pacer: CachePacer,
+): Promise<{entries: Array<[string, unknown]>; rowCount: number; playerCount: number}> {
+    const grouped = new Map<string, NphAccumulator>();
+    const [maximumRows] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM nethers") as any;
+    const maximumId = Number(maximumRows[0].maximumId);
+    let lastId = 0;
+    let rowCount = 0;
+    while (true) {
+        await lease.verifyHeld();
+        const [rawRows] = await conn.execute(
+            `SELECT nethers.id, nethers.uuid, pace.nether AS nether, wallTime, playTime, enters,
+                UNIX_TIMESTAMP(nethers.insertTime) AS time, resets, totalResets
+             FROM nethers INNER JOIN pace ON nethers.runId = pace.id
+             WHERE nethers.id > ? AND nethers.id <= ? AND nethers.insertTime <= ?
+             ORDER BY nethers.id ASC LIMIT ${sqlBatchSize};`,
+            [lastId, maximumId, asOf],
+        );
+        const rows = rawRows as NetherPaceRow[];
+        if (rows.length === 0) break;
+        for (let index = 0; index < rows.length; index++) {
+            accumulateNphRow(grouped, rows[index]);
+            rowCount++;
+            if ((index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
+        }
+        const last = rows[rows.length - 1];
+        lastId = last.id;
+        if (rows.length < sqlBatchSize) break;
+        await pacingPause(pacer);
+    }
+    const entries = finalizeNph(grouped, 9999, asOfMs);
+    return {entries, rowCount, playerCount: entries.length};
+}
+
+async function readUsersFromRedis(redis: Redis): Promise<CachedUser[]> {
+    const raw = await redis.call("JSON.GET", "users", "$");
+    if (!raw) throw new Error("The 'users' cache is required for a --full run. Run the normal cache job first.");
+    return JSON.parse(raw as string)[0] as CachedUser[];
+}
+
+async function removeLegacyStaleDynamicKeys(
+    redis: Redis,
+    scope: string,
+    currentKeys: string[],
+    batchSize: number,
+    lease: RedisLease,
+): Promise<number> {
+    const patterns = scope === "full"
+        ? ["playerStats:*:9999day", "nph:*:9999day"]
+        : [
+            "users:twitch_details:*",
+            "playerStats:*:1day", "playerStats:*:7day", "playerStats:*:30day",
+            "nph:*:1day", "nph:*:7day", "nph:*:30day",
+        ];
+    const oldKeys = new Set<string>();
+    for (const pattern of patterns) {
+        await lease.verifyHeld();
+        for (const key of await scanKeys(redis, pattern)) oldKeys.add(key);
+    }
+    const current = new Set(currentKeys);
+    const stale = [...oldKeys].filter((key) => !current.has(key));
+    for (let offset = 0; offset < stale.length; offset += batchSize) {
+        const batch = stale.slice(offset, offset + batchSize);
+        await lease.verifyHeld();
+        if (batch.length > 0) await deleteKeysIfLeaseHeld(redis, batch, lease);
+    }
+    return stale.length;
+}
+
+async function main(): Promise<void> {
+    const redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) throw new Error("REDIS_URL is required.");
+    const full = process.argv.includes("--full");
+    const scope = full ? "full" : "normal";
+    const days = full ? [9999] : [1, 7, 30];
+    const generation = `${Date.now()}-${randomUUID()}`;
+    const batchSize = envInt("CACHE_REDIS_BATCH_SIZE", 250);
+    const publishBatchSize = envInt("CACHE_REDIS_PUBLISH_BATCH_SIZE", 250);
+    const manifestBatchSize = envInt("CACHE_MANIFEST_BATCH_SIZE", 1_000);
+    const sqlBatchSize = envInt("CACHE_SQL_BATCH_SIZE", 5_000);
+    // Deliberately trade a little runtime for lower burst CPU/DB usage. Set the
+    // delay to 0 to restore the old run-as-fast-as-possible behaviour.
+    const pacingDelayMs = envInt("CACHE_PACING_DELAY_MS", 100, 0);
+    const pacingRowBatchSize = envInt("CACHE_PACING_ROW_BATCH_SIZE", 2_000);
+    const identityFullRefreshSeconds = envInt("CACHE_IDENTITY_FULL_REFRESH_SECONDS", 86_400);
+    const stagingTtlSeconds = envInt("CACHE_STAGING_TTL_SECONDS", 21_600);
+    const targetTtlSeconds = full
+        ? envInt("CACHE_FULL_PLAYER_TTL_SECONDS", 3_888_000)
+        : envInt("CACHE_PLAYER_TTL_SECONDS", 1_209_600);
+    const lockTtlMs = envInt("CACHE_LOCK_TTL_MS", 7_200_000);
+
+    const redis = new Redis(redisUrl, {
+        connectTimeout: envInt("CACHE_REDIS_CONNECT_TIMEOUT_MS", 10_000),
+        commandTimeout: envInt("CACHE_REDIS_COMMAND_TIMEOUT_MS", 60_000),
+        maxRetriesPerRequest: 3,
+    });
+    let conn: Connection | null = null;
+    let lock: Awaited<ReturnType<typeof acquireRedisLock>> | null = null;
+    const stagedDynamic: StagedKey[] = [];
+    const stagedFixed: StagedKey[] = [];
+    const startedAt = Date.now();
+    const phaseTimingsMs: Record<string, number> = {};
+    let peakRssBytes = process.memoryUsage().rss;
+    const sampleMemory = () => {
+        peakRssBytes = Math.max(
+            peakRssBytes,
+            process.memoryUsage().rss,
+            process.resourceUsage().maxRSS * 1_024,
+        );
+    };
+    const measure = async <T>(name: string, work: () => Promise<T>): Promise<T> => {
+        const phaseStartedAt = Date.now();
+        try { return await work(); }
+        finally {
+            phaseTimingsMs[name] = (phaseTimingsMs[name] || 0) + Date.now() - phaseStartedAt;
+            sampleMemory();
+        }
+    };
+
+    try {
+        lock = await acquireRedisLock(redis, "cache:lock:aggregate", lockTtlMs);
+        const pacer: CachePacer = {
+            delayMs: pacingDelayMs,
+            rowBatchSize: pacingRowBatchSize,
+            lease: lock,
+        };
+        conn = await mysql.createConnection(mysqlConfig);
+
+        const [asOfRows] = await conn.query("SELECT NOW(3) AS asOf") as any;
+        const asOf = new Date(asOfRows[0].asOf);
+        const asOfMs = asOf.getTime();
+        const cutoff = full ? null : new Date(asOf.getTime() - 30 * 86_400_000);
+        let users: CachedUser[];
+        let identityRefreshed = false;
+        let identityFullRefreshed = false;
+        let identityMaximumPaceId = 0;
+        let identityClaims: IdentityOutboxClaim[] = [];
+        let identityFullCompletedAt = "";
+        let retainedIdentityTargets: string[] = [];
+        const periodCounts = new Map<number, { pace: number; aa: number; nethers: number }>();
+        if (full) {
+            users = await readUsersFromRedis(redis);
+        } else {
+            const identityState = await redis.hgetall("cache:identity:state");
+            const previousAsOf = identityState.asOf ? new Date(identityState.asOf) : null;
+            const previousMaximumId = Number(identityState.maximumPaceId || 0);
+            identityFullCompletedAt = identityState.fullCompletedAt || identityState.completedAt || "";
+            const fullAgeMs = identityFullCompletedAt
+                ? asOfMs - new Date(identityFullCompletedAt).getTime()
+                : Infinity;
+            const [[maximumRow]] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM pace") as any;
+            identityMaximumPaceId = Number(maximumRow.maximumId);
+            identityClaims = await readIdentityOutboxClaims(conn);
+            const refreshAllIdentity = await redis.exists("users") !== 1
+                || !previousAsOf
+                || !Number.isFinite(previousAsOf.getTime())
+                || !Number.isFinite(previousMaximumId)
+                || !Number.isFinite(fullAgeMs)
+                || fullAgeMs >= identityFullRefreshSeconds * 1_000;
+            if (refreshAllIdentity) {
+                const userData = await measure("identity", () => fetchUserData(conn!));
+                users = userData.users;
+                identityRefreshed = true;
+                identityFullRefreshed = true;
+                identityFullCompletedAt = new Date().toISOString();
+                stagedFixed.push(...await stageJsonEntries(
+                    redis, [["users", users]], generation, 1, stagingTtlSeconds,
+                ));
+                stagedDynamic.push(...await stageJsonEntries(
+                    redis, userData.details, generation, batchSize, stagingTtlSeconds,
+                ));
+            } else {
+                users = await readUsersFromRedis(redis);
+                retainedIdentityTargets = await scanKeys(redis, "users:twitch_details:*");
+                const changedUuids = await findChangedIdentityUuids(
+                    conn, previousAsOf, previousMaximumId, asOf, identityMaximumPaceId, identityClaims,
+                );
+                if (changedUuids.size > 0) {
+                    const userData = await measure("identity", () => refreshChangedUserData(
+                        conn!, users, changedUuids, Math.min(sqlBatchSize, 500),
+                    ));
+                    users = userData.users;
+                    identityRefreshed = true;
+                    const changedTargets = new Set(
+                        [...changedUuids].map((uuid) => `users:twitch_details:${uuid}`),
+                    );
+                    retainedIdentityTargets = retainedIdentityTargets.filter((key) => !changedTargets.has(key));
+                    stagedFixed.push(...await stageJsonEntries(
+                        redis, [["users", users]], generation, 1, stagingTtlSeconds,
+                    ));
+                    stagedDynamic.push(...await stageJsonEntries(
+                        redis, userData.details, generation, batchSize, stagingTtlSeconds,
+                    ));
+                }
+            }
+        }
+        lock.assertHeld();
+
+        // Normal runs buffer only the bounded 30-day sources. Full runs keyset-page
+        // in player order and flush each player into the global output, bounding raw
+        // source memory without holding a long MVCC transaction open.
+        if (full) {
+            const pace = await measure("pace", () => buildFullPaceCaches(conn!, asOf, sqlBatchSize, lock!, pacer));
+            applyCachedNames(pace.leaderboards.full, paceCategories, users, pace.leaderboards.fastest);
+            stagedDynamic.push(...await stageJsonEntries(
+                redis, calculatePlayerStats(users, pace.leaderboards.full, 9999), generation, batchSize, stagingTtlSeconds,
+            ));
+            const fixed: Array<[string, unknown]> = [
+                ["topLeaderboards:9999day", pace.leaderboards.top],
+                ["leaderboards:9999day", pace.leaderboards.full],
+                ["fastestLeaderboards:9999day", pace.leaderboards.fastest],
+            ];
+            stagedFixed.push(...await stageJsonEntries(redis, fixed, generation, fixed.length, stagingTtlSeconds));
+            periodCounts.set(9999, {pace: pace.rowCount, aa: 0, nethers: 0});
+
+            await pacingPause(pacer);
+            const aa = await measure("aa", () => buildFullAaCache(conn!, asOf, sqlBatchSize, lock!, pacer));
+            applyCachedNames(aa.leaderboards, aaCategories, users);
+            stagedFixed.push(...await stageJsonEntries(
+                redis, [["aa:leaderboards:9999day", aa.leaderboards]], generation, 1, stagingTtlSeconds,
+            ));
+            periodCounts.get(9999)!.aa = aa.rowCount;
+
+            await pacingPause(pacer);
+            const nph = await measure("nph", () => buildFullNphCache(conn!, asOf, asOfMs, sqlBatchSize, lock!, pacer));
+            stagedDynamic.push(...await stageJsonEntries(
+                redis, nph.entries, generation, batchSize, stagingTtlSeconds,
+            ));
+            periodCounts.get(9999)!.nethers = nph.playerCount;
+        } else {
+            const paceStartedAt = Date.now();
+            const paceRows = await fetchPaceRows(conn, cutoff, asOf);
+            const pacePeriods = partitionRowsByDays(paceRows, days, asOfMs);
+            for (const day of days) {
+                lock.assertHeld();
+                const periodRows = pacePeriods.get(day)!;
+                const leaderboards = await calculateLeaderboards(periodRows, day, pacer);
+                stagedDynamic.push(...await stageJsonEntries(
+                    redis, calculatePlayerStats(users, leaderboards.full, day), generation, batchSize, stagingTtlSeconds,
+                ));
+                const fixed: Array<[string, unknown]> = [
+                    [`topLeaderboards:${day}day`, leaderboards.top],
+                    [`leaderboards:${day}day`, leaderboards.full],
+                    [`fastestLeaderboards:${day}day`, leaderboards.fastest],
+                ];
+                stagedFixed.push(...await stageJsonEntries(redis, fixed, generation, fixed.length, stagingTtlSeconds));
+                periodCounts.set(day, {pace: periodRows.length, aa: 0, nethers: 0});
+                await pacingPause(pacer);
+            }
+            paceRows.length = 0;
+            phaseTimingsMs.pace = Date.now() - paceStartedAt;
+            sampleMemory();
+
+            const aaStartedAt = Date.now();
+            const aaRows = await fetchAaRows(conn, cutoff, asOf);
+            const aaPeriods = partitionRowsByDays(aaRows, days, asOfMs);
+            for (const day of days) {
+                const periodRows = aaPeriods.get(day)!;
+                stagedFixed.push(...await stageJsonEntries(
+                    redis, [[`aa:leaderboards:${day}day`, await calculateAaLeaderboards(periodRows, pacer)]], generation, 1, stagingTtlSeconds,
+                ));
+                periodCounts.get(day)!.aa = periodRows.length;
+                await pacingPause(pacer);
+            }
+            aaRows.length = 0;
+            phaseTimingsMs.aa = Date.now() - aaStartedAt;
+            sampleMemory();
+
+            const nphStartedAt = Date.now();
+            const netherRows = await fetchNetherRows(conn, cutoff, asOf);
+            const netherPeriods = partitionNetherRowsByDays(netherRows, days, asOfMs);
+            for (const day of days) {
+                const periodEntries = await calculateNph(netherPeriods.get(day)!, day, asOfMs, pacer);
+                stagedDynamic.push(...await stageJsonEntries(redis, periodEntries, generation, batchSize, stagingTtlSeconds));
+                periodCounts.get(day)!.nethers = periodEntries.length;
+                await pacingPause(pacer);
+            }
+            netherRows.length = 0;
+            phaseTimingsMs.nph = Date.now() - nphStartedAt;
+            sampleMemory();
+        }
+
+        for (const day of days) {
+            const counts = periodCounts.get(day)!;
+            console.log(
+                `Calculated ${day}-day caches from ${counts.pace} pace rows, ${counts.aa} AA rows, `
+                + `and data for ${counts.nethers} NPH players.`,
+            );
+        }
+
+        lock.assertHeld();
+        await pacingPause(pacer);
+        const publishStartedAt = Date.now();
+        const dynamicManifestKey = `cache:manifest:${scope}:dynamic`;
+        const dynamicManifestWasPresent = await redis.exists(dynamicManifestKey) === 1;
+
+        // Publish each period as a compact compatibility group. Dynamic keys are
+        // renamed in bounded transactions; the small fixed board set for that
+        // period is then switched in one atomic transaction.
+        const userDynamic = stagedDynamic.filter(({ target }) => target.startsWith("users:twitch_details:"));
+        const userFixed = stagedFixed.filter(({ target }) => target === "users");
+        lock.assertHeld();
+        await publishStagedEntries(
+            redis, userDynamic, publishBatchSize, targetTtlSeconds, lock, dynamicManifestKey,
+        );
+        await publishStagedEntries(redis, userFixed, Math.max(1, userFixed.length), 0, lock);
+        lock.assertHeld();
+
+        for (const day of days) {
+            const suffix = `:${day}day`;
+            const periodDynamic = stagedDynamic.filter(({ target }) => target.endsWith(suffix));
+            const periodFixed = stagedFixed.filter(({ target }) => target.endsWith(`${day}day`));
+            await publishStagedEntries(
+                redis, periodDynamic, publishBatchSize, targetTtlSeconds, lock, dynamicManifestKey,
+            );
+            lock.assertHeld();
+            await publishStagedEntries(redis, periodFixed, Math.max(1, periodFixed.length), 0, lock);
+            lock.assertHeld();
+            await setHashIfLeaseHeld(redis, `cache:metadata:${scope}:${day}day`, {
+                generation,
+                asOf: asOf.toISOString(),
+                publishedAt: new Date().toISOString(),
+                dynamicKeyCount: String(periodDynamic.length),
+                fixedKeyCount: String(periodFixed.length),
+            }, lock);
+        }
+
+        const dynamicTargets = [...stagedDynamic.map(({target}) => target), ...retainedIdentityTargets];
+        const legacyStaleDeleted = dynamicManifestWasPresent
+            ? 0
+            : await removeLegacyStaleDynamicKeys(redis, scope, dynamicTargets, batchSize, lock);
+        const staleDeleted = legacyStaleDeleted + await replaceManifest(
+            redis,
+            dynamicManifestKey,
+            dynamicTargets,
+            batchSize,
+            lock,
+            [],
+            manifestBatchSize,
+        );
+        phaseTimingsMs.publish = Date.now() - publishStartedAt;
+        sampleMemory();
+        lock.assertHeld();
+        await setHashIfLeaseHeld(redis, `cache:metadata:${scope}`, {
+            generation,
+            asOf: asOf.toISOString(),
+            completedAt: new Date().toISOString(),
+            durationMs: String(Date.now() - startedAt),
+            fixedKeyCount: String(stagedFixed.length),
+            dynamicKeyCount: String(dynamicTargets.length),
+            staleKeysDeleted: String(staleDeleted),
+            peakRssBytes: String(peakRssBytes),
+            phaseTimingsMs: JSON.stringify(phaseTimingsMs),
+        }, lock);
+        lock.assertHeld();
+        await setStringIfLeaseHeld(redis, `cache:generation:${scope}`, generation, lock);
+        if (!full) {
+            await setHashIfLeaseHeld(redis, "cache:identity:state", {
+                generation,
+                asOf: asOf.toISOString(),
+                completedAt: new Date().toISOString(),
+                fullCompletedAt: identityFullCompletedAt,
+                maximumPaceId: String(identityMaximumPaceId),
+                userCount: String(users.length),
+                refreshMode: identityFullRefreshed ? "full" : identityRefreshed ? "incremental" : "unchanged",
+            }, lock);
+            await acknowledgeIdentityOutboxClaims(conn, identityClaims, Math.min(sqlBatchSize, 500));
+        }
+        console.log(
+            `Published generation ${generation} (${stagedFixed.length} fixed, ${stagedDynamic.length} dynamic, `
+            + `${staleDeleted} stale removed) in ${Date.now() - startedAt}ms.`,
+        );
+    } finally {
+        if (lock) await lock.release();
+        if (conn) {
+            try { await conn.end(); } catch (error) { console.error("Failed to close MySQL connection:", error); }
+        }
+        try { await redis.quit(); } catch { redis.disconnect(); }
+    }
+}
+
+main().catch((error) => {
+    if (error instanceof LockUnavailableError) {
+        console.log(error.message);
+        return;
+    }
+    console.error("Cache refresh failed:", error);
+    process.exitCode = 1;
+});

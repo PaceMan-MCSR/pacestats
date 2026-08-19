@@ -51,7 +51,7 @@ export default function RunData({params}: {
         if(data){
             window.history.replaceState(null, "", `/stats/run/${data.data.id}/`)
         }
-    }, [data])
+    }, [data, isRunLive])
 
     useEffect(() => {
         if(!ars || !data || !data.data) return
@@ -83,7 +83,7 @@ export default function RunData({params}: {
             const last = getLastSplit(newData, false)
             document.title = `${last.full} by ${newData.nickname}`;
         }
-    }, [ars])
+    }, [ars, data])
 
     useEffect(() => {
         if(!data){
@@ -103,13 +103,13 @@ export default function RunData({params}: {
                 dying: true
             })
         } else {
-            setIsRunLive(live)
+            queueMicrotask(() => setIsRunLive(Boolean(live)))
             useRunStore.setState({
                 isLoading: false,
                 isLive: live
             })
         }
-    }, [ars, data])
+    }, [ars, data, isRunLive])
 
     return null;
 }

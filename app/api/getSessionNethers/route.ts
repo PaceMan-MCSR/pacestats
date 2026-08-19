@@ -1,13 +1,13 @@
 import {NextRequest, NextResponse} from "next/server";
 import {
     getCached,
-    getAllPlayerRunsByPeriod,
     getAllNamesByNick,
     getAllNamesByTwitch,
     getNPH,
     calculateAvg, getNethersByPeriod
 } from "@/app/data";
-import {formatDecimals, formatTime} from "@/app/utils";
+import {formatDecimals} from "@/app/utils";
+import {jsonResponse} from "@/app/api/_utils";
 
 export async function GET(request: NextRequest) {
     let name = request.nextUrl.searchParams.get("name")
@@ -25,7 +25,10 @@ export async function GET(request: NextRequest) {
     const days = Math.ceil(hours / 24)
     const runs = await getCached(getNethersByPeriod, "getNethersByPeriod", names.uuid, days, 9999999, liveOnly)
     if(runs.length === 0){
-        return NextResponse.json({count: 0, avg: (dp > 0 ? "0:00." + ("0".repeat(dp)) : "0:00"), rnph: 0, uuid: names.uuid}, { status: 200 });
+        return jsonResponse(
+            {count: 0, avg: (dp > 0 ? "0:00." + ("0".repeat(dp)) : "0:00"), rnph: 0, uuid: names.uuid},
+            {cacheSeconds: 5, staleSeconds: 10}
+        );
     }
 
     let lastTime = 0 // oldest
@@ -48,10 +51,16 @@ export async function GET(request: NextRequest) {
         lastTime = run.time
     }
     if(count === 0){
-        return NextResponse.json({count: 0, avg: (dp > 0 ? "0:00." + ("0".repeat(dp)) : "0:00"), rnph: 0, uuid: names.uuid}, { status: 200 });
+        return jsonResponse(
+            {count: 0, avg: (dp > 0 ? "0:00." + ("0".repeat(dp)) : "0:00"), rnph: 0, uuid: names.uuid},
+            {cacheSeconds: 5, staleSeconds: 10}
+        );
     }
     let avg = calculateAvg(times)
-    let nph = await getNPH(names.uuid, hours, hoursBetween, liveOnly)
+    let nph = await getCached(getNPH, "getNPH", names.uuid, hours, hoursBetween, liveOnly)
 
-    return NextResponse.json({count: count, avg: formatDecimals(avg, dp), rnph: nph.rnph, uuid: names.uuid}, { status: 200 });
+    return jsonResponse(
+        {count: count, avg: formatDecimals(avg, dp), rnph: nph.rnph, uuid: names.uuid},
+        {cacheSeconds: 5, staleSeconds: 10}
+    );
 }

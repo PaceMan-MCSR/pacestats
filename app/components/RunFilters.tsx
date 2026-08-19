@@ -6,6 +6,7 @@ import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import { DatePicker, LocalizationProvider } from "@mui/x-date-pickers";
 import { AdapterMoment } from "@mui/x-date-pickers/AdapterMoment";
 import moment from 'moment';
+import MaterialIcon from "@/app/components/MaterialIcon";
 
 const parseTime = (timeString: string): number => {
     const parts = timeString.split(':');
@@ -291,7 +292,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                             setFilters(newFilters);
                                         }}
                                     >
-                                        <span className="material-symbols-outlined">close</span>
+                                        <MaterialIcon icon="close"/>
                                     </Button>
                                 </OverlayTrigger>
                             </div>
@@ -318,7 +319,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                         inMs: 90000,
                                     }])
                                 }}>
-                                <span className="material-symbols-outlined">add</span>
+                                <MaterialIcon icon="add"/>
                             </Button>
                         </OverlayTrigger>
                         <OverlayTrigger overlay={
@@ -338,7 +339,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                 onClick={() => {
                                     setFilters([])
                                 }}>
-                                <span className="material-symbols-outlined">delete</span>
+                                <MaterialIcon icon="delete"/>
                             </Button>
                         </OverlayTrigger>
                     </div>

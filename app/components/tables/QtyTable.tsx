@@ -25,9 +25,7 @@ export function QtyTable({catName, catId, days, lb, aa = false} : {catName: stri
                 Object.entries(lb[CategoryType.COUNT][catId]).slice(0, lbSize).map((entry, entryIdx) => {
                     let d = entry[1] as Entry
                     let name = fixDisplayName(d.name)
-                    let skinName = d.name
                     let value: number = d.qty
-                    let url = "https://mc-heads.net/avatar/" + skinName + "/8"
                     let avg = d.avg
                     let linkUrl = "/player/" + name + "/"
                     if(aa){
@@ -36,7 +34,7 @@ export function QtyTable({catName, catId, days, lb, aa = false} : {catName: stri
                     return <tr key={entryIdx}>
                         <td className="col-1"><p>{entryIdx + 1}</p></td>
                         <td className="col-10">
-                            <BoardLink name={name} uuid={d.uuid} url={url} linkUrl={linkUrl}/>
+                            <BoardLink name={name} uuid={d.uuid} linkUrl={linkUrl} lowPriority={entryIdx >= 3}/>
                         </td>
                         <td className="col-1" title={formatTime(avg)} style={{textAlign: "right"}}>
                             <p>

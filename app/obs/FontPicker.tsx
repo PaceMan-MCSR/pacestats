@@ -1,7 +1,8 @@
 'use client'
 
-import {useEffect, useState} from "react";
+import {useCallback, useEffect, useState, useSyncExternalStore} from "react";
 import Select, {ActionMeta, GroupBase} from "react-select";
+import MaterialIcon from "@/app/components/MaterialIcon";
 
 export default function FontPicker({output}: {output: any}) {
     const [fonts, setFonts] = useState([
@@ -10,16 +11,13 @@ export default function FontPicker({output}: {output: any}) {
     ]);
     const [selectedFont, setSelectedFont] = useState("Minecraft");
     const [hasPermission, setHasPermission] = useState(true);
-    const [supported, setSupported] = useState(true);
+    const supported = useSyncExternalStore(
+        () => () => {},
+        () => typeof window !== "undefined" && "queryLocalFonts" in window,
+        () => false,
+    );
 
-    useEffect(() => {
-        (async () => {
-            reloadFonts();
-        })();
-        setSupported(typeof window !== "undefined" && 'queryLocalFonts' in window)
-    }, [])
-
-    const reloadFonts = async () => {
+    const reloadFonts = useCallback(async () => {
         if(typeof window === "undefined") {
             return
         }
@@ -50,7 +48,12 @@ export default function FontPicker({output}: {output: any}) {
         } catch (e) {
             console.log("Font access was denied: " + e)
         }
-    }
+    }, [supported])
+
+    useEffect(() => {
+        const timer = setTimeout(() => void reloadFonts(), 0);
+        return () => clearTimeout(timer);
+    }, [reloadFonts])
 
     const selectFont = (option: any, actionMeta: ActionMeta<any>) => {
         output(option.value);
@@ -99,7 +102,7 @@ export default function FontPicker({output}: {output: any}) {
                 })}
                 onChange={selectFont} onFocus={reloadFonts}/>
         <p style={{display: supported && !hasPermission ? "block" : "none"}} className="fontWarning">
-            Font access was denied. Please enable it by clicking on the <span className="material-symbols-outlined info-icon">info</span> icon next to the address bar.</p>
+            Font access was denied. Please enable it by clicking on the <MaterialIcon icon="info" className="info-icon"/> icon next to the address bar.</p>
         <p style={{display: !supported ? "block" : "none"}} className="fontWarning">
             Local font access is not supported in this browser, please use Chrome or Edge.</p>
     </div>)

@@ -69,10 +69,8 @@ export function NPHTable({days, data, showQty = false} : {days: number, data?: a
                 filtered.slice(0, 10).map((entry, entryIdx) => {
                     let d = entry as {uuid: string, nick: string, avg: number, qty: number, nph: number}
                     let name = fixDisplayName(d.nick)
-                    let skinName = d.nick
                     let avg: number = d.avg
                     let nph: string = d.nph.toString()
-                    let url = "https://mc-heads.net/avatar/" + skinName + "/8"
                     let count: string = d.qty.toString()
                     let valueFormatted: string
                     valueFormatted = formatTime(avg, false)
@@ -82,7 +80,7 @@ export function NPHTable({days, data, showQty = false} : {days: number, data?: a
                     return <tr key={entryIdx}>
                         <td className="col-1"><p>{entryIdx + 1}</p></td>
                         <td className="col-10">
-                            <BoardLink name={showQty ? truncated : name} uuid={d.uuid} url={url} linkUrl={linkUrl}/>
+                            <BoardLink name={showQty ? truncated : name} uuid={d.uuid} linkUrl={linkUrl} lowPriority={entryIdx >= 3}/>
                         </td>
                         {showQty &&
                             <td className="col-1" style={{textAlign: "right"}}>

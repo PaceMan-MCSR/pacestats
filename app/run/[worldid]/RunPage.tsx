@@ -146,7 +146,7 @@ export default function RunPage({params}: {
                     <div className="col-12 col-sm-10 col-lg-8 col-xl-7 col-xxl-6">
                         <h2 className="header">Useful Information</h2>
                         <ul className="faq-list">
-                            <li>Click on the player's name to view their profile</li>
+                            <li>Click on the player&apos;s name to view their profile</li>
                             <li>Splits from live runs are updated every 3 seconds automatically</li>
                             <li>For runs with VODs, click on splits in the run card to jump timestamps</li>
                             <li>Rewind to the start of a run by refreshing (or click the left side of card)</li>

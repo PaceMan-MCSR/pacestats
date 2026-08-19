@@ -1,7 +1,7 @@
 import {
     getCached,
     getAllNamesByNick,
-    getAllNamesByTwitch, getAllUserInfo, fetchAllPlayerRunsFromRedis,
+    getAllNamesByTwitch, getAllUserInfo,
 } from "@/app/data";
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
@@ -19,6 +19,12 @@ export default async function Page(
     const searchParams = await props.searchParams;
     const params = await props.params;
     let bastionFort = searchParams["bastionFort"] === "true"
+    const requestedPage = Number(searchParams["page"] ?? 0);
+    const requestedPageSize = Number(searchParams["pageSize"] ?? 25);
+    const initialPaginationModel = {
+        page: Number.isSafeInteger(requestedPage) && requestedPage >= 0 ? requestedPage : 0,
+        pageSize: [10, 25, 50, 100].includes(requestedPageSize) ? requestedPageSize : 25,
+    };
     let nick = params.nick
     if (nick === "jojoe77777" || nick === "jojoe" || nick === "COVID19") nick = "COVlD19"
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", nick)
@@ -41,7 +47,6 @@ export default async function Page(
     }
     const uuid = names.uuid
 
-    const recentRuns = await fetchAllPlayerRunsFromRedis(uuid);
     const userInfo = await getCached(getAllUserInfo, "getAllUserInfo")
 
     const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
@@ -54,12 +59,21 @@ export default async function Page(
                 <div className="col-lg-9 col-xl-8">
                     <h1 className="header mb-3">
                         <Link href={`/player/${realNick}/`}>
-                            <Button color={"info"} sx={{
+                            <Button color={"info"} aria-label="Back to player profile" sx={{
                                 marginTop: "-5px",
                                 minWidth: "40px",
                                 maxWidth: "40px",
+                                textTransform: "none",
                             }}>
-                                <span className="material-symbols-outlined">arrow_back</span>
+                                <svg
+                                    aria-hidden="true"
+                                    viewBox="0 0 24 24"
+                                    width="24"
+                                    height="24"
+                                    focusable="false"
+                                >
+                                    <path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z" />
+                                </svg>
                             </Button>
                         </Link>
                         Run history for <span style={{color: nameColor}}>{realNick}</span>
@@ -70,7 +84,7 @@ export default async function Page(
                         } : {marginTop: "-5px"}} src={headUrl} alt={realNick}/>
                     </h1>
                     <Suspense fallback={<div>Loading...</div>}>
-                        <RecentRuns runs={recentRuns} bf={bastionFort}/>
+                        <RecentRuns uuid={uuid} bf={bastionFort} initialPaginationModel={initialPaginationModel}/>
                     </Suspense>
                 </div>
             </div>

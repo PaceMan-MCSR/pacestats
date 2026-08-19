@@ -1,77 +1,81 @@
 'use client'
 
-import { useContext, useEffect, useState } from "react";
-import Box from "@mui/material/Box";
-import Drawer from '@mui/material/Drawer';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
-import ListItemButton from '@mui/material/ListItemButton';
-import ListItemText from '@mui/material/ListItemText';
-import { Button } from "@mui/material";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import PlayerSearch from "@/app/components/PlayerSearch";
 import { usePathname } from "next/navigation";
 import { UserColoursContext } from "@/app/contexts";
+import Link from "next/link";
 
-export default function Hamburger({users, userInfo}: {users: any, userInfo: any}) {
+export default function Hamburger() {
     const [open, setOpen] = useState(false);
     const path = usePathname();
     const colours = useContext(UserColoursContext)
+    const drawerId = useId();
+    const triggerRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
-        setOpen(false);
+        const timer = setTimeout(() => setOpen(false), 0);
+        return () => clearTimeout(timer);
     }, [path]);
 
-    const toggleDrawer = (newOpen: boolean) => () => {
-        setOpen(newOpen);
-    };
-
-    const DrawerList = (
-        <Box sx={{
-            width: 260,
-            color: colours?.isCustom ? `${(colours.bgText as {color: string}).color}` : "#DDDDEE",
-        }} role="presentation">
-            <List>
-                <ListItem disablePadding>
-                    <ListItemButton href={"/stats/"}>
-                        <ListItemText primary={"Leaderboards"} />
-                    </ListItemButton>
-                </ListItem>
-                <ListItem disablePadding>
-                    <ListItemButton href={"/stats/obs/"}>
-                        <ListItemText primary={"OBS Overlays"} />
-                    </ListItemButton>
-                </ListItem>
-                <ListItem disablePadding>
-                    <ListItemButton href={"/stats/aa/"}>
-                        <ListItemText primary={"AA Leaderboards"} />
-                    </ListItemButton>
-                </ListItem>
-                <ListItem disablePadding>
-                    <div className="searchWrapper">
-                        <PlayerSearch data={users} userInfo={userInfo}/>
-                    </div>
-                </ListItem>
-            </List>
-        </Box>
-    );
+    useEffect(() => {
+        if (!open) return;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setOpen(false);
+                triggerRef.current?.focus();
+            }
+        };
+        document.addEventListener("keydown", onKeyDown);
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            document.removeEventListener("keydown", onKeyDown);
+        };
+    }, [open]);
 
     return (
         <div>
-            <Button onClick={toggleDrawer(true)}>
-                <span className="material-symbols-outlined" style={{color: "#DDDDEE"}}>menu</span>
-            </Button>
-            <Drawer
-                open={open}
-                onClose={toggleDrawer(false)}
-                sx={{
-                    '& .MuiDrawer-paper': {
-                        backgroundColor: colours?.isCustom ? `#${colours.bg}` : "#121215",
-                        color: "rgb(230,230,230)",
-                    },
-                }}
+            <button
+                ref={triggerRef}
+                className="hamburgerButton"
+                type="button"
+                aria-label="Open navigation"
+                aria-controls={drawerId}
+                aria-expanded={open}
+                onClick={() => setOpen(true)}
             >
-                {DrawerList}
-            </Drawer>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M3 6h18v2H3V6Zm0 5h18v2H3v-2Zm0 5h18v2H3v-2Z"/>
+                </svg>
+            </button>
+            {open && <div className="mobileDrawerRoot">
+                <button
+                    className="mobileDrawerBackdrop"
+                    type="button"
+                    aria-label="Close navigation"
+                    onClick={() => setOpen(false)}
+                />
+                <nav
+                    id={drawerId}
+                    className="mobileDrawer"
+                    aria-label="Mobile navigation"
+                    style={{
+                        backgroundColor: colours?.isCustom ? `#${colours.bg}` : "#121215",
+                        color: colours?.isCustom
+                            ? (colours.bgText as {color: string}).color
+                            : "#DDDDEE",
+                    }}
+                >
+                    <Link href="/">Leaderboards</Link>
+                    <Link href="/obs/">OBS Overlays</Link>
+                    <Link href="/aa/">AA Leaderboards</Link>
+                    <div className="searchWrapper">
+                        <PlayerSearch/>
+                    </div>
+                </nav>
+            </div>}
         </div>
     )
 }

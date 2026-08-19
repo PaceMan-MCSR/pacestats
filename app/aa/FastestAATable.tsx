@@ -1,20 +1,10 @@
-import {useEffect, useState} from "react";
 import {CategoryType, fixDisplayName, formatTime} from "@/app/utils";
 import {Entry, FastestEntry} from "@/app/types";
 import BoardLink from "@/app/components/tables/BoardLink";
 
 export function FastestAATable({catName, catId, days, data} : {catName: string, catId: string, days: number, data: any}) {
-    const [isLoading, setLoading] = useState(true)
-
-    useEffect(() => {
-        if(data){
-            setLoading(false)
-            return
-        }
-    }, [])
-
     const lbSize = 10
-    if(isLoading){
+    if(!data){
         return <div className="tableWrapper col-sm-12 col-md-6 col-xl-4 col-xxl-3">
             <p className="tableHeader">{catName}</p>
             <table className="table table-dark caption-top">
@@ -63,15 +53,13 @@ export function FastestAATable({catName, catId, days, data} : {catName: string, 
                 Object.entries(data[CategoryType.FASTEST][catId]).slice(0, lbSize).map((entry, entryIdx) => {
                     let d = entry[1] as FastestEntry
                     let name = fixDisplayName(d.name)
-                    let skinName = d.name
                     let value: string = formatTime(d.value)
-                    let url = "https://mc-heads.net/avatar/" + skinName + "/8"
                     let linkUrl = "/player/" + name + "/aa/"
                     let runId = d.runId
                     return <tr key={entryIdx}>
                         <td className="col-1"><p>{entryIdx + 1}</p></td>
                         <td className="col-10">
-                            <BoardLink name={name} uuid={d.uuid} url={url} linkUrl={linkUrl}/>
+                            <BoardLink name={name} uuid={d.uuid} linkUrl={linkUrl} lowPriority={entryIdx >= 3}/>
                         </td>
                         <td className="col-1">
                             <p>

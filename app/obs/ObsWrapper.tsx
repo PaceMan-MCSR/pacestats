@@ -1,13 +1,14 @@
 'use client'
 import ResetScroll from "@/app/components/ResetScroll";
 import PlayerSearch from "@/app/components/PlayerSearch";
-import {ChangeEvent, useEffect, useState} from "react";
+import {ChangeEvent, useMemo, useState} from "react";
 import {HexColorInput, HexColorPicker} from "react-colorful";
 import Tooltip from "react-bootstrap/Tooltip";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import SessionNethers from "@/app/obs/sessionNethers/[nick]/SessionNethers";
 import Session from "@/app/obs/session/[nick]/Session";
 import FontPicker from "@/app/obs/FontPicker";
+import MaterialIcon from "@/app/components/MaterialIcon";
 
 export default function ObsWrapper({names, userInfo, params}: {
         names: any, userInfo: any, params: { }
@@ -21,9 +22,6 @@ export default function ObsWrapper({names, userInfo, params}: {
     const [bufferedHoursBetween, setBufferedHoursBetween] = useState(hoursBetween)
 
     const [font, setFont] = useState("Minecraft")
-
-    const [netherUrl, setNetherUrl] = useState(`${process.env.NEXT_PUBLIC_HOSTNAME}/stats/obs/sessionNethers/${search}`)
-    const [sessionUrl, setSessionUrl] = useState(`${process.env.NEXT_PUBLIC_HOSTNAME}/stats/obs/session/${search}`)
 
     const [clipboard, setClipboard] = useState("")
     const [dynamic, setDynamic] = useState(true)
@@ -40,10 +38,10 @@ export default function ObsWrapper({names, userInfo, params}: {
 
     const url = `https://mc-heads.net/avatar/${search}/8`
 
-    useEffect(() => {
-        setNetherUrl(`${process.env.NEXT_PUBLIC_HOSTNAME}/stats/obs/sessionNethers/${search}/?hours=${hours}&hoursBetween=${hoursBetween}&color=${color.replace("#", "")}&font=${font}&nph=${nph}&nphRight=${nphRight}&dp=${avgDp}&nphDp=${nphDp}&wallScene=${wallScene}&playingScene=${playingScene}`)
-        setSessionUrl(`${process.env.NEXT_PUBLIC_HOSTNAME}/stats/obs/session/${search}/?hours=${hours}&hoursBetween=${hoursBetween}&color=${color.replace("#", "")}&font=${font}&dynamic=${dynamic}`)
-    }, [search, hours, hoursBetween, color, font, nph, avgDp, nphDp, nphRight, wallScene, playingScene, dynamic])
+    const [netherUrl, sessionUrl] = useMemo(() => [
+        `${process.env.NEXT_PUBLIC_HOSTNAME}/stats/obs/sessionNethers/${search}/?hours=${hours}&hoursBetween=${hoursBetween}&color=${color.replace("#", "")}&font=${font}&nph=${nph}&nphRight=${nphRight}&dp=${avgDp}&nphDp=${nphDp}&wallScene=${wallScene}&playingScene=${playingScene}`,
+        `${process.env.NEXT_PUBLIC_HOSTNAME}/stats/obs/session/${search}/?hours=${hours}&hoursBetween=${hoursBetween}&color=${color.replace("#", "")}&font=${font}&dynamic=${dynamic}`,
+    ], [search, hours, hoursBetween, color, font, nph, nphRight, avgDp, nphDp, wallScene, playingScene, dynamic]);
 
     const changeHours = (event: ChangeEvent<{ value: string }>) => {
         // @ts-ignore
@@ -75,7 +73,7 @@ export default function ObsWrapper({names, userInfo, params}: {
                 <div className="row justify-content-center">
                     <div className="col-12" style={{textAlign: "center"}}>
                         <h4>Enter username to get started</h4>
-                        <p>If you can't find your name, make sure you have previously entered the nether with PaceMan</p>
+                        <p>If you can&apos;t find your name, make sure you have previously entered the nether with PaceMan</p>
                     </div>
                 </div>
             )}
@@ -182,7 +180,7 @@ export default function ObsWrapper({names, userInfo, params}: {
                                 </p>
                             </Tooltip>
                         } delay={{ show: 100, hide: 1000 }}>
-                            <span className="material-symbols-outlined info-icon">help</span>
+                            <MaterialIcon icon="help" className="info-icon"/>
                         </OverlayTrigger>
                         <p className="sizeHint">{sessionWidth}x{sessionHeight}</p>
                         <div>

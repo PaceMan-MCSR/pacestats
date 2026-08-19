@@ -16,7 +16,7 @@ function TooltipLine({tooltip, value}: {tooltip: string, value: string}) {
     </OverlayTrigger>
 }
 
-export async function Nethers({runs}: { runs: {} }) {
+export function Nethers({runs}: { runs: {} }) {
     const router = useRouter()
     return <div className="recentNethers">
         <div style={{textAlign: "center"}}>

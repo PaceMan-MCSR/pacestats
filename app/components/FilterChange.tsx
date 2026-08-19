@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Collapse } from "react-bootstrap";
 
 export default function FilterChange() {
@@ -10,7 +10,6 @@ export default function FilterChange() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const [isPending, startTransition] = useTransition();
-    const [isLoading, setIsLoading] = useState(true);
 
     // Directly get the category from search params, with a default value. This is cleaner.
     const category = searchParams.get('category') || 'count_avg';
@@ -35,10 +34,6 @@ export default function FilterChange() {
         });
     };
 
-    useEffect(() => {
-        setIsLoading(false);
-    }, []);
-
     return (
         <div
             className="filterGroup"
@@ -56,7 +51,6 @@ export default function FilterChange() {
                     setToggled(!toggled)
                 }}
                 // Also disable the toggle button during navigation
-                disabled={isLoading}
             >
                 Toggle category
             </button>
