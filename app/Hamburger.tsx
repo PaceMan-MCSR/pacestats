@@ -4,7 +4,7 @@ import { useContext, useEffect, useId, useRef, useState } from "react";
 import PlayerSearch from "@/app/components/PlayerSearch";
 import { usePathname } from "next/navigation";
 import { UserColoursContext } from "@/app/contexts";
-import Link from "next/link";
+import PendingLink from "@/app/components/PendingLink";
 
 export default function Hamburger() {
     const [open, setOpen] = useState(false);
@@ -68,9 +68,9 @@ export default function Hamburger() {
                             : "#DDDDEE",
                     }}
                 >
-                    <Link href="/">Leaderboards</Link>
-                    <Link href="/obs/">OBS Overlays</Link>
-                    <Link href="/aa/">AA Leaderboards</Link>
+                    <PendingLink href="/">Leaderboards</PendingLink>
+                    <PendingLink href="/obs/">OBS Overlays</PendingLink>
+                    <PendingLink href="/aa/">AA Leaderboards</PendingLink>
                     <div className="searchWrapper">
                         <PlayerSearch/>
                     </div>
