@@ -314,7 +314,8 @@ td p {
 }
 
 .tooltip.show {
-    opacity: 1.0 !important;
+    /* Allow React Bootstrap's inline opacity: 0 while Popper measures position. */
+    opacity: 1;
 }
 
 /*
