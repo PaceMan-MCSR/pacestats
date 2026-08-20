@@ -6,10 +6,12 @@ import { useContext, useState } from "react";
 import { UsersContext } from "@/app/contexts";
 import { getNameColor } from "@/app/utils";
 
-export default function BoardLink({name, uuid, linkUrl, lowPriority = false}: {
+export default function BoardLink({name, displayName, uuid, linkUrl, color, lowPriority = false}: {
     name: string,
+    displayName?: string,
     uuid: string,
     linkUrl: string,
+    color?: string,
     lowPriority?: boolean,
 }) {
     const [pending, setPending] = useState(false);
@@ -25,7 +27,7 @@ export default function BoardLink({name, uuid, linkUrl, lowPriority = false}: {
             router.push(linkUrl);
             setPending(true);
         }}>
-        <p className="playerName" style={{opacity: pending ? 0.7 : 1.0, color: getNameColor(users, uuid)}}>
+        <p className="playerName" style={{opacity: pending ? 0.7 : 1.0, color: color ?? getNameColor(users, uuid)}}>
             <img
                 className="avatar"
                 src={`https://mc-heads.net/avatar/${uuid}/8`}
@@ -36,7 +38,7 @@ export default function BoardLink({name, uuid, linkUrl, lowPriority = false}: {
                 width={24}
                 height={24}
             />
-            {name}
+            {displayName ?? name}
         </p>
     </Link>
 }
