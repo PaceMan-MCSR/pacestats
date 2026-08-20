@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { defaultNameColor, getUserColours } from "@/app/utils";
 import { UserColoursContext } from "@/app/contexts";
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import PendingLink from "@/app/components/PendingLink";
 
 type PlayerTheme = {
     id: string;
@@ -84,17 +84,17 @@ export default function Header() {
                 backgroundColor: `#${colours.fg}`
             }}>
                 <div className="container">
-                    <Link className="navbar-brand" href="/" style={colours.fgText}>Pace Stats</Link>
+                    <PendingLink className="navbar-brand" href="/" style={colours.fgText}>Pace Stats</PendingLink>
                     <ul className="navbar-nav me-auto">
                         <li className="nav-item">
-                            <Link className="nav-link" href="/" style={colours.fgText}>Leaderboards</Link>
+                            <PendingLink className="nav-link" href="/" style={colours.fgText}>Leaderboards</PendingLink>
                         </li>
                         <li className="nav-item">
-                            <Link className="nav-link d-none d-lg-block" href="/obs/" style={colours.fgText}>OBS Overlays</Link>
-                            <Link className="nav-link d-block d-lg-none" href="/obs/" style={colours.fgText}>OBS</Link>
+                            <PendingLink className="nav-link d-none d-lg-block" href="/obs/" style={colours.fgText}>OBS Overlays</PendingLink>
+                            <PendingLink className="nav-link d-block d-lg-none" href="/obs/" style={colours.fgText}>OBS</PendingLink>
                         </li>
                         <li className="nav-item">
-                            <Link className="nav-link" href="/aa/" style={colours.fgText}>AA</Link>
+                            <PendingLink className="nav-link" href="/aa/" style={colours.fgText}>AA</PendingLink>
                         </li>
                         <li className="nav-item">
                             <div className="searchWrapper">

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import BoardLink from "@/app/components/tables/BoardLink";
 import {
     getAllUserInfo,
     getCached,
@@ -73,21 +74,14 @@ function PlayerLink({entry, colours, label, lowPriority = false}: {
     lowPriority?: boolean,
 }) {
     const name = fixDisplayName(entry.name);
-    return <Link className="boardLink" href={`/player/${name}/`} prefetch={false}>
-        <p className="playerName" style={{color: colours.get(entry.uuid) ?? defaultNameColor}}>
-            <img
-                className="avatar"
-                src={`https://mc-heads.net/avatar/${entry.uuid}/8`}
-                alt={name}
-                loading="lazy"
-                decoding="async"
-                fetchPriority={lowPriority ? "low" : undefined}
-                width={24}
-                height={24}
-            />
-            {label ?? name}
-        </p>
-    </Link>;
+    return <BoardLink
+        name={name}
+        displayName={label}
+        uuid={entry.uuid}
+        linkUrl={`/player/${name}/`}
+        color={colours.get(entry.uuid) ?? defaultNameColor}
+        lowPriority={lowPriority}
+    />;
 }
 
 function QuantityBoard({descriptor, data, colours}: {
