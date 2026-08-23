@@ -20,9 +20,9 @@ const nextConfig = {
         remotePatterns: [
             {
                 protocol: 'https',
-                hostname: 'mc-heads.net',
+                hostname: 'mc-api.io',
                 port: '',
-                pathname: '/avatar/*/*',
+                pathname: '/render/**',
             },
         ],
     },

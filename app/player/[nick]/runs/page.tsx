@@ -49,7 +49,7 @@ export default async function Page(
 
     const userInfo = await getCached(getAllUserInfo, "getAllUserInfo")
 
-    const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
+    const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
     const nameColor = getNameColor(userInfo, uuid)
 
     return (<main className="main allRuns">

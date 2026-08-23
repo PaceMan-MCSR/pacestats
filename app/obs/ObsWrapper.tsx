@@ -36,7 +36,7 @@ export default function ObsWrapper({names, userInfo, params}: {
     const [wallScene, setWallScene] = useState("Walling")
     const [playingScene, setPlayingScene] = useState("Playing")
 
-    const url = `https://mc-heads.net/avatar/${search}/8`
+    const url = `https://mc-api.io/render/FACE/${search}/JAVA?size=8`
 
     const [netherUrl, sessionUrl] = useMemo(() => [
         `${process.env.NEXT_PUBLIC_HOSTNAME}/stats/obs/sessionNethers/${search}/?hours=${hours}&hoursBetween=${hoursBetween}&color=${color.replace("#", "")}&font=${font}&nph=${nph}&nphRight=${nphRight}&dp=${avgDp}&nphDp=${nphDp}&wallScene=${wallScene}&playingScene=${playingScene}`,

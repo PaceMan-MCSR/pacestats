@@ -19,8 +19,8 @@ export default function AAPlayerPage({name, uuid, recentRuns, twitches, nph, dat
     data: any,
     days: number
 }) {
-    const skinUrl = "https://mc-heads.net/body/" + uuid
-    const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
+    const skinUrl = "https://mc-api.io/render/FULL/" + uuid
+    const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
     return (<main className="main playerStats">
         <div className="container">
             <ResetScroll/>

@@ -55,7 +55,7 @@ export async function generateMetadata(props: { params: Promise<{ worldid: strin
         description: desc,
         icons: {
             icon: [
-                `https://mc-heads.net/avatar/${run.data.nickname}/8`
+                `https://mc-api.io/render/FACE/${run.data.nickname}/JAVA?size=8`
             ]
         }
     }

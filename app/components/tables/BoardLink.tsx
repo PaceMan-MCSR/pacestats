@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import {useRouter} from "next/navigation";
-import { useContext, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { UsersContext } from "@/app/contexts";
 import { getNameColor } from "@/app/utils";
+import { schedulePlayerPrefetch } from "@/app/components/playerPrefetch";
 
 export default function BoardLink({name, displayName, uuid, linkUrl, color, lowPriority = false}: {
     name: string,
@@ -17,11 +18,34 @@ export default function BoardLink({name, displayName, uuid, linkUrl, color, lowP
     const [pending, setPending] = useState(false);
     const router = useRouter()
     const users = useContext(UsersContext);
+    const linkRef = useRef<HTMLAnchorElement>(null);
+
+    useEffect(() => {
+        const link = linkRef.current;
+        if (!link) return;
+
+        let releasePrefetch: (() => void) | undefined;
+        const observer = new IntersectionObserver(([entry]) => {
+            if (entry.isIntersecting) {
+                releasePrefetch ??= schedulePlayerPrefetch(linkUrl, () => router.prefetch(linkUrl));
+            } else {
+                releasePrefetch?.();
+                releasePrefetch = undefined;
+            }
+        });
+        observer.observe(link);
+
+        return () => {
+            observer.disconnect();
+            releasePrefetch?.();
+        };
+    }, [linkUrl, router]);
+
     return <Link
+        ref={linkRef}
         className="boardLink"
         href={linkUrl}
         prefetch={false}
-        onMouseEnter={() => router.prefetch(linkUrl)}
         onMouseDown={(e) => {
             if (e.button !== 0) return; // Only handle left mouse button
             router.push(linkUrl);
@@ -30,7 +54,7 @@ export default function BoardLink({name, displayName, uuid, linkUrl, color, lowP
         <p className="playerName" style={{opacity: pending ? 0.7 : 1.0, color: color ?? getNameColor(users, uuid)}}>
             <img
                 className="avatar"
-                src={`https://mc-heads.net/avatar/${uuid}/8`}
+                src={`https://mc-api.io/render/FACE/${uuid}?size=8`}
                 alt={name}
                 loading="lazy"
                 decoding="async"

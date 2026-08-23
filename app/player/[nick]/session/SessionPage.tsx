@@ -19,8 +19,8 @@ export default async function SessionPage({name, uuid, twitches, nph, data, hour
     hours: number,
     hoursBetween: number,
 }) {
-    const skinUrl = "https://mc-heads.net/body/" + uuid
-    const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
+    const skinUrl = "https://mc-api.io/render/FULL/" + uuid
+    const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
     const days = 0;
     return (<main className="main playerStats">
         <div className="container">

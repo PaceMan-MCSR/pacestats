@@ -36,7 +36,7 @@ export function LiveRuns() {
                     }
 
                     const last = getLastSplit(data, true)
-                    const url = `https://mc-heads.net/avatar/${run.nickname}/8`
+                    const url = `https://mc-api.io/render/FACE/${run.nickname}/JAVA?size=8`
 
                     return <tr key={run.worldId} onClick={() => {
                         router.push(`/run/${run.worldId}`)
