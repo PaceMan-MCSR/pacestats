@@ -19,42 +19,40 @@ const parseTime = (timeString: string): number => {
 
 export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filters: any[], setFilters: (filters: any[]) => void}) {
     const [toggled, setToggled] = useState(false);
-    const sharedProps = {
-        select: true,
-        sx: {
-            color: 'white',
-            backgroundColor: 'rgb(18, 18, 21)',
-            '& .MuiFormLabel-root': {
-                color: 'rgb(170, 170, 180)',
-            },
-            '& .MuiOutlinedInput-input': {
-                color: 'rgb(230, 230, 230)',
-            },
-            ' & .MuiPaper-root': {
-                backgroundColor: 'rgb(29,29,33)',
-                color: 'white',
-            },
-            '& .MuiSelect-select': {
-                paddingY: '12px',
-            },
-            '& .MuiSelect-icon': {
-                color: 'rgb(180, 180, 180)',
-            },
-            borderRadius: '3px',
-            marginRight: "10px"
+    const sharedFieldSx = {
+        color: 'white',
+        backgroundColor: 'rgb(18, 18, 21)',
+        '& .MuiFormLabel-root': {
+            color: 'rgb(170, 170, 180)',
         },
-        inputProps: {
+        '& .MuiOutlinedInput-input': {
+            color: 'rgb(230, 230, 230)',
+        },
+        '& .MuiSelect-select': {
+            paddingY: '12px',
+        },
+        '& .MuiSelect-icon': {
+            color: 'rgb(180, 180, 180)',
+        },
+        borderRadius: '3px',
+        marginRight: "10px"
+    };
+
+    const selectSlotProps = {
+        select: {
             MenuProps: {
-                PaperProps: {
-                    sx: {
-                        backgroundColor: '#212529',
-                        color: 'rgb(230, 230, 230)',
-                        border: '1px solid rgb(7,7,9)',
+                slotProps: {
+                    paper: {
+                        sx: {
+                            backgroundColor: '#212529',
+                            color: 'rgb(230, 230, 230)',
+                            border: '1px solid rgb(7,7,9)',
+                        }
                     }
                 }
             }
         }
-    }
+    };
 
     const sharedInputProps = {
         sx: {
@@ -145,6 +143,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                 marginBottom: "15px"
                             }}>
                                 <TextField
+                                    select
                                     value={filter.column}
                                     label={"Column"}
                                     onChange={(e) => {
@@ -161,9 +160,9 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                         }
                                         setFilters(newFilters);
                                     }}
-                                    {...sharedProps}
+                                    slotProps={selectSlotProps}
                                     sx={{
-                                        ...sharedProps.sx,
+                                        ...sharedFieldSx,
                                         width: "175px"
                                     }}
                                 >
@@ -185,6 +184,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                     ))}
                                 </TextField>
                                 <TextField
+                                    select
                                     value={filter.operatorValue || ''}
                                     label="Operator"
                                     onChange={(e) => {
@@ -192,9 +192,9 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                         newFilters[index].operatorValue = e.target.value;
                                         setFilters(newFilters);
                                     }}
-                                    {...sharedProps}
+                                    slotProps={selectSlotProps}
                                     sx={{
-                                        ...sharedProps.sx,
+                                        ...sharedFieldSx,
                                         width: "100px"
                                     }}
                                 >
@@ -225,9 +225,8 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                                 setFilters(newFilters);
                                             }}
                                             label={"Date"}
-                                            {...sharedProps}
                                             sx={{
-                                                ...sharedProps.sx,
+                                                ...sharedFieldSx,
                                                 width: "150px",
                                                 '& input': {
                                                     paddingY: 1.5,

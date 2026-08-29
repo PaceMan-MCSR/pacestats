@@ -25,6 +25,18 @@ export default async function Page(
         page: Number.isSafeInteger(requestedPage) && requestedPage >= 0 ? requestedPage : 0,
         pageSize: [10, 25, 50, 100].includes(requestedPageSize) ? requestedPageSize : 25,
     };
+    const sortableColumns = new Set([
+        "date", "nether", "bastion", "fortress", "first_structure", "second_structure",
+        "first_portal", "stronghold", "end", "finish",
+    ]);
+    const requestedSort = searchParams["sort"] ?? "";
+    const hiddenSortColumns = bastionFort
+        ? new Set(["first_structure", "second_structure"])
+        : new Set(["bastion", "fortress"]);
+    const initialSort = {
+        column: sortableColumns.has(requestedSort) && !hiddenSortColumns.has(requestedSort) ? requestedSort : "date",
+        direction: searchParams["direction"] === "asc" ? "asc" as const : "desc" as const,
+    };
     let nick = params.nick
     if (nick === "jojoe77777" || nick === "jojoe" || nick === "COVID19") nick = "COVlD19"
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", nick)
@@ -84,7 +96,12 @@ export default async function Page(
                         } : {marginTop: "-5px"}} src={headUrl} alt={realNick}/>
                     </h1>
                     <Suspense fallback={<div>Loading...</div>}>
-                        <RecentRuns uuid={uuid} bf={bastionFort} initialPaginationModel={initialPaginationModel}/>
+                        <RecentRuns
+                            uuid={uuid}
+                            bf={bastionFort}
+                            initialPaginationModel={initialPaginationModel}
+                            initialSort={initialSort}
+                        />
                     </Suspense>
                 </div>
             </div>
