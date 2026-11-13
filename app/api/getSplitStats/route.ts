@@ -1,4 +1,5 @@
 import {NextRequest, NextResponse} from "next/server";
+import {jsonResponse} from "@/app/api/_utils";
 import {
     getCached,
     getAllNamesByNick,
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
 
 
     if(runs.length === 0){
-        return NextResponse.json({count: 0, avg: "0:00", ms: 0}, { status: 200 });
+        return jsonResponse({count: 0, avg: "0:00", ms: 0}, {cacheSeconds: 5, staleSeconds: 10});
     }
 
     const r = []
@@ -117,10 +118,10 @@ export async function GET(request: NextRequest) {
         lastTime = run.time
     }
     if(r.length === 0){
-        return NextResponse.json({count: 0, avg: "0:00", ms: 0}, { status: 200 });
+        return jsonResponse({count: 0, avg: "0:00", ms: 0}, {cacheSeconds: 5, staleSeconds: 10});
     }
 
     const avg = calculateAvg(r)
 
-    return NextResponse.json({count: r.length, avg: formatTime(avg), ms: avg}, { status: 200 });
+    return jsonResponse({count: r.length, avg: formatTime(avg), ms: avg}, {cacheSeconds: 5, staleSeconds: 10});
 }

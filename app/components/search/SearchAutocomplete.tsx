@@ -340,7 +340,12 @@ export default function SearchAutocomplete<T extends Item>({
     }, [inputSearchString]);
 
     useEffect(() => {
-        if (searchString?.length > 0 && results?.length > 0) {
+        // Re-run the search when the collection changes. Unlike the original
+        // package, this also covers a focused box that has no results yet:
+        // the player list loads on first use, so someone can finish typing
+        // before the items they are searching arrive.
+        const awaitingResults = hasFocus && !isSearchComplete;
+        if (searchString?.length > 0 && (results?.length > 0 || awaitingResults)) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             setResults(fuseResults(searchString));
         }

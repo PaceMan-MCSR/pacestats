@@ -1,15 +1,11 @@
-type SentryModule = typeof import("@sentry/nextjs");
+type SentryClient = typeof import("./sentry.client.lazy");
 
-let sentryPromise: Promise<SentryModule> | undefined;
+let sentryPromise: Promise<SentryClient> | undefined;
 
 const loadSentry = () => {
-    sentryPromise ??= import("@sentry/nextjs").then((Sentry) => {
-        Sentry.init({
-            dsn: "https://33c40b5996ec0ff3d0edbbf986d7e65c@o4507196383690752.ingest.us.sentry.io/4507196383887360",
-            tracesSampleRate: 0.1,
-            debug: false,
-        });
-        return Sentry;
+    sentryPromise ??= import("./sentry.client.lazy").then((sentry) => {
+        sentry.initSentry();
+        return sentry;
     });
     return sentryPromise;
 };
@@ -26,7 +22,7 @@ const initializeWhenIdle = () => {
 initializeWhenIdle();
 
 export function onRouterTransitionStart(
-    ...args: Parameters<SentryModule["captureRouterTransitionStart"]>
+    ...args: Parameters<SentryClient["captureRouterTransitionStart"]>
 ) {
-    void loadSentry().then((Sentry) => Sentry.captureRouterTransitionStart(...args));
+    void loadSentry().then((sentry) => sentry.captureRouterTransitionStart(...args));
 }

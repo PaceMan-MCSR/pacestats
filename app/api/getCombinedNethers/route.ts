@@ -5,7 +5,7 @@ import {
     resolveCombinedPlayerUuids,
 } from "@/app/data";
 import {formatTime} from "@/app/utils";
-import {integerParam, validationErrorResponse} from "@/app/api/_utils";
+import {integerParam, jsonResponse, validationErrorResponse} from "@/app/api/_utils";
 
 const namesParam = (request: NextRequest) =>
     (request.nextUrl.searchParams.get("names") ?? "")
@@ -49,10 +49,10 @@ export async function GET(request: NextRequest) {
             start,
             maxTime
         );
-        return NextResponse.json({
+        return jsonResponse({
             count: aggregate.count,
             avg: formatTime(aggregate.average),
-        }, {status: 200});
+        }, {cacheSeconds: 5, staleSeconds: 10});
     } catch (error) {
         const invalid = validationErrorResponse(error);
         if (invalid) return invalid;

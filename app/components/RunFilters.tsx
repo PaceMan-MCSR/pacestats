@@ -3,9 +3,7 @@ import React, { useState } from "react";
 import { Collapse } from "react-bootstrap";
 import Tooltip from "react-bootstrap/Tooltip";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
-import { DatePicker, LocalizationProvider } from "@mui/x-date-pickers";
-import { AdapterMoment } from "@mui/x-date-pickers/AdapterMoment";
-import moment from 'moment';
+import dynamic from "next/dynamic";
 import MaterialIcon from "@/app/components/MaterialIcon";
 
 const parseTime = (timeString: string): number => {
@@ -15,6 +13,15 @@ const parseTime = (timeString: string): number => {
     const seconds = parseInt(parts[1], 10);
     if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) return NaN; //More validation
     return minutes * 60 + seconds;
+};
+
+// Only rendered once a date filter exists, so its chunk stays off the page
+// until then.
+const RunDateFilter = dynamic(() => import("@/app/components/RunDateFilter"), {ssr: false});
+
+const startOfToday = () => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 };
 
 export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filters: any[], setFilters: (filters: any[]) => void}) {
@@ -152,7 +159,7 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                         newFilters[index].column = e.target.value;
                                         if(newFilters[index].column == "date") {
                                             newFilters[index].operatorValue = "before";
-                                            newFilters[index].value = moment().startOf("day");
+                                            newFilters[index].value = startOfToday();
                                         } else if(oldColumn === "date" && newFilters[index].column !== "date") {
                                             newFilters[index].operatorValue = "lessThan";
                                             newFilters[index].value = "1:30";
@@ -216,27 +223,24 @@ export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filt
                                     ))}
                                 </TextField>
                                 {["before", "after", "during"].includes(filter.operatorValue) && (
-                                    <LocalizationProvider dateAdapter={AdapterMoment}>
-                                        <DatePicker
-                                            value={filter.value ? moment(filter.value) : null}
-                                            onChange={(date) => {
-                                                const newFilters = [...filters];
-                                                newFilters[index].value = date;
-                                                setFilters(newFilters);
-                                            }}
-                                            label={"Date"}
-                                            sx={{
-                                                ...sharedFieldSx,
-                                                width: "150px",
-                                                '& input': {
-                                                    paddingY: 1.5,
-                                                },
-                                                '& .MuiSvgIcon-root': {
-                                                    color: 'rgb(140, 140, 140)',
-                                                },
-                                            }}
-                                        />
-                                    </LocalizationProvider>
+                                    <RunDateFilter
+                                        value={filter.value}
+                                        onChange={(date) => {
+                                            const newFilters = [...filters];
+                                            newFilters[index].value = date;
+                                            setFilters(newFilters);
+                                        }}
+                                        sx={{
+                                            ...sharedFieldSx,
+                                            width: "150px",
+                                            '& input': {
+                                                paddingY: 1.5,
+                                            },
+                                            '& .MuiSvgIcon-root': {
+                                                color: 'rgb(140, 140, 140)',
+                                            },
+                                        }}
+                                    />
                                 )}
                                 {["lessThan", "greaterThan"].includes(filter.operatorValue) && (
                                     <TextField

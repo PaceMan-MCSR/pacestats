@@ -1297,12 +1297,18 @@ export const getAllUserInfo = async () => {
     try {
         const users = await fetchAllUsersFromRedis();
         if (users.length > 0 && users.every((user: any) => Object.prototype.hasOwnProperty.call(user, "displayName"))) {
-            return users.map((user: any) => ({
-                uuid: user.id,
-                displayName: user.displayName ?? null,
-                color: user.color ?? null,
-                bgColor: user.bgColor ?? null,
-            }));
+            // The Redis list holds every player for search. Pages embed this
+            // projection in their HTML only to look up custom names and
+            // colours, so drop the players who have none: lookups already
+            // treat a missing user as "no customisation".
+            return users
+                .filter((user: any) => user.displayName || user.color || user.bgColor)
+                .map((user: any) => ({
+                    uuid: user.id,
+                    displayName: user.displayName ?? null,
+                    color: user.color ?? null,
+                    bgColor: user.bgColor ?? null,
+                }));
         }
     } catch (error) {
         console.error("Unable to read user customization from Redis; falling back to MySQL:", error);

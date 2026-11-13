@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useMediaQuery } from "@mui/system";
 import BastionFort from "@/app/components/BastionFort";
 import RunFilters from "@/app/components/RunFilters";
-import moment from 'moment';
+import {formatExactTime, fromNow} from "@/app/components/profile/relativeTime";
 import Link from "next/link";
 import {IconButton, LinearProgress, TablePagination} from "@mui/material";
 
@@ -94,10 +94,10 @@ const prepareRunForDisplay = (run: any, gridIndex: number) => {
         ...run,
         _gridId: gridIndex,
         lastUpdated,
-        _relativeDate: moment.unix(start).fromNow()
+        _relativeDate: fromNow(start)
             .replace("minutes", "mins")
             .replace("seconds", "secs"),
-        _dateTitle: moment.unix(start).format("MMMM Do YYYY, h:mm:ss a"),
+        _dateTitle: formatExactTime(start),
         _formattedTimes: Object.fromEntries(
             RUN_TIME_FIELDS.map((field) => [field, formatIfNotNull(run[field])])
         ),
@@ -143,14 +143,15 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
 
     const serializedFilters = JSON.stringify(filters.flatMap((filter) => {
         if (filter.column === 'date') {
-            const date = moment(filter.value);
-            if (!date.isValid()) return [];
+            if (filter.value === null || filter.value === undefined || filter.value === '') return [];
+            const date = new Date(filter.value);
+            if (Number.isNaN(date.getTime())) return [];
             if (filter.operatorValue === 'during') {
                 return [{
                     column: filter.column,
                     operatorValue: filter.operatorValue,
-                    value: date.clone().startOf('day').valueOf(),
-                    endValue: date.clone().add(1, 'day').startOf('day').valueOf(),
+                    value: new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime(),
+                    endValue: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime(),
                 }];
             }
             return [{column: filter.column, operatorValue: filter.operatorValue, value: date.valueOf()}];

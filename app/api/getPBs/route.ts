@@ -1,4 +1,5 @@
 import {NextRequest, NextResponse} from "next/server";
+import {jsonResponse} from "@/app/api/_utils";
 import {
     getCached,
     getPBs
@@ -15,5 +16,5 @@ export async function GET(request: NextRequest) {
     }
     const pbs = await getCached(getPBs, "getPBs", names, uuids)
 
-    return NextResponse.json(pbs, { status: 200 });
+    return jsonResponse(pbs, {cacheSeconds: 60, staleSeconds: 120});
 }

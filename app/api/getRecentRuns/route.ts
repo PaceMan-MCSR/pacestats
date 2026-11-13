@@ -1,4 +1,5 @@
 import {NextRequest, NextResponse} from "next/server";
+import {jsonResponse} from "@/app/api/_utils";
 import {
     getCached,
     getAllNamesByNick,
@@ -38,5 +39,5 @@ export async function GET(request: NextRequest) {
     }
 
 
-    return NextResponse.json(response, { status: 200 });
+    return jsonResponse(response, {cacheSeconds: 5, staleSeconds: 10});
 }

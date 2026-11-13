@@ -1,7 +1,7 @@
 import {
     getCached,
     getAllNamesByNick,
-    getAllNamesByTwitch, getAllPlayerRuns, getRecentAARuns, getAllAARuns,
+    getAllNamesByTwitch, getAAPlayerRunsPage,
 } from "@/app/data";
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
@@ -37,7 +37,8 @@ export default async function Page(
     }
     const uuid = names.uuid
 
-    const recentRuns = await getCached(getAllAARuns, "getAllAARuns", uuid)
+    // First page only; AARecentRuns fetches older runs on demand.
+    const initialPage = await getCached(getAAPlayerRunsPage, "getAAPlayerRunsPage", uuid, null, 100)
 
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
 
@@ -56,7 +57,7 @@ export default async function Page(
                         </Link>
                     </div>
                     <Suspense fallback={<div>Loading...</div>}>
-                        <AARecentRuns runs={recentRuns}/>
+                        <AARecentRuns uuid={uuid} initialPage={initialPage}/>
                     </Suspense>
                 </div>
             </div>

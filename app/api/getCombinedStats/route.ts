@@ -6,7 +6,7 @@ import {
 } from "@/app/data";
 import type {CombinedSplitAggregate} from "@/app/data";
 import {formatTime} from "@/app/utils";
-import {integerParam, validationErrorResponse} from "@/app/api/_utils";
+import {integerParam, jsonResponse, validationErrorResponse} from "@/app/api/_utils";
 
 const categories = [
     "nether",
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
                 avg: formatTime(aggregate?.average ?? 0),
             };
         }
-        return NextResponse.json(response, {status: 200});
+        return jsonResponse(response, {cacheSeconds: 5, staleSeconds: 10});
     } catch (error) {
         const invalid = validationErrorResponse(error);
         if (invalid) return invalid;

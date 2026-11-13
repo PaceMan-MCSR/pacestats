@@ -1,4 +1,5 @@
 import {NextRequest, NextResponse} from "next/server";
+import {jsonResponse} from "@/app/api/_utils";
 import {getCached, getAllNamesByNick, getAllNamesByTwitch, getNPH} from "@/app/data";
 
 export async function GET(request: NextRequest) {
@@ -15,5 +16,5 @@ export async function GET(request: NextRequest) {
     }
     const nph = await getCached(getNPH, "getNPH", names.uuid, hours, hoursBetween, liveOnly)
 
-    return NextResponse.json(nph, { status: 200 });
+    return jsonResponse(nph, {cacheSeconds: 5, staleSeconds: 10});
 }

@@ -133,6 +133,11 @@ export const validationErrorResponse = (error: unknown) => {
     );
 };
 
+/**
+ * JSON response with the shared cache headers. Compression is left to the
+ * reverse proxy: Next.js does not compress route-handler responses, and nginx
+ * is configured to apply Brotli or gzip to application/json.
+ */
 export const jsonResponse = (
     data: unknown,
     options: {status?: number; cacheSeconds?: number; staleSeconds?: number} = {}
@@ -145,6 +150,7 @@ export const jsonResponse = (
     } else {
         headers["Cache-Control"] = "private, no-store";
     }
+
     return NextResponse.json(data, {status, headers});
 };
 

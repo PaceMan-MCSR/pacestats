@@ -1,4 +1,5 @@
 import {NextRequest, NextResponse} from "next/server";
+import {jsonResponse} from "@/app/api/_utils";
 import {getAllNamesByNick, getAllNamesByTwitch, getCached, getRecentTimestamps, getUUID} from "@/app/data";
 import {getLastSplit} from "@/app/utils";
 
@@ -55,5 +56,5 @@ export async function GET(request: NextRequest) {
         }
         response.push(formattedRun)
     }
-    return NextResponse.json(response, { status: 200 });
+    return jsonResponse(response, {cacheSeconds: 5, staleSeconds: 10});
 }

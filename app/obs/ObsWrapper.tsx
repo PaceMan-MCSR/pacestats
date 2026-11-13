@@ -10,8 +10,8 @@ import Session from "@/app/obs/session/[nick]/Session";
 import FontPicker from "@/app/obs/FontPicker";
 import MaterialIcon from "@/app/components/MaterialIcon";
 
-export default function ObsWrapper({names, userInfo, params}: {
-        names: any, userInfo: any, params: { }
+export default function ObsWrapper({userInfo, params}: {
+        userInfo: any, params: { }
     }) {
     const [search, setSearch] = useState("")
     const [color, setColor] = useState("#000000")
@@ -83,7 +83,7 @@ export default function ObsWrapper({names, userInfo, params}: {
                         <div className="col">
                             <img className="avatar" src={url} alt={search}/>
                             <div className="nameSearch">
-                                <PlayerSearch data={names} userInfo={userInfo} input={search} setOutput={setSearch} />
+                                <PlayerSearch userInfo={userInfo} input={search} setOutput={setSearch} />
                             </div>
                             <OverlayTrigger overlay={
                                 <Tooltip className="hoursTooltip">

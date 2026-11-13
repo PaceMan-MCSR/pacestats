@@ -2,18 +2,28 @@ import {withSentryConfig} from '@sentry/nextjs';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     basePath: '/stats',
+    // nginx compresses responses (Brotli, with gzip as the fallback). If Next
+    // gzipped them first, nginx would pass that through and Brotli would
+    // never apply. See ops/nginx/pacestats.conf.
+    compress: false,
     trailingSlash: true,
     async headers() {
-        return [
+        // These pages are the same for every visitor, so a shared cache
+        // (nginx proxy_cache, a CDN) may reuse them briefly instead of
+        // rendering each view. Browsers still revalidate on every load.
+        // See ops/nginx/pacestats.conf for a proxy cache that honours these.
+        const sharedCache = (sMaxAge, staleWhileRevalidate) => [
             {
-                source: '/',
-                headers: [
-                    {
-                        key: 'Cache-Control',
-                        value: 'public, s-maxage=30, stale-while-revalidate=120',
-                    },
-                ],
+                key: 'Cache-Control',
+                value: `public, s-maxage=${sMaxAge}, stale-while-revalidate=${staleWhileRevalidate}`,
             },
+        ];
+        return [
+            {source: '/', headers: sharedCache(30, 120)},
+            {source: '/aa', headers: sharedCache(30, 120)},
+            {source: '/obs', headers: sharedCache(300, 600)},
+            // Profile pages show recent runs, so keep them close to live.
+            {source: '/player/:path*', headers: sharedCache(15, 60)},
         ];
     },
     images: {

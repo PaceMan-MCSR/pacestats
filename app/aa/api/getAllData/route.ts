@@ -1,4 +1,5 @@
 import {NextRequest, NextResponse} from "next/server";
+import {jsonResponse} from "@/app/api/_utils";
 import { getAllAAData, getCached } from "@/app/data";
 
 export async function GET(request: NextRequest) {
@@ -15,5 +16,5 @@ export async function GET(request: NextRequest) {
         const filteredEntries = Object.entries(item).filter(([key, value]) => value !== null && key !== "realUpdated");
         return Object.fromEntries(filteredEntries);
     });
-    return NextResponse.json({data: filteredData}, { status: 200 });
+    return jsonResponse({data: filteredData}, {cacheSeconds: 60, staleSeconds: 120});
 }

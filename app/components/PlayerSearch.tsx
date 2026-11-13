@@ -11,12 +11,18 @@ import { schedulePlayerPrefetch } from "@/app/components/playerPrefetch";
 type SearchItem = SearchName & { color?: string | null };
 
 let playerNamesRequest: Promise<SearchItem[]> | undefined;
+// Shared by every search box on the page and kept across client navigations.
+let loadedPlayerNames: SearchItem[] | null = null;
 
 function loadPlayerNames() {
     playerNamesRequest ??= fetch("/stats/api/getAllUsers/")
         .then((response) => {
             if (!response.ok) throw new Error(`Unable to load player names (${response.status})`);
             return response.json() as Promise<SearchItem[]>;
+        })
+        .then((players) => {
+            loadedPlayerNames = players;
+            return players;
         })
         .catch((error) => {
             playerNamesRequest = undefined;
@@ -34,6 +40,7 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
     const router = useRouter()
     const [remoteItems, setRemoteItems] = useState<SearchItem[]>([]);
     const [loadedItems, setLoadedItems] = useState<SearchItem[] | null>(null);
+    const mounted = useRef(true);
     const searchController = useRef<AbortController | null>(null);
     const searchPrefetches = useRef<Array<() => void>>([]);
     const items = data ?? loadedItems ?? remoteItems;
@@ -51,27 +58,29 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
     };
 
     useEffect(() => {
-        if (data !== undefined) return;
-
-        let active = true;
-        const startLoading = () => {
-            loadPlayerNames()
-                .then((players) => {
-                    if (active) setLoadedItems(players);
-                })
-                .catch(() => {
-                    // Per-query search remains available if the background list fails.
-                });
-        };
-
-        if (document.readyState === "complete") startLoading();
-        else window.addEventListener("load", startLoading, {once: true});
-
+        mounted.current = true;
         return () => {
-            active = false;
-            window.removeEventListener("load", startLoading);
+            mounted.current = false;
         };
-    }, [data]);
+    }, []);
+
+    // The full player list is several hundred kilobytes, and most page views
+    // (every OBS overlay among them) never touch the search box. Fetch it when
+    // someone shows intent to search; per-query search covers the gap.
+    const requestPlayerNames = () => {
+        if (data !== undefined || loadedItems !== null) return;
+        if (loadedPlayerNames !== null) {
+            setLoadedItems(loadedPlayerNames);
+            return;
+        }
+        loadPlayerNames()
+            .then((players) => {
+                if (mounted.current) setLoadedItems(players);
+            })
+            .catch(() => {
+                // Per-query search remains available if the background list fails.
+            });
+    };
 
     useEffect(() => () => clearSearchPrefetches(), []);
 
@@ -148,7 +157,13 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
         "--search-foreground": (colours?.fgText as {color: string})?.color,
     } as React.CSSProperties : undefined;
 
-    return <div className="playerSearchTheme" data-custom={hasColours || undefined} style={themeStyle}>
+    return <div
+        className="playerSearchTheme"
+        data-custom={hasColours || undefined}
+        style={themeStyle}
+        onPointerEnter={requestPlayerNames}
+        onTouchStart={requestPlayerNames}
+    >
         <SearchAutocomplete
                 items={items}
                 fuseOptions={{
@@ -160,6 +175,7 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
                 }}
                 inputDebounce={100}
                 onSearch={handleOnSearch}
+                onFocus={requestPlayerNames}
                 onSelect={handleOnSelect}
                 onHover={handleOnHover}
                 formatResult={formatResult}
