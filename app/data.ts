@@ -691,23 +691,20 @@ export const resolveCombinedPlayerUuids = async (names: string[]): Promise<Combi
     const uuidByName = new Map<string, string>();
     for (let offset = 0; offset < uniqueNames.length; offset += COMBINED_IDENTITY_BATCH_SIZE) {
         const batch = uniqueNames.slice(offset, offset + COMBINED_IDENTITY_BATCH_SIZE);
-        const requestedNames = batch.map((_, index) =>
-            `SELECT ? AS lookupName, ${index} AS lookupOrder`
+        // Correlated lookups against a derived name list cannot use the
+        // (nickname, id)/(twitch, id) indexes for ORDER BY id DESC and sort
+        // every run of the player instead. Uncorrelated subqueries with bound
+        // names read one index entry from the end of each range.
+        const lookups = batch.map((_, index) =>
+            `SELECT ${index} AS lookupOrder, LOWER(?) AS lookupName,
+                COALESCE(
+                    (SELECT uuid FROM pace WHERE nickname=? ORDER BY id DESC LIMIT 1),
+                    (SELECT uuid FROM pace WHERE twitch=? ORDER BY id DESC LIMIT 1)
+                ) AS uuid`
         ).join(" UNION ALL ");
         const [rows] = await (await getConn()).execute<any[]>(
-            `WITH requested AS (${requestedNames})
-             SELECT LOWER(requested.lookupName) AS lookupName,
-                COALESCE(
-                    (SELECT uuid FROM pace
-                     WHERE nickname=requested.lookupName
-                     ORDER BY id DESC LIMIT 1),
-                    (SELECT uuid FROM pace
-                     WHERE twitch=requested.lookupName
-                     ORDER BY id DESC LIMIT 1)
-                ) AS uuid
-             FROM requested
-             ORDER BY requested.lookupOrder;`,
-            batch
+            `${lookups} ORDER BY lookupOrder;`,
+            batch.flatMap((name) => [name, name, name])
         );
         for (const row of rows) {
             if (row.uuid) uuidByName.set(String(row.lookupName).toLocaleLowerCase(), String(row.uuid));
