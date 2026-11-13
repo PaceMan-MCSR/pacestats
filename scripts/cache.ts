@@ -6,6 +6,7 @@ import { type FastestEntry } from "@/app/types";
 import { calculateAvg, trimmedStats } from "@/app/trimmedAverage";
 import {
     acquireRedisLock,
+    assertRedisResults,
     deleteKeysIfLeaseHeld,
     envInt,
     forgetChangedDigests,
@@ -258,6 +259,7 @@ function partitionRowsByDays<T extends { insertTime: Date }>(
 
 type PaceMinimum = {time: number; id: number; insertTime: Date};
 type PacePlayerAccumulator = {
+    firstId: number;
     name: string;
     splits: Record<string, number[]>;
     minima: Record<string, PaceMinimum | undefined>;
@@ -267,12 +269,14 @@ function accumulatePaceRow(players: Map<string, PacePlayerAccumulator>, row: Pac
     let player = players.get(row.uuid);
     if (!player) {
         player = {
+            firstId: row.id,
             name: row.nickname,
             splits: Object.fromEntries(paceCategories.map((category) => [category, []])) as Record<string, number[]>,
             minima: {},
         };
         players.set(row.uuid, player);
     }
+    if (row.id < player.firstId) player.firstId = row.id;
     const latestName = player.minima.__latestName;
     if (!latestName || row.insertTime > latestName.insertTime || (
         row.insertTime.getTime() === latestName.insertTime.getTime() && row.id > latestName.id
@@ -336,7 +340,53 @@ function accumulatePaceRow(players: Map<string, PacePlayerAccumulator>, row: Pac
     recordMinimum("fortress", row.fortress);
 }
 
-function finalizePacePlayers(players: Map<string, PacePlayerAccumulator>, days: number): {
+/**
+ * Everything the leaderboards need from one player's rows. It does not
+ * depend on the order the rows were accumulated in, so the all-time job can
+ * keep it between runs and recompute it only for players whose rows changed.
+ */
+type PacePlayerSummary = {
+    /** Smallest source row id, which orders players like an id-ordered scan. */
+    firstId: number;
+    name: string;
+    latestNameId: number;
+    latestNameInsertTimeMs: number;
+    /** Per category with at least one value: [count, trimmed average, fastest]. */
+    stats: Record<string, [number, number, number]>;
+    /** Per category: [fastest time, run id] as chosen by accumulatePaceRow. */
+    minima: Record<string, [number, number]>;
+};
+
+function summarizePacePlayer(player: PacePlayerAccumulator): PacePlayerSummary {
+    const stats: Record<string, [number, number, number]> = {};
+    const minima: Record<string, [number, number]> = {};
+    for (const category of paceCategories) {
+        const values = player.splits[category];
+        if (values.length > 0) {
+            const {count, avg, min} = trimmedStats(values);
+            stats[category] = [count, avg, min];
+        }
+        const minimum = player.minima[category];
+        if (minimum) minima[category] = [minimum.time, minimum.id];
+    }
+    const latestName = player.minima.__latestName!;
+    return {
+        firstId: player.firstId,
+        name: player.name,
+        latestNameId: latestName.id,
+        latestNameInsertTimeMs: latestName.insertTime.getTime(),
+        stats,
+        minima,
+    };
+}
+
+function finalizePacePlayers(players: Map<string, PacePlayerAccumulator>, days: number) {
+    const summaries = new Map<string, PacePlayerSummary>();
+    for (const [uuid, player] of players) summaries.set(uuid, summarizePacePlayer(player));
+    return finalizePaceSummaries(summaries, days);
+}
+
+function finalizePaceSummaries(players: Map<string, PacePlayerSummary>, days: number): {
     full: Leaderboards;
     top: Leaderboards;
     fastest: { [category: string]: FastestEntry[] };
@@ -344,15 +394,16 @@ function finalizePacePlayers(players: Map<string, PacePlayerAccumulator>, days: 
     const leaderboards = initLeaderboards(paceCategories);
     for (const [uuid, player] of players) {
         for (const category of paceCategories) {
-            const values = player.splits[category];
-            if (values.length === 0) continue;
-            const {count: qty, avg, min: fastest} = trimmedStats(values);
+            const stats = player.stats[category];
+            if (!stats) continue;
+            const [qty, avg, fastest] = stats;
             const previous = getPreviousSplit(category);
+            const previousCount = previous === null ? 0 : player.stats[previous]?.[0] ?? 0;
             const conversion = previous === null
                 ? 0
-                : player.splits[previous].length === 0
+                : previousCount === 0
                     ? 1
-                    : (qty / player.splits[previous].length) * 100;
+                    : (qty / previousCount) * 100;
             const valuesByFilter: Record<number, number> = {
                 [CategoryType.COUNT]: qty,
                 [CategoryType.AVG]: avg,
@@ -376,12 +427,12 @@ function finalizePacePlayers(players: Map<string, PacePlayerAccumulator>, days: 
     for (const [uuid, player] of players) {
         for (const category of paceCategories) {
             const minimum = player.minima[category];
-            if (!minimum || minimum.time <= 0) continue;
+            if (!minimum || minimum[0] <= 0) continue;
             fastest[category].push({
                 uuid,
                 name: player.name,
-                value: minimum.time,
-                runId: minimum.id,
+                value: minimum[0],
+                runId: minimum[1],
             });
         }
     }
@@ -580,10 +631,24 @@ function accumulateNphRow(grouped: Map<string, NphAccumulator>, row: NetherPaceR
     player.enters += row.enters;
 }
 
+/** An NphAccumulator with its nether times reduced to their count and trimmed average. */
+type NphSummary = Omit<NphAccumulator, "times"> & {count: number; avg: number};
+
+function summarizeNph(player: NphAccumulator): NphSummary {
+    const {times, ...totals} = player;
+    return {...totals, count: times.length, avg: calculateAvg(times)};
+}
+
 function finalizeNph(grouped: Map<string, NphAccumulator>, days: number, asOfMs: number): Array<[string, unknown]> {
+    const summaries = new Map<string, NphSummary>();
+    for (const [uuid, player] of grouped) summaries.set(uuid, summarizeNph(player));
+    return finalizeNphSummaries(summaries, days, asOfMs);
+}
+
+function finalizeNphSummaries(grouped: Map<string, NphSummary>, days: number, asOfMs: number): Array<[string, unknown]> {
     const output: Array<[string, unknown]> = [];
     for (const [uuid, player] of grouped) {
-        const nethers = player.times.length;
+        const nethers = player.count;
         if (nethers === 0) continue;
         const elapsedRtaMs = nethers > 1
             ? (player.firstTime - player.lastTime) * 1000
@@ -596,7 +661,7 @@ function finalizeNph(grouped: Map<string, NphAccumulator>, days: number, asOfMs:
             rnph: roundNumber(totalGameTimeHours > 0 ? nethers / totalGameTimeHours : 0),
             lnph: roundNumber(playTimeHours > 0 ? nethers / playTimeHours : 0),
             count: nethers,
-            avg: calculateAvg(player.times),
+            avg: player.avg,
             playtime: player.playTime,
             walltime: player.wallTime,
             resets: player.resets,
@@ -674,9 +739,9 @@ async function readIdentityOutboxClaims(conn: Connection): Promise<IdentityOutbo
     return rows as IdentityOutboxClaim[];
 }
 
-async function acknowledgeIdentityOutboxClaims(
+async function acknowledgeOutboxClaims(
     conn: Connection,
-    claims: IdentityOutboxClaim[],
+    claims: OutboxClaim[],
     batchSize: number,
 ): Promise<void> {
     for (let offset = 0; offset < claims.length; offset += batchSize) {
@@ -695,7 +760,7 @@ async function findChangedIdentityUuids(
     previousMaximumId: number,
     asOf: Date,
     maximumId: number,
-    claims: IdentityOutboxClaim[],
+    claims: OutboxClaim[],
 ): Promise<Set<string>> {
     const changed = new Set(claims.map(({entityId}) => entityId));
     const [insertedRows] = await conn.execute(
@@ -848,45 +913,333 @@ function applyCachedNames(
     }
 }
 
-async function buildFullPaceCaches(
+/**
+ * Read pace rows newest-id-last and reduce them to per-player summaries:
+ * every row up to `maximumId` and `asOf`, or, with `uuids`, only those
+ * players' rows (the same filter, so a recomputed summary equals the one a
+ * full scan would produce).
+ */
+async function readPaceSummaries(
     conn: Connection,
+    uuids: string[] | null,
+    maximumId: number,
     asOf: Date,
     sqlBatchSize: number,
     lease: RedisLease,
     pacer: CachePacer,
-): Promise<{
-    leaderboards: {full: Leaderboards; top: Leaderboards; fastest: {[category: string]: FastestEntry[]}};
-    rowCount: number;
-}> {
-    const players = new Map<string, PacePlayerAccumulator>();
-    const [maximumRows] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM pace") as any;
-    const maximumId = Number(maximumRows[0].maximumId);
-    let lastId = 0;
+): Promise<{summaries: Map<string, PacePlayerSummary>; rowCount: number}> {
+    const columns = `id, nickname, uuid, nether, bastion, fortress, first_portal, second_portal,
+                stronghold, end, finish, obtainRod, insertTime`;
+    const summaries = new Map<string, PacePlayerSummary>();
     let rowCount = 0;
-    while (true) {
-        await lease.verifyHeld();
-        const [rawRows] = await conn.execute(
-            `SELECT id, nickname, uuid, nether, bastion, fortress, first_portal, second_portal,
-                stronghold, end, finish, obtainRod, insertTime
-             FROM pace
-             WHERE id > ? AND id <= ? AND insertTime <= ?
-             ORDER BY id ASC
-             LIMIT ${sqlBatchSize};`,
-            [lastId, maximumId, asOf],
-        );
-        const rows = rawRows as PaceRow[];
-        if (rows.length === 0) break;
+    const consume = async (rows: PaceRow[], players: Map<string, PacePlayerAccumulator>) => {
         for (let index = 0; index < rows.length; index++) {
             accumulatePaceRow(players, rows[index]);
             rowCount++;
             if ((index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
         }
-        const last = rows[rows.length - 1];
-        lastId = last.id;
-        if (rows.length < sqlBatchSize) break;
-        await pacingPause(pacer);
+    };
+    if (uuids === null) {
+        const players = new Map<string, PacePlayerAccumulator>();
+        let lastId = 0;
+        while (true) {
+            await lease.verifyHeld();
+            const [rawRows] = await conn.execute(
+                `SELECT ${columns}
+                 FROM pace
+                 WHERE id > ? AND id <= ? AND insertTime <= ?
+                 ORDER BY id ASC
+                 LIMIT ${sqlBatchSize};`,
+                [lastId, maximumId, asOf],
+            );
+            const rows = rawRows as PaceRow[];
+            if (rows.length === 0) break;
+            await consume(rows, players);
+            lastId = rows[rows.length - 1].id;
+            if (rows.length < sqlBatchSize) break;
+            await pacingPause(pacer);
+        }
+        for (const [uuid, player] of players) summaries.set(uuid, summarizePacePlayer(player));
+        return {summaries, rowCount};
     }
-    return {leaderboards: finalizePacePlayers(players, 9999), rowCount};
+    for (let offset = 0; offset < uuids.length; offset += FULL_UUID_BATCH_SIZE) {
+        const batch = uuids.slice(offset, offset + FULL_UUID_BATCH_SIZE);
+        const placeholders = batch.map(() => "?").join(",");
+        const players = new Map<string, PacePlayerAccumulator>();
+        let cursor: {uuid: string; id: number} | null = null;
+        while (true) {
+            await lease.verifyHeld();
+            const [rawRows] = await conn.execute(
+                `SELECT ${columns}
+                 FROM pace
+                 WHERE uuid IN (${placeholders}) AND id <= ? AND insertTime <= ?
+                   ${cursor === null ? "" : "AND (uuid > ? OR (uuid = ? AND id > ?))"}
+                 ORDER BY uuid ASC, id ASC
+                 LIMIT ${sqlBatchSize};`,
+                cursor === null
+                    ? [...batch, maximumId, asOf]
+                    : [...batch, maximumId, asOf, cursor.uuid, cursor.uuid, cursor.id],
+            );
+            const rows = rawRows as PaceRow[];
+            if (rows.length === 0) break;
+            await consume(rows, players);
+            const last = rows[rows.length - 1];
+            cursor = {uuid: last.uuid, id: last.id};
+            if (rows.length < sqlBatchSize) break;
+            await pacingPause(pacer);
+        }
+        for (const [uuid, player] of players) summaries.set(uuid, summarizePacePlayer(player));
+    }
+    return {summaries, rowCount};
+}
+
+/** The NPH counterpart of readPaceSummaries, grouped by nethers.uuid. */
+async function readNphSummaries(
+    conn: Connection,
+    uuids: string[] | null,
+    maximumId: number,
+    asOf: Date,
+    sqlBatchSize: number,
+    lease: RedisLease,
+    pacer: CachePacer,
+): Promise<{summaries: Map<string, NphSummary>; rowCount: number}> {
+    const columns = `nethers.id, nethers.uuid, pace.nether AS nether, wallTime, playTime, enters,
+                UNIX_TIMESTAMP(nethers.insertTime) AS time, resets, totalResets`;
+    const summaries = new Map<string, NphSummary>();
+    let rowCount = 0;
+    const consume = async (rows: NetherPaceRow[], grouped: Map<string, NphAccumulator>) => {
+        for (let index = 0; index < rows.length; index++) {
+            accumulateNphRow(grouped, rows[index]);
+            rowCount++;
+            if ((index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
+        }
+    };
+    if (uuids === null) {
+        const grouped = new Map<string, NphAccumulator>();
+        let lastId = 0;
+        while (true) {
+            await lease.verifyHeld();
+            const [rawRows] = await conn.execute(
+                `SELECT ${columns}
+                 FROM nethers INNER JOIN pace ON nethers.runId = pace.id
+                 WHERE nethers.id > ? AND nethers.id <= ? AND nethers.insertTime <= ?
+                 ORDER BY nethers.id ASC LIMIT ${sqlBatchSize};`,
+                [lastId, maximumId, asOf],
+            );
+            const rows = rawRows as NetherPaceRow[];
+            if (rows.length === 0) break;
+            await consume(rows, grouped);
+            lastId = rows[rows.length - 1].id;
+            if (rows.length < sqlBatchSize) break;
+            await pacingPause(pacer);
+        }
+        for (const [uuid, player] of grouped) summaries.set(uuid, summarizeNph(player));
+        return {summaries, rowCount};
+    }
+    for (let offset = 0; offset < uuids.length; offset += FULL_UUID_BATCH_SIZE) {
+        const batch = uuids.slice(offset, offset + FULL_UUID_BATCH_SIZE);
+        const placeholders = batch.map(() => "?").join(",");
+        const grouped = new Map<string, NphAccumulator>();
+        let cursor: {uuid: string; id: number} | null = null;
+        while (true) {
+            await lease.verifyHeld();
+            const [rawRows] = await conn.execute(
+                `SELECT ${columns}
+                 FROM nethers INNER JOIN pace ON nethers.runId = pace.id
+                 WHERE nethers.uuid IN (${placeholders}) AND nethers.id <= ? AND nethers.insertTime <= ?
+                   ${cursor === null ? "" : "AND (nethers.uuid > ? OR (nethers.uuid = ? AND nethers.id > ?))"}
+                 ORDER BY nethers.uuid ASC, nethers.id ASC LIMIT ${sqlBatchSize};`,
+                cursor === null
+                    ? [...batch, maximumId, asOf]
+                    : [...batch, maximumId, asOf, cursor.uuid, cursor.uuid, cursor.id],
+            );
+            const rows = rawRows as NetherPaceRow[];
+            if (rows.length === 0) break;
+            await consume(rows, grouped);
+            const last = rows[rows.length - 1];
+            cursor = {uuid: last.uuid, id: last.id};
+            if (rows.length < sqlBatchSize) break;
+            await pacingPause(pacer);
+        }
+        for (const [uuid, player] of grouped) summaries.set(uuid, summarizeNph(player));
+    }
+    return {summaries, rowCount};
+}
+
+// ---------------------------------------------------------------------------
+// Incremental all-time aggregates
+//
+// The all-time boards are pure functions of per-player summaries, and a
+// summary depends only on that player's rows. The full job keeps every
+// summary in FULL_STATE_KEY and, on later runs, recomputes only players with
+// rows inserted, updated (lastUpdated) or deleted (aggregate outbox) since
+// the previous run. A complete rescan still happens on the first run, when
+// the state format changes, every CACHE_FULL_REBUILD_INTERVAL_SECONDS, with
+// --rebuild, or when too many players changed.
+// ---------------------------------------------------------------------------
+
+const FULL_STATE_KEY = "cache:aggregate:full:state";
+const FULL_STATE_META_FIELD = "__meta";
+const FULL_STATE_VERSION = 1;
+const FULL_UUID_BATCH_SIZE = 50;
+
+type FullStateMeta = {
+    version: number;
+    asOf: string;
+    maximumPaceId: number;
+    maximumNetherId: number;
+    rebuiltAt: string;
+};
+
+type FullPlayerState = {p?: PacePlayerSummary; n?: NphSummary};
+
+type FullState = {meta: FullStateMeta; players: Map<string, FullPlayerState>};
+
+async function readFullState(redis: Redis): Promise<FullState | null> {
+    const raw = await redis.hgetall(FULL_STATE_KEY);
+    const metaRaw = raw[FULL_STATE_META_FIELD];
+    if (!metaRaw) return null;
+    const meta = JSON.parse(metaRaw) as FullStateMeta;
+    if (meta.version !== FULL_STATE_VERSION) return null;
+    const players = new Map<string, FullPlayerState>();
+    for (const [uuid, value] of Object.entries(raw)) {
+        if (uuid !== FULL_STATE_META_FIELD) players.set(uuid, JSON.parse(value));
+    }
+    return {meta, players};
+}
+
+interface OutboxClaim {
+    scope: string;
+    entityId: string;
+    token: string;
+}
+
+async function readOutboxClaims(conn: Connection, scope: string): Promise<OutboxClaim[]> {
+    const [rows] = await conn.execute(
+        `SELECT scope, entityId, token
+         FROM cache_invalidation_outbox
+         WHERE scope=?
+         ORDER BY entityId ASC;`,
+        [scope],
+    );
+    return rows as OutboxClaim[];
+}
+
+/**
+ * Deletions leave no trace in the columns used to find changed players, so
+ * incremental runs need ops/mysql/aggregate-delete-triggers.sql. Without the
+ * triggers, every run rescans all rows as before.
+ */
+async function hasAggregateDeleteTriggers(conn: Connection): Promise<boolean> {
+    const [rows] = await conn.execute(
+        `SELECT COUNT(*) AS triggerCount
+         FROM information_schema.TRIGGERS
+         WHERE TRIGGER_SCHEMA = DATABASE()
+           AND TRIGGER_NAME IN ('trg_pace_aggregate_delete', 'trg_nethers_aggregate_delete');`,
+    ) as any;
+    return Number(rows[0].triggerCount) === 2;
+}
+
+/** Players whose all-time summaries may differ from the stored ones. */
+async function findChangedFullPlayers(
+    conn: Connection,
+    meta: FullStateMeta,
+    maximumPaceId: number,
+    maximumNetherId: number,
+    overlapSeconds: number,
+    claims: OutboxClaim[],
+): Promise<Set<string | null>> {
+    const since = new Date(new Date(meta.asOf).getTime() - overlapSeconds * 1_000);
+    // The delete triggers record a row without a uuid as ''.
+    const changed = new Set<string | null>(claims.map(({entityId}) => entityId === "" ? null : entityId));
+    const queries: Array<[string, any[]]> = [
+        ["SELECT DISTINCT uuid FROM pace WHERE id > ? AND id <= ?;", [meta.maximumPaceId, maximumPaceId]],
+        ["SELECT DISTINCT uuid FROM pace WHERE lastUpdated >= ?;", [since]],
+        ["SELECT DISTINCT uuid FROM pace WHERE insertTime >= ?;", [since]],
+        ["SELECT DISTINCT uuid FROM nethers WHERE id > ? AND id <= ?;", [meta.maximumNetherId, maximumNetherId]],
+        ["SELECT DISTINCT uuid FROM nethers WHERE insertTime >= ?;", [since]],
+    ];
+    for (const [sql, values] of queries) {
+        const [rows] = await conn.execute(sql, values) as any;
+        for (const row of rows) changed.add(row.uuid);
+    }
+    return changed;
+}
+
+/** Order players by their smallest row id, as a full id-ordered scan meets them. */
+function orderedByFirstId<T>(players: Map<string, FullPlayerState>, pick: (state: FullPlayerState) => T | undefined, firstId: (value: T) => number) {
+    const entries: Array<[string, T]> = [];
+    for (const [uuid, state] of players) {
+        const value = pick(state);
+        if (value !== undefined) entries.push([uuid, value]);
+    }
+    entries.sort((left, right) => firstId(left[1]) - firstId(right[1]));
+    return new Map(entries);
+}
+
+async function writeFullState(
+    redis: Redis,
+    state: FullState,
+    rebuilt: boolean,
+    changedUuids: Iterable<string>,
+    generation: string,
+    batchSize: number,
+    stagingTtlSeconds: number,
+    lease: RedisLease,
+): Promise<void> {
+    const setScript = `
+        if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+            return redis.error_reply('CACHE_LOCK_LOST')
+        end
+        for index = 2, #ARGV, 2 do
+            if ARGV[index + 1] == '' then
+                redis.call('HDEL', KEYS[2], ARGV[index])
+            else
+                redis.call('HSET', KEYS[2], ARGV[index], ARGV[index + 1])
+            end
+        end
+        return 1
+    `;
+    const encode = (uuid: string): [string, string] => {
+        const player = state.players.get(uuid);
+        return [uuid, player && (player.p || player.n) ? JSON.stringify(player) : ""];
+    };
+    if (rebuilt) {
+        // Build the whole hash under a staging key, then swap it in.
+        const staging = `cache:staging:${generation}:aggregate-state`;
+        const uuids = [...state.players.keys()];
+        for (let offset = 0; offset < uuids.length; offset += batchSize) {
+            const fields = uuids.slice(offset, offset + batchSize).map(encode).filter(([, value]) => value !== "");
+            const pipeline = redis.pipeline();
+            if (fields.length > 0) pipeline.hset(staging, ...fields.flat());
+            pipeline.expire(staging, stagingTtlSeconds);
+            assertRedisResults(await pipeline.exec(), "staging the all-time aggregate state");
+        }
+        await redis.hset(staging, FULL_STATE_META_FIELD, JSON.stringify(state.meta));
+        lease.assertHeld();
+        await redis.eval(`
+            if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+                return redis.error_reply('CACHE_LOCK_LOST')
+            end
+            redis.call('RENAME', KEYS[2], KEYS[3])
+            redis.call('PERSIST', KEYS[3])
+            return 1
+        `, 3, lease.key, staging, FULL_STATE_KEY, lease.token);
+        lease.assertHeld();
+        return;
+    }
+    // Player fields first and the metadata last: if the job stops in between,
+    // the next run starts from the old metadata and recomputes a superset.
+    const uuids = [...changedUuids];
+    for (let offset = 0; offset < uuids.length; offset += batchSize) {
+        lease.assertHeld();
+        await redis.eval(setScript, 2, lease.key, FULL_STATE_KEY, lease.token,
+            ...uuids.slice(offset, offset + batchSize).flatMap(encode));
+    }
+    lease.assertHeld();
+    await redis.eval(setScript, 2, lease.key, FULL_STATE_KEY, lease.token,
+        FULL_STATE_META_FIELD, JSON.stringify(state.meta));
+    lease.assertHeld();
 }
 
 async function buildFullAaCache(
@@ -934,45 +1287,6 @@ async function buildFullAaCache(
     await flushPlayer();
     sortLeaderboardsInPlace(leaderboards, aaCategories);
     return {leaderboards, rowCount};
-}
-
-async function buildFullNphCache(
-    conn: Connection,
-    asOf: Date,
-    asOfMs: number,
-    sqlBatchSize: number,
-    lease: RedisLease,
-    pacer: CachePacer,
-): Promise<{entries: Array<[string, unknown]>; rowCount: number; playerCount: number}> {
-    const grouped = new Map<string, NphAccumulator>();
-    const [maximumRows] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM nethers") as any;
-    const maximumId = Number(maximumRows[0].maximumId);
-    let lastId = 0;
-    let rowCount = 0;
-    while (true) {
-        await lease.verifyHeld();
-        const [rawRows] = await conn.execute(
-            `SELECT nethers.id, nethers.uuid, pace.nether AS nether, wallTime, playTime, enters,
-                UNIX_TIMESTAMP(nethers.insertTime) AS time, resets, totalResets
-             FROM nethers INNER JOIN pace ON nethers.runId = pace.id
-             WHERE nethers.id > ? AND nethers.id <= ? AND nethers.insertTime <= ?
-             ORDER BY nethers.id ASC LIMIT ${sqlBatchSize};`,
-            [lastId, maximumId, asOf],
-        );
-        const rows = rawRows as NetherPaceRow[];
-        if (rows.length === 0) break;
-        for (let index = 0; index < rows.length; index++) {
-            accumulateNphRow(grouped, rows[index]);
-            rowCount++;
-            if ((index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
-        }
-        const last = rows[rows.length - 1];
-        lastId = last.id;
-        if (rows.length < sqlBatchSize) break;
-        await pacingPause(pacer);
-    }
-    const entries = finalizeNph(grouped, 9999, asOfMs);
-    return {entries, rowCount, playerCount: entries.length};
 }
 
 async function readUsersFromRedis(redis: Redis): Promise<CachedUser[]> {
@@ -1031,6 +1345,13 @@ async function main(): Promise<void> {
         ? envInt("CACHE_FULL_PLAYER_TTL_SECONDS", 3_888_000)
         : envInt("CACHE_PLAYER_TTL_SECONDS", 1_209_600);
     const lockTtlMs = envInt("CACHE_LOCK_TTL_MS", 7_200_000);
+    const fullRebuildIntervalSeconds = envInt("CACHE_FULL_REBUILD_INTERVAL_SECONDS", 604_800);
+    const fullOverlapSeconds = envInt("CACHE_FULL_WATERMARK_OVERLAP_SECONDS", 300, 0);
+    const fullIncrementalMaxPlayers = envInt("CACHE_FULL_INCREMENTAL_MAX_PLAYERS", 2_000);
+    let fullState: FullState | null = null;
+    let fullStateRebuilt = false;
+    let fullStateChanged: string[] = [];
+    let aggregateClaims: OutboxClaim[] = [];
 
     const redis = new Redis(redisUrl, {
         connectTimeout: envInt("CACHE_REDIS_CONNECT_TIMEOUT_MS", 10_000),
@@ -1152,7 +1473,63 @@ async function main(): Promise<void> {
         // in player order and flush each player into the global output, bounding raw
         // source memory without holding a long MVCC transaction open.
         if (full) {
-            const pace = await measure("pace", () => buildFullPaceCaches(conn!, asOf, sqlBatchSize, lock!, pacer));
+            const [[maximumPaceRow]] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM pace") as any;
+            const [[maximumNetherRow]] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM nethers") as any;
+            const maximumPaceId = Number(maximumPaceRow.maximumId);
+            const maximumNetherId = Number(maximumNetherRow.maximumId);
+            aggregateClaims = await readOutboxClaims(conn, "aggregate");
+            const incrementalReady = !process.argv.includes("--rebuild") && await hasAggregateDeleteTriggers(conn);
+            if (!incrementalReady && !process.argv.includes("--rebuild")) {
+                console.log("Aggregate delete triggers are missing; rescanning every row.");
+            }
+            const previousState = incrementalReady ? await readFullState(redis) : null;
+            let changedUuids: Set<string | null> | null = null;
+            if (
+                previousState
+                && asOfMs - new Date(previousState.meta.rebuiltAt).getTime() < fullRebuildIntervalSeconds * 1_000
+            ) {
+                changedUuids = await measure("changeDetection", () => findChangedFullPlayers(
+                    conn!, previousState.meta, maximumPaceId, maximumNetherId, fullOverlapSeconds, aggregateClaims,
+                ));
+                // A NULL uuid cannot be looked up by uuid; rescan instead.
+                if (changedUuids.has(null) || changedUuids.size > fullIncrementalMaxPlayers) changedUuids = null;
+            }
+            const changed = changedUuids === null ? null : [...changedUuids as Set<string>].sort();
+            const paceSummaries = await measure("pace", () => readPaceSummaries(
+                conn!, changed, maximumPaceId, asOf, sqlBatchSize, lock!, pacer,
+            ));
+            await pacingPause(pacer);
+            const nphSummaries = await measure("nph", () => readNphSummaries(
+                conn!, changed, maximumNetherId, asOf, sqlBatchSize, lock!, pacer,
+            ));
+            const players = changed === null ? new Map<string, FullPlayerState>() : previousState!.players;
+            for (const uuid of changed ?? []) players.delete(uuid);
+            for (const [uuid, summary] of paceSummaries.summaries) players.set(uuid, {p: summary});
+            for (const [uuid, summary] of nphSummaries.summaries) {
+                const player = players.get(uuid);
+                if (player) player.n = summary;
+                else players.set(uuid, {n: summary});
+            }
+            fullState = {
+                meta: {
+                    version: FULL_STATE_VERSION,
+                    asOf: asOf.toISOString(),
+                    maximumPaceId,
+                    maximumNetherId,
+                    rebuiltAt: changed === null ? asOf.toISOString() : previousState!.meta.rebuiltAt,
+                },
+                players,
+            };
+            fullStateRebuilt = changed === null;
+            fullStateChanged = changed ?? [];
+            console.log(changed === null
+                ? `Rebuilt all-time summaries from every row.`
+                : `Recomputed all-time summaries for ${changed.length} changed players.`);
+
+            const pace = {
+                leaderboards: finalizePaceSummaries(orderedByFirstId(players, (state) => state.p, (p) => p.firstId), 9999),
+                rowCount: paceSummaries.rowCount,
+            };
             applyCachedNames(pace.leaderboards.full, paceCategories, users, pace.leaderboards.fastest);
             await stageDynamic(calculatePlayerStats(users, pace.leaderboards.full, 9999));
             const fixed: Array<[string, unknown]> = [
@@ -1171,10 +1548,11 @@ async function main(): Promise<void> {
             ));
             periodCounts.get(9999)!.aa = aa.rowCount;
 
-            await pacingPause(pacer);
-            const nph = await measure("nph", () => buildFullNphCache(conn!, asOf, asOfMs, sqlBatchSize, lock!, pacer));
-            await stageDynamic(nph.entries);
-            periodCounts.get(9999)!.nethers = nph.playerCount;
+            const nphEntries = finalizeNphSummaries(
+                orderedByFirstId(players, (state) => state.n, () => 0), 9999, asOfMs,
+            );
+            await stageDynamic(nphEntries);
+            periodCounts.get(9999)!.nethers = nphEntries.length;
         } else {
             const paceStartedAt = Date.now();
             const paceRows = await fetchPaceRows(conn, cutoff, asOf);
@@ -1301,6 +1679,12 @@ async function main(): Promise<void> {
             manifestBatchSize,
         );
         await writeDigestLedger(redis, digestLedger, dynamicTargets, lock);
+        if (fullState) {
+            await writeFullState(
+                redis, fullState, fullStateRebuilt, fullStateChanged, generation, batchSize, stagingTtlSeconds, lock,
+            );
+            await acknowledgeOutboxClaims(conn, aggregateClaims, Math.min(sqlBatchSize, 500));
+        }
         phaseTimingsMs.publish = Date.now() - publishStartedAt;
         sampleMemory();
         lock.assertHeld();
@@ -1328,7 +1712,7 @@ async function main(): Promise<void> {
                 userCount: String(users.length),
                 refreshMode: identityFullRefreshed ? "full" : identityRefreshed ? "incremental" : "unchanged",
             }, lock);
-            await acknowledgeIdentityOutboxClaims(conn, identityClaims, Math.min(sqlBatchSize, 500));
+            await acknowledgeOutboxClaims(conn, identityClaims, Math.min(sqlBatchSize, 500));
         }
         console.log(
             `Published generation ${generation} (${stagedFixed.length} fixed, ${stagedDynamic.length} changed and `

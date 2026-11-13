@@ -6,7 +6,8 @@ publishing generation and health metadata for operations.
 ## Commands
 
 - `npm run cache:refresh` builds 1, 7, and 30-day pace, AA, player, and NPH caches.
-- `npm run cache:refresh:full` builds the `9999day`/all-time caches.
+- `npm run cache:refresh:full` builds the `9999day`/all-time caches. After the first run it recomputes only
+  players whose rows changed (see below); `npm run cache:refresh:full -- --rebuild` forces a full rescan.
 - `npm run cache:runs` incrementally refreshes histories changed since the last successful watermark.
 - `npm run cache:runs:full` performs a primary-key history rebuild and removes stale history keys; UUID mode is the low-memory fallback.
 - `npm run cache:profile` reports cache metadata, Redis memory/slowlog data, MySQL plans, and page timings.
@@ -51,6 +52,19 @@ overwritten are deleted before publishing and recorded after it, so a crash
 can only cause a rewrite, never a skipped one. Deleting a digest hash forces
 a full rewrite on the next run.
 
+`cache:aggregate:full:state` holds the all-time job's per-player summaries (one
+hash field per UUID plus `__meta` with the watermark). A run recomputes only
+players with pace/nethers rows inserted (`id` above the stored maximum),
+updated (`lastUpdated`), inserted with a later `insertTime`, or deleted
+(`cache_invalidation_outbox` scope `aggregate`, written by the triggers in
+`ops/mysql/aggregate-delete-triggers.sql`), all compared with a
+`CACHE_FULL_WATERMARK_OVERLAP_SECONDS` overlap. It rescans every row on the
+first run, when the triggers are missing, when more than
+`CACHE_FULL_INCREMENTAL_MAX_PLAYERS` players changed, and every
+`CACHE_FULL_REBUILD_INTERVAL_SECONDS`. Changes that bypass those signals
+(re-inserting a row with an old id and timestamps, or an UPDATE that sets
+`lastUpdated` explicitly) appear at the next rescan.
+
 `cache:manifest:*` sets let successful jobs delete keys that disappeared from
 the source. Each dynamic-key rename records the target in its manifest in the
 same lock-guarded Lua operation, closing the publish-before-manifest crash gap.
@@ -86,6 +100,9 @@ All settings are optional unless noted:
 | `CACHE_REDIS_PUBLISH_BATCH_SIZE` | 250 | Dynamic rename transaction size; tune against Redis p99 latency |
 | `CACHE_MANIFEST_BATCH_SIZE` | 1000 | Manifest set staging batch size |
 | `CACHE_SQL_BATCH_SIZE` | 5000 | Keyset page size for full aggregate source scans |
+| `CACHE_FULL_REBUILD_INTERVAL_SECONDS` | 604800 | Longest time between full all-time rescans |
+| `CACHE_FULL_INCREMENTAL_MAX_PLAYERS` | 2000 | Changed players above which the all-time job rescans everything |
+| `CACHE_FULL_WATERMARK_OVERLAP_SECONDS` | 300 | Overlap for the all-time job's change detection |
 | `CACHE_IDENTITY_FULL_REFRESH_SECONDS` | 86400 | Full identity reconciliation interval; intervening normal runs refresh only inserted, updated, or invalidated UUIDs |
 | `CACHE_STAGING_TTL_SECONDS` | 21600 | Failed-generation cleanup |
 | `CACHE_REDIS_COMMAND_TIMEOUT_MS` | 60000 | Per-command Redis timeout for cron jobs |
