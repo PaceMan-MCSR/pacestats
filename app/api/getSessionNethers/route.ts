@@ -4,10 +4,38 @@ import {
     getAllNamesByNick,
     getAllNamesByTwitch,
     getNPH,
-    calculateAvg, getNethersByPeriod
+    calculateAvg, getNethersByPeriod,
+    SESSION_PAGE_ROWS,
 } from "@/app/data";
 import {formatDecimals} from "@/app/utils";
 import {jsonResponse} from "@/app/api/_utils";
+
+/** Collects nether times newest first until a long gap or the window edge. */
+function walkNethers(runs: any[], hours: number, hoursBetween: number) {
+    let lastTime = 0 // oldest
+    let firstTime = 0 // most recent
+    let count = 0
+    let times = []
+    let stopped = false
+    for(let run of runs){
+        let diff = lastTime - run.time
+        if(lastTime > 0 && diff > 60 * 60 * hoursBetween){
+            stopped = true
+            break
+        }
+        if(Date.now() / 1000 - run.time > 60 * 60 * hours){
+            stopped = true
+            break
+        }
+        if(count === 0){
+            firstTime = run.time
+        }
+        times.push(run.nether)
+        count += 1
+        lastTime = run.time
+    }
+    return {count, times, stopped}
+}
 
 export async function GET(request: NextRequest) {
     let name = request.nextUrl.searchParams.get("name")
@@ -23,7 +51,9 @@ export async function GET(request: NextRequest) {
         }
     }
     const days = Math.ceil(hours / 24)
-    const runs = await getCached(getNethersByPeriod, "getNethersByPeriod", names.uuid, days, 9999999, liveOnly)
+    // Most sessions end inside the newest page; read the whole window only
+    // when the walk runs off the end of a full page.
+    let runs = await getCached(getNethersByPeriod, "getNethersByPeriod", names.uuid, days, SESSION_PAGE_ROWS, liveOnly)
     if(runs.length === 0){
         return jsonResponse(
             {count: 0, avg: (dp > 0 ? "0:00." + ("0".repeat(dp)) : "0:00"), rnph: 0, uuid: names.uuid},
@@ -31,25 +61,12 @@ export async function GET(request: NextRequest) {
         );
     }
 
-    let lastTime = 0 // oldest
-    let firstTime = 0 // most recent
-    let count = 0
-    let times = []
-    for(let run of runs){
-        let diff = lastTime - run.time
-        if(lastTime > 0 && diff > 60 * 60 * hoursBetween){
-            break
-        }
-        if(Date.now() / 1000 - run.time > 60 * 60 * hours){
-            break
-        }
-        if(count === 0){
-            firstTime = run.time
-        }
-        times.push(run.nether)
-        count += 1
-        lastTime = run.time
+    let walk = walkNethers(runs, hours, hoursBetween)
+    if(!walk.stopped && runs.length === SESSION_PAGE_ROWS){
+        runs = await getCached(getNethersByPeriod, "getNethersByPeriod", names.uuid, days, 9999999, liveOnly)
+        walk = walkNethers(runs, hours, hoursBetween)
     }
+    const {count, times} = walk
     if(count === 0){
         return jsonResponse(
             {count: 0, avg: (dp > 0 ? "0:00." + ("0".repeat(dp)) : "0:00"), rnph: 0, uuid: names.uuid},

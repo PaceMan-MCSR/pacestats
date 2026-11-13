@@ -2095,23 +2095,95 @@ export const getRecentNethers = async (uuid: string, limit: number = 100, liveOn
     return results;
 }
 
+/**
+ * Session endpoints walk a player's runs newest first and stop at the first
+ * gap longer than `hoursBetween`, so a long window usually needs only its
+ * newest few rows. They read this many rows first and fall back to the full
+ * window only when the walk reaches the end of a full page without stopping.
+ * The page is a prefix of the full, totally ordered result, so the walk sees
+ * exactly the rows it would have seen.
+ */
+export const SESSION_PAGE_ROWS = 1_000;
+
+/**
+ * How many rows a session window holds, counted up to `limit`. A session that
+ * ends inside the first page still has to report whether the whole window
+ * would have been truncated.
+ */
+const countWindowRows = async (from: string, values: unknown[], limit: number): Promise<number> => {
+    const [rows] = await (await getConn()).execute<any[]>(
+        `SELECT COUNT(*) AS windowRows FROM (SELECT 1 ${from} LIMIT ?) bounded;`,
+        [...values, mysqlIntegerParam(limit)]
+    );
+    return Number(rows[0].windowRows);
+};
+
+const nphColumns = `pace.nether as nether, twitch, wallTime, playTime, enters, isAccurate,
+    UNIX_TIMESTAMP(nethers.insertTime) as time, resets, totalResets`;
+
+const nphWindow = (liveOnly: boolean) => `FROM nethers INNER JOIN pace ON nethers.runId=pace.id
+        WHERE nethers.uuid=? ${liveOnly ? "AND pace.twitch IS NOT NULL " : ""}AND nethers.insertTime >= NOW() - INTERVAL ? HOUR`;
+
+// nethers_ibfk_1 guarantees every nethers row joins to a pace row, so without
+// the live filter the window can be counted from the nethers index alone.
+const nphCountWindow = (liveOnly: boolean) => liveOnly
+    ? nphWindow(true)
+    : "FROM nethers WHERE nethers.uuid=? AND nethers.insertTime >= NOW() - INTERVAL ? HOUR";
+
+/** Walks NPH rows newest first until the first long gap. */
+const walkNphSession = (rows: any[], safeHoursBetween: number) => {
+    let wallTime = 0;
+    let playTime = 0;
+    let firstTime = 0;
+    let lastTime = 0;
+    let nethers = 0;
+    let resets = 0;
+    let enters = 0;
+    let times = [];
+    let stopped = false;
+    for (const row of rows) {
+        if(firstTime === 0){
+            firstTime = row.time
+        }
+        let diff = lastTime - row.time
+        if(lastTime > 0 && diff > 60 * 60 * safeHoursBetween){
+            stopped = true
+            break
+        }
+        times.push(row.nether)
+        playTime += row.playTime;
+        wallTime += row.wallTime;
+        lastTime = row.time;
+        nethers += 1;
+        if(row.resets > 0) {
+            resets += row.resets;
+        }
+        enters += row.enters;
+    }
+    return {wallTime, playTime, firstTime, lastTime, nethers, resets, enters, times, stopped};
+};
+
 export const getNPH = async (uuid: string, hours: number, hoursBetween: number, liveOnly: boolean = false) => {
     const safeHours = boundedInteger(hours, 24, 1, MAX_LOOKBACK_DAYS * 24);
     const safeHoursBetween = boundedInteger(hoursBetween, 2, 0, MAX_LOOKBACK_DAYS * 24);
-    let query = `SELECT pace.nether as nether, twitch, wallTime, playTime, enters, isAccurate, UNIX_TIMESTAMP(nethers.insertTime) as time, resets, totalResets
-        FROM nethers INNER JOIN pace ON nethers.runId=pace.id 
-        WHERE nethers.uuid=? AND nethers.insertTime >= NOW() - INTERVAL ? HOUR
-        ORDER BY nethers.insertTime DESC, nethers.id DESC LIMIT ?;`;
-    if (liveOnly) {
-        query = `SELECT pace.nether as nether, twitch, wallTime, playTime, enters, isAccurate, UNIX_TIMESTAMP(nethers.insertTime) as time, resets, totalResets
-        FROM nethers INNER JOIN pace ON nethers.runId=pace.id 
-        WHERE nethers.uuid=? AND pace.twitch IS NOT NULL AND nethers.insertTime >= NOW() - INTERVAL ? HOUR
-        ORDER BY nethers.insertTime DESC, nethers.id DESC LIMIT ?;`;
+    const windowValues = [uuid, mysqlIntegerParam(safeHours)];
+    const readRows = async (limit: number) => (await (await getConn()).execute<any[]>(
+        `SELECT ${nphColumns} ${nphWindow(liveOnly)}
+        ORDER BY nethers.insertTime DESC, nethers.id DESC LIMIT ?;`,
+        [...windowValues, mysqlIntegerParam(limit)]
+    ))[0];
+    let results = await readRows(SESSION_PAGE_ROWS);
+    let windowRows = results.length;
+    let session = walkNphSession(results, safeHoursBetween);
+    if (results.length === SESSION_PAGE_ROWS) {
+        if (session.stopped) {
+            windowRows = await countWindowRows(nphCountWindow(liveOnly), windowValues, MAX_SESSION_ROWS + 1);
+        } else {
+            results = await readRows(MAX_SESSION_ROWS + 1);
+            windowRows = results.length;
+            session = walkNphSession(results.slice(0, MAX_SESSION_ROWS), safeHoursBetween);
+        }
     }
-    const [results, _] = await (await getConn()).execute<any[]>(
-        query,
-        [uuid, mysqlIntegerParam(safeHours), mysqlIntegerParam(MAX_SESSION_ROWS + 1)]
-    );
 
     if (results.length === 0) {
         return {
@@ -2130,35 +2202,8 @@ export const getNPH = async (uuid: string, hours: number, hoursBetween: number, 
         };
     }
 
-    const truncated = results.length > MAX_SESSION_ROWS;
-    const boundedResults = truncated ? results.slice(0, MAX_SESSION_ROWS) : results;
-
-    let wallTime = 0;
-    let playTime = 0;
-    let firstTime = 0;
-    let lastTime = 0;
-    let nethers = 0;
-    let resets = 0;
-    let enters = 0;
-    let times = [];
-    for (const row of boundedResults) {
-        if(firstTime === 0){
-            firstTime = row.time
-        }
-        let diff = lastTime - row.time
-        if(lastTime > 0 && diff > 60 * 60 * safeHoursBetween){
-            break
-        }
-        times.push(row.nether)
-        playTime += row.playTime;
-        wallTime += row.wallTime;
-        lastTime = row.time;
-        nethers += 1;
-        if(row.resets > 0) {
-            resets += row.resets;
-        }
-        enters += row.enters;
-    }
+    const truncated = windowRows > MAX_SESSION_ROWS;
+    const {wallTime, playTime, firstTime, lastTime, nethers, resets, enters, times} = session;
     let avg = calculateAvg(times)
 
     let elapsedRta = Date.now() - (lastTime * 1000)
@@ -2175,7 +2220,7 @@ export const getNPH = async (uuid: string, hours: number, hoursBetween: number, 
         playtime: playTime,
         walltime: wallTime,
         resets: resets,
-        totalResets: boundedResults[0].totalResets,
+        totalResets: results[0].totalResets,
         seedsPlayed: roundNumber((enters / resets) * 100),
         rpe: roundNumber(resets / nethers),
         truncated
@@ -2284,56 +2329,36 @@ export const getRunId = async (uuid: string, worldId: string) => {
     return results[0].id;
 }
 
-export const getSessionStats = async (uuid: string, hours: number, hoursBetween: number) => {
-    const safeHours = boundedInteger(hours, 24, 1, MAX_LOOKBACK_DAYS * 24);
-    const safeHoursBetween = boundedInteger(hoursBetween, 6, 0, MAX_LOOKBACK_DAYS * 24);
-    const runs = await getCached(
-        getAllPlayerRunsByHours,
-        "getAllPlayerRunsByHours",
-        uuid,
-        safeHours,
-        MAX_SESSION_ROWS + 1,
-        false
-    )
+const sessionStatsCategories = [
+    "nether",
+    "bastion",
+    "fortress",
+    "first_structure",
+    "second_structure",
+    "first_portal",
+    "stronghold",
+    "end",
+    "finish"
+]
 
-    const truncated = runs.length > MAX_SESSION_ROWS;
-    const boundedRuns = truncated ? runs.slice(0, MAX_SESSION_ROWS) : runs;
-
+/** Collects session split times newest first until a long gap or the window edge. */
+const walkSessionStats = (boundedRuns: any[], safeHours: number, safeHoursBetween: number) => {
     let lastTime = 0
-
-    const categories = [
-        "nether",
-        "bastion",
-        "fortress",
-        "first_structure",
-        "second_structure",
-        "first_portal",
-        "stronghold",
-        "end",
-        "finish"
-    ]
+    let stopped = false
 
     const splits = new Map<string, number[]>()
-    for (const category of categories) {
+    for (const category of sessionStatsCategories) {
         splits.set(category, [])
-    }
-
-    let response: { [category: string] : {count: number, avg: string} | boolean } = {}
-
-    if(runs.length === 0){
-        for (const category of categories) {
-            response[category] = {count: 0, avg: "0:00"}
-        }
-        response.truncated = false
-        return response
     }
 
     for(let run of boundedRuns){
         let diff = lastTime - run.time
         if(lastTime > 0 && diff > 60 * 60 * safeHoursBetween){
+            stopped = true
             break
         }
         if(Date.now() / 1000 - run.time > 60 * 60 * safeHours){
+            stopped = true
             break
         }
         const bastion = run["bastion"]
@@ -2365,7 +2390,7 @@ export const getSessionStats = async (uuid: string, hours: number, hoursBetween:
             }
         }
 
-        for (const category of categories) {
+        for (const category of sessionStatsCategories) {
             if(category === "first_structure" || category === "second_structure"){
                 continue
             }
@@ -2374,6 +2399,58 @@ export const getSessionStats = async (uuid: string, hours: number, hoursBetween:
             }
         }
         lastTime = run.time
+    }
+    return {splits, stopped}
+}
+
+export const getSessionStats = async (uuid: string, hours: number, hoursBetween: number) => {
+    const safeHours = boundedInteger(hours, 24, 1, MAX_LOOKBACK_DAYS * 24);
+    const safeHoursBetween = boundedInteger(hoursBetween, 6, 0, MAX_LOOKBACK_DAYS * 24);
+    // Most sessions end inside the newest page; read the whole window only
+    // when the walk runs off the end of a full page.
+    let runs = await getCached(
+        getAllPlayerRunsByHours,
+        "getAllPlayerRunsByHours",
+        uuid,
+        safeHours,
+        SESSION_PAGE_ROWS,
+        false
+    )
+    let windowRows = runs.length
+    let walk = walkSessionStats(runs, safeHours, safeHoursBetween)
+    if (runs.length === SESSION_PAGE_ROWS) {
+        if (walk.stopped) {
+            windowRows = await countWindowRows(
+                "FROM pace WHERE uuid=? AND insertTime >= NOW() - INTERVAL ? HOUR",
+                [uuid, mysqlIntegerParam(safeHours)],
+                MAX_SESSION_ROWS + 1
+            )
+        } else {
+            runs = await getCached(
+                getAllPlayerRunsByHours,
+                "getAllPlayerRunsByHours",
+                uuid,
+                safeHours,
+                MAX_SESSION_ROWS + 1,
+                false
+            )
+            windowRows = runs.length
+            walk = walkSessionStats(runs.slice(0, MAX_SESSION_ROWS), safeHours, safeHoursBetween)
+        }
+    }
+
+    const truncated = windowRows > MAX_SESSION_ROWS;
+    const categories = sessionStatsCategories
+    const splits = walk.splits
+
+    let response: { [category: string] : {count: number, avg: string} | boolean } = {}
+
+    if(runs.length === 0){
+        for (const category of categories) {
+            response[category] = {count: 0, avg: "0:00"}
+        }
+        response.truncated = false
+        return response
     }
 
     for (const category of categories) {
