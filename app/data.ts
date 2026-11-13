@@ -28,6 +28,13 @@ import {
     type BucketSummary,
     type SummaryPart,
 } from "@/app/combinedSummary";
+import {
+    LEGACY_RUN_HISTORY_PREFIX,
+    parseRunHistoryBase,
+    parseRunHistoryHead,
+    runHistoryBaseKey,
+    runHistoryHeadKey,
+} from "@/app/runHistory";
 import Redis from "ioredis";
 import NodeCache from "node-cache";
 
@@ -73,6 +80,7 @@ type PaceStatsRuntime = typeof globalThis & {
     __paceStatsLastPublishWarningAt?: number;
     __paceStatsDbPoolMetrics?: DbPoolMetrics;
     __paceStatsCombinedMetrics?: CombinedMetrics;
+    __paceStatsRunBases?: Map<string, {version: string; runs: any[]}>;
 };
 
 /** How the combined endpoints without a session gap were answered. */
@@ -483,17 +491,80 @@ const csvDecodeRun = (csv: string): any => {
     };
 }
 
+const decodeRunLines = (lines: string): any[] =>
+    lines === "" ? [] : lines.split("\n").map((run: string) => csvDecodeRun(run));
+
+// Decoded history bases, least recently used first. A base changes only
+// when the job rewrites it under a new version, so its decoded runs are
+// shared between requests and never modified.
+type DecodedRunBase = {version: string; runs: any[]};
+const decodedRunBases = runtime.__paceStatsRunBases ?? new Map<string, DecodedRunBase>();
+runtime.__paceStatsRunBases = decodedRunBases;
+const runBaseCacheMaxRuns = boundedEnvInteger(process.env.DATA_RUN_HISTORY_CACHE_RUNS, 250_000, 0, 5_000_000);
+
+const rememberDecodedRunBase = (uuid: string, base: DecodedRunBase) => {
+    decodedRunBases.delete(uuid);
+    if (base.runs.length > runBaseCacheMaxRuns) return;
+    decodedRunBases.set(uuid, base);
+    let total = 0;
+    for (const cached of decodedRunBases.values()) total += cached.runs.length;
+    for (const [oldest, cached] of decodedRunBases) {
+        if (total <= runBaseCacheMaxRuns) break;
+        decodedRunBases.delete(oldest);
+        total -= cached.runs.length;
+    }
+};
+
+/**
+ * A player's cached run history, newest first, or null when Redis has none.
+ * The job stores it as a small head (the newest runs) and a base that
+ * changes rarely (see app/runHistory.ts): normally only the head is fetched
+ * and decoded, and the base's decoded runs are reused.
+ */
+const readRunHistory = async (uuid: string): Promise<any[] | null> => {
+    const headKey = runHistoryHeadKey(uuid);
+    const stored = await redis.get(headKey);
+    if (!stored) {
+        // Not yet rewritten by a job that knows the head/base layout.
+        const legacy = await redis.get(`${LEGACY_RUN_HISTORY_PREFIX}${uuid}`);
+        return legacy ? decodeRunLines(legacy) : null;
+    }
+    let head = parseRunHistoryHead(stored);
+    if (!head) return null;
+    let baseRuns: any[] = [];
+    if (head.baseVersion !== null) {
+        const cached = decodedRunBases.get(uuid);
+        if (cached && cached.version === head.baseVersion) {
+            // Move to the recently-used end.
+            decodedRunBases.delete(uuid);
+            decodedRunBases.set(uuid, cached);
+            baseRuns = cached.runs;
+        } else {
+            // One command, so the head read here continues the base read here.
+            const [freshHead, storedBase] = await redis.mget(headKey, runHistoryBaseKey(uuid));
+            head = freshHead ? parseRunHistoryHead(freshHead) : null;
+            if (!head) return null;
+            if (head.baseVersion !== null) {
+                const base = storedBase ? parseRunHistoryBase(storedBase) : null;
+                if (!base || base.version !== head.baseVersion) return null;
+                baseRuns = decodeRunLines(base.body);
+                rememberDecodedRunBase(uuid, {version: base.version, runs: baseRuns});
+            }
+        }
+    }
+    return decodeRunLines(head.body).concat(baseRuns);
+};
+
 export async function fetchAllPlayerRunsFromRedis(uuid: string){
-    let csv: string | null = null;
+    let runs: any[] | null = null;
     try {
-        csv = await redis.call('GET', `playerRunsOptimized:${uuid}`) as string | null;
+        runs = await readRunHistory(uuid);
     } catch (error) {
         console.error(`Unable to read run history for ${uuid} from Redis; falling back to MySQL:`, error);
     }
-    if (!csv) {
+    if (!runs || runs.length === 0) {
         return getAllPlayerRunsOptimized(uuid);
     }
-    const runs = csv.split("\n").map((run: string) => csvDecodeRun(run));
     const recentRuns = await getTheMostRecentOfRuns(uuid) as any;
     return mergeRuns(runs, recentRuns);
 }

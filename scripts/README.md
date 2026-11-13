@@ -24,8 +24,27 @@ Existing reader keys are unchanged:
 - `leaderboards:{days}day`, `topLeaderboards:{days}day`, and `fastestLeaderboards:{days}day`
 - `playerStats:{uuid}:{days}day` and `nph:{uuid}:{days}day`
 - `users` and `users:twitch_details:{uuid}`
-- `playerRunsOptimized:{uuid}`
 - `combinedSplits:{uuid}` (new; see below)
+
+Run histories moved from one string per player (`playerRunsOptimized:{uuid}`)
+to two (see `app/runHistory.ts`):
+
+- `playerRuns:head:{uuid}`: a header line `#2,<base version>,<base max id>` and
+  the newest runs, one CSV line each, newest first;
+- `playerRuns:base:{uuid}`: a header line `#2,<base version>` and every older
+  run. Players with at most 128 runs have no base (version `-`).
+
+Head lines followed by base lines are the old single string. New and updated
+runs are spliced into the head, so the per-minute job reads and writes only that
+key; the base is rewritten when one of its own runs changes, when the head passes
+512 runs (the newest 128 stay in the head), and by complete rebuilds. A base and
+its head are always renamed in the same guarded script. Readers fetch the head,
+reuse the decoded base while its version is unchanged, fall back to a leftover
+`playerRunsOptimized:{uuid}` and then to MySQL. `cache:recent:state` records
+`layout`; the first `cache:runs` after an upgrade sees another layout, rebuilds
+every history (about 5 s on the dev dump) and deletes the old keys. Deploy the
+site before the job: the older site code reads only the old keys and would fall
+back to MySQL for every history once they are gone.
 
 AA boards use `aa:leaderboards:{days}day` with the same root object shape as
 the former SQL `getAALB` result. The `users` entries retain `id`, `nick`, and

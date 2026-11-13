@@ -17,6 +17,20 @@ import {
     type StagedKey,
 } from "./cache-runtime";
 import { refreshCombinedSummaries } from "./combined-summaries";
+import {
+    formatRunHistoryHead,
+    layoutRunHistory,
+    LEGACY_RUN_HISTORY_PREFIX,
+    parseRunHistoryBase,
+    parseRunHistoryHead,
+    RUN_HISTORY_BASE_PREFIX,
+    RUN_HISTORY_COMPACT_RUNS,
+    RUN_HISTORY_HEAD_PREFIX,
+    RUN_HISTORY_LAYOUT,
+    runHistoryBaseKey,
+    runHistoryHeadKey,
+    type RunHistoryHead,
+} from "@/app/runHistory";
 
 dotenv.config({ path: ".env.local" });
 
@@ -132,6 +146,53 @@ async function acknowledgeOutboxClaims(
     }
 }
 
+/**
+ * Queue a player's complete history (run lines, newest first) as its head
+ * and base. Returns the base key when the history has no base, so a base
+ * left from a longer history can be deleted.
+ */
+function pushHistoryEntries(
+    pending: Array<[string, string]>,
+    uuid: string,
+    newestFirst: string[],
+    generation: string,
+): string | null {
+    const {head, base} = layoutRunHistory(newestFirst, generation);
+    // Base first: the pair is published together, in this order.
+    if (base !== null) pending.push([runHistoryBaseKey(uuid), base]);
+    pending.push([runHistoryHeadKey(uuid), head]);
+    return base === null ? runHistoryBaseKey(uuid) : null;
+}
+
+/** The player a history key belongs to. */
+const historyKeyUuid = (key: string) => key.slice(key.lastIndexOf(":") + 1);
+
+/**
+ * Publish staged history keys in batches that never separate a player's
+ * base from its head: each batch is renamed in one guarded script, so a
+ * reader sees both the old or both the new.
+ */
+async function publishHistoryEntries(
+    redis: Redis,
+    staged: StagedKey[],
+    batchSize: number,
+    targetTtlSeconds: number,
+    lease: RedisLease,
+    manifestKey: string,
+): Promise<void> {
+    let batch: StagedKey[] = [];
+    for (let index = 0; index < staged.length; index++) {
+        batch.push(staged[index]);
+        const next = staged[index + 1];
+        const samePlayer = next !== undefined
+            && historyKeyUuid(next.target) === historyKeyUuid(staged[index].target);
+        if (!samePlayer && (batch.length >= batchSize || next === undefined)) {
+            await publishStagedEntries(redis, batch, batch.length, targetTtlSeconds, lease, manifestKey);
+            batch = [];
+        }
+    }
+}
+
 async function stageRunEntries(
     redis: Redis,
     entries: Array<[string, string]>,
@@ -167,7 +228,7 @@ async function fullRebuildByUuid(
         // The covering index is (uuid, id) ascending. Scan in that order to
         // avoid a whole-table filesort, then restore the legacy newest-first
         // value shape for readers.
-        pending.push([`playerRunsOptimized:${currentUuid}`, currentRuns.reverse().join("\n")]);
+        pushHistoryEntries(pending, currentUuid, currentRuns.reverse(), generation);
         currentUuid = null;
         currentRuns = [];
         if (pending.length >= redisBatchSize) {
@@ -259,7 +320,7 @@ async function fullRebuildPrimary(
 
     let pending: Array<[string, string]> = [];
     for (const [uuid, history] of histories) {
-        pending.push([`playerRunsOptimized:${uuid}`, history.reverse().join("\n")]);
+        pushHistoryEntries(pending, uuid, history.reverse(), generation);
         histories.delete(uuid);
         if (pending.length >= redisBatchSize) {
             staged.push(...await stageRunEntries(redis, pending, generation, redisBatchSize, stagingTtlSeconds));
@@ -360,7 +421,8 @@ async function incrementalRefresh(
 
         const flushPlayer = async () => {
             if (currentUuid === null) return;
-            pending.push([`playerRunsOptimized:${currentUuid}`, currentRuns.reverse().join("\n")]);
+            const absentBase = pushHistoryEntries(pending, currentUuid, currentRuns.reverse(), generation);
+            if (absentBase !== null) deletedTargets.push(absentBase);
             currentUuid = null;
             currentRuns = [];
             if (pending.length >= redisBatchSize) await flushPending();
@@ -401,7 +463,7 @@ async function incrementalRefresh(
         }
         await flushPlayer();
         for (const uuid of batchUuids) {
-            if (!seenUuids.has(uuid)) deletedTargets.push(`playerRunsOptimized:${uuid}`);
+            if (!seenUuids.has(uuid)) deletedTargets.push(runHistoryHeadKey(uuid), runHistoryBaseKey(uuid));
         }
     }
     await flushPending();
@@ -434,13 +496,23 @@ function spliceHistory(existing: string, changedRuns: RunRow[]): string {
     return output.join("\n");
 }
 
+const countLines = (text: string) => {
+    let lines = 1;
+    for (let position = text.indexOf("\n"); position >= 0; position = text.indexOf("\n", position + 1)) lines++;
+    return lines;
+};
+
 /**
  * Bring changed players' histories up to date from the runs whose
  * lastUpdated is at or after `since`. Every run changed after the published
  * history was read has such a lastUpdated (the watermark overlap covers
  * rounding), so the result equals a complete rebuild. Deletions leave no
  * lastUpdated and go through incrementalRefresh instead, as do players whose
- * history key is missing (returned in `fallback`).
+ * history is missing or unreadable (returned in `fallback`).
+ *
+ * Changed runs newer than the base are spliced into the head, the only key
+ * read and written for them. The base is read and rewritten only when one of
+ * its own runs changed or the head has outgrown RUN_HISTORY_COMPACT_RUNS.
  */
 async function patchHistories(
     conn: Connection,
@@ -452,15 +524,17 @@ async function patchHistories(
     uuidBatchSize: number,
     stagingTtlSeconds: number,
     lease: RedisLease,
-): Promise<{staged: StagedKey[]; rowCount: number; fallback: string[]}> {
+): Promise<{staged: StagedKey[]; rowCount: number; fallback: string[]; deletedTargets: string[]; baseRewrites: number}> {
     const staged: StagedKey[] = [];
     const fallback: string[] = [];
+    const deletedTargets: string[] = [];
     let rowCount = 0;
+    let baseRewrites = 0;
     const ordered = [...uuids].sort();
     for (let offset = 0; offset < ordered.length; offset += uuidBatchSize) {
         await lease.verifyHeld();
         const batch = ordered.slice(offset, offset + uuidBatchSize);
-        const existing = await redis.mget(...batch.map((uuid) => `playerRunsOptimized:${uuid}`));
+        const heads = await redis.mget(...batch.map(runHistoryHeadKey));
         const placeholders = batch.map(() => "?").join(",");
         const [rawRows] = await conn.execute(
             `SELECT ${runColumns}
@@ -476,20 +550,57 @@ async function patchHistories(
             rowCount++;
         }
         const entries: Array<[string, string]> = [];
+        // Players whose base must be read too.
+        const needBase: Array<{uuid: string; head: RunHistoryHead; rows: RunRow[]}> = [];
         for (let index = 0; index < batch.length; index++) {
             const uuid = batch[index];
-            const history = existing[index];
-            if (!history) {
+            const stored = heads[index];
+            const head = stored ? parseRunHistoryHead(stored) : null;
+            if (!head || head.body === "") {
                 fallback.push(uuid);
                 continue;
             }
             const rows = rowsByUuid.get(uuid);
             if (!rows) continue;
-            entries.push([`playerRunsOptimized:${uuid}`, spliceHistory(history, rows)]);
+            if (rows.some((row) => row.id <= head.baseMaxId)) {
+                needBase.push({uuid, head, rows});
+                continue;
+            }
+            const body = spliceHistory(head.body, rows);
+            if (countLines(body) > RUN_HISTORY_COMPACT_RUNS) {
+                needBase.push({uuid, head, rows});
+                continue;
+            }
+            entries.push([runHistoryHeadKey(uuid), formatRunHistoryHead(head.baseVersion, head.baseMaxId, body)]);
+        }
+        if (needBase.length > 0) {
+            const withBase = needBase.filter(({head}) => head.baseVersion !== null);
+            const bases = withBase.length > 0
+                ? await redis.mget(...withBase.map(({uuid}) => runHistoryBaseKey(uuid)))
+                : [];
+            const baseByUuid = new Map(withBase.map(({uuid}, index) => [uuid, bases[index]]));
+            for (const {uuid, head, rows} of needBase) {
+                let complete = head.body;
+                if (head.baseVersion !== null) {
+                    const stored = baseByUuid.get(uuid);
+                    const base = stored ? parseRunHistoryBase(stored) : null;
+                    // The head must continue exactly this base.
+                    if (!base || base.version !== head.baseVersion || base.body === "") {
+                        fallback.push(uuid);
+                        continue;
+                    }
+                    complete += "\n" + base.body;
+                }
+                const absentBase = pushHistoryEntries(
+                    entries, uuid, spliceHistory(complete, rows).split("\n"), generation,
+                );
+                if (absentBase !== null) deletedTargets.push(absentBase);
+                baseRewrites++;
+            }
         }
         staged.push(...await stageRunEntries(redis, entries, generation, redisBatchSize, stagingTtlSeconds));
     }
-    return {staged, rowCount, fallback};
+    return {staged, rowCount, fallback, deletedTargets, baseRewrites};
 }
 
 async function deleteKeys(
@@ -584,7 +695,12 @@ async function main(): Promise<void> {
         const previousWatermarkRaw = await redis.hget(stateKey, "lastSuccessfulAsOf");
         const previousWatermark = previousWatermarkRaw ? new Date(previousWatermarkRaw) : null;
         const outboxClaims = await readOutboxClaims(conn, "recent", outboxBatchSize);
+        const previousLayout = await redis.hget(stateKey, "layout");
         let full = forceFull || !previousWatermark || Number.isNaN(previousWatermark.getTime());
+        if (!full && previousLayout !== RUN_HISTORY_LAYOUT) {
+            console.log("Run histories are in an older layout; rebuilding them all.");
+            full = true;
+        }
         let sourceMaxId: number | null = null;
         let changedUuids = new Set<string>();
         let since: Date | null = null;
@@ -632,8 +748,8 @@ async function main(): Promise<void> {
             );
             for (const uuid of patched.fallback) rebuildUuids.add(uuid);
             console.log(
-                `Patched ${patchUuids.length - patched.fallback.length} histories from ${patched.rowCount} changed runs; `
-                + `rebuilding ${rebuildUuids.size} complete histories.`,
+                `Patched ${patchUuids.length - patched.fallback.length} histories from ${patched.rowCount} changed runs `
+                + `(${patched.baseRewrites} with their base); rebuilding ${rebuildUuids.size} complete histories.`,
             );
             const rebuilt = rebuildUuids.size === 0
                 ? {staged: [], rowCount: 0, deletedTargets: [], exceededWorkBudget: false}
@@ -645,6 +761,7 @@ async function main(): Promise<void> {
                 ...rebuilt,
                 staged: [...patched.staged, ...rebuilt.staged],
                 rowCount: patched.rowCount + rebuilt.rowCount,
+                deletedTargets: [...patched.deletedTargets, ...rebuilt.deletedTargets],
             };
             if (incremental.exceededWorkBudget) {
                 console.log(
@@ -669,7 +786,7 @@ async function main(): Promise<void> {
 
         lock.assertHeld();
         const publishStartedAt = Date.now();
-        await publishStagedEntries(
+        await publishHistoryEntries(
             redis, result.staged, redisBatchSize, targetTtlSeconds, lock, manifestKey,
         );
         const publishedKeys = result.staged.map(({ target }) => target);
@@ -677,7 +794,12 @@ async function main(): Promise<void> {
         lock.assertHeld();
         if (full) {
             await lock.verifyHeld();
-            const existingKeys = await scanKeys(redis, "playerRunsOptimized:*");
+            // Also removes histories in the single-key layout this one replaced.
+            const existingKeys = [
+                ...await scanKeys(redis, `${RUN_HISTORY_HEAD_PREFIX}*`),
+                ...await scanKeys(redis, `${RUN_HISTORY_BASE_PREFIX}*`),
+                ...await scanKeys(redis, `${LEGACY_RUN_HISTORY_PREFIX}*`),
+            ];
             await lock.verifyHeld();
             staleDeleted = await replaceManifest(
                 redis,
@@ -722,9 +844,10 @@ async function main(): Promise<void> {
             lastSuccessfulAsOf: asOf.toISOString(),
             completedAt: new Date().toISOString(),
             durationMs: String(Date.now() - startedAt),
+            layout: RUN_HISTORY_LAYOUT,
             mode: full ? "full" : "incremental",
             fullScanMode: full ? recentFullScanMode() : "",
-            changedPlayers: String(full ? publishedKeys.length : changedUuids.size),
+            changedPlayers: String(full ? new Set(publishedKeys.map(historyKeyUuid)).size : changedUuids.size),
             rowsRead: String(result.rowCount),
             sourceMaxId: sourceMaxId === null ? "" : String(sourceMaxId),
             staleKeysDeleted: String(staleDeleted),
