@@ -25,6 +25,7 @@ Existing reader keys are unchanged:
 - `playerStats:{uuid}:{days}day` and `nph:{uuid}:{days}day`
 - `users` and `users:twitch_details:{uuid}`
 - `playerRunsOptimized:{uuid}`
+- `combinedSplits:{uuid}` (new; see below)
 
 AA boards use `aa:leaderboards:{days}day` with the same root object shape as
 the former SQL `getAALB` result. The `users` entries retain `id`, `nick`, and
@@ -64,6 +65,28 @@ first run, when the triggers are missing, when more than
 `CACHE_FULL_REBUILD_INTERVAL_SECONDS`. Changes that bypass those signals
 (re-inserting a row with an old id and timestamps, or an UPDATE that sets
 `lastUpdated` explicitly) appear at the next rescan.
+
+`combinedSplits:{uuid}` and `cache:combined:state` serve `getCombinedStats` and
+`getCombinedNethers` when no session gap applies (`hoursBetween >= hours`) and
+the window is longer than about 30 days. `npm run cache:runs` maintains them
+(see `scripts/combined-summaries.ts` and `app/combinedSummary.ts`): each hash
+field is one 30-day bucket of `insertTime` (bucket = Unix time / 2,592,000)
+holding, per split, the count, the total and the slowest half of the values;
+field `m` is the largest row id covered. A bucket is summarised for every
+player about six hours after it ends. A player whose rows in summarised buckets
+changed (`lastUpdated`), or who had a run deleted (the dirty set, the `recent`
+outbox entries, or the `aggregate` entries written by the delete triggers), gets
+every bucket rebuilt on the next run. `cache:combined:state` records the format
+version, the newest summarised bucket (`closedThrough`), the time from which
+readers must re-check changes themselves (`checkedFrom`) and whether the delete
+triggers exist. Readers add up the buckets inside the window, read the rest of
+the window from MySQL, and fall back to MySQL for any player with newer changes,
+for any bucket whose stored values cannot settle the slowest 2%, and entirely
+when the state is missing, older than 15 minutes, in another format, or the
+triggers are absent. Deleting `cache:combined:state` forces a rebuild (about
+7 s on the dev dump) on the next run; `npm run cache:runs:full` also rebuilds.
+The same caveat as the all-time job applies: a change that sets `lastUpdated`
+explicitly to an old value is not seen until the next rebuild.
 
 `cache:manifest:*` sets let successful jobs delete keys that disappeared from
 the source. Each dynamic-key rename records the target in its manifest in the

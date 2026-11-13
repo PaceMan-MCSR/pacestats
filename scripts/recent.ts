@@ -16,6 +16,7 @@ import {
     type RedisLease,
     type StagedKey,
 } from "./cache-runtime";
+import { refreshCombinedSummaries } from "./combined-summaries";
 
 dotenv.config({ path: ".env.local" });
 
@@ -693,6 +694,27 @@ async function main(): Promise<void> {
             staleDeleted += result.deletedTargets.length;
         }
         phaseTimingsMs.publish = Date.now() - publishStartedAt;
+        sampleMemory();
+        lock.assertHeld();
+        // The combined endpoints read per-player bucket summaries. Deleted
+        // runs reach them through the same claims as the histories above, so
+        // refresh them before those claims are acknowledged.
+        const combinedStartedAt = Date.now();
+        const combined = await refreshCombinedSummaries(conn, redis, {
+            full: forceFull,
+            deletedUuids: [...dirtyUuids, ...outboxClaims.map(({entityId}) => entityId)],
+            overlapSeconds,
+            redisBatchSize,
+            uuidBatchSize,
+            lease: lock,
+        });
+        phaseTimingsMs.combined = Date.now() - combinedStartedAt;
+        if (combined.mode === "rebuilt" || combined.closedBuckets > 0 || combined.rebuiltPlayers > 0) {
+            console.log(
+                `Combined summaries ${combined.mode}: ${combined.closedBuckets} buckets closed, `
+                + `${combined.rebuiltPlayers} players rebuilt from ${combined.rowCount} rows.`,
+            );
+        }
         sampleMemory();
         lock.assertHeld();
         await setHashIfLeaseHeld(redis, stateKey, {
