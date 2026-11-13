@@ -1622,8 +1622,39 @@ export const getAllNamesByTwitch = async (twitch: string) => {
     return {nick: await getCached(getNick, "getNick", results[0]["uuid"]), uuid: results[0]["uuid"]};
 }
 
-export const getTwitchAccounts = async (uuid: string) => {
-    const [results, fields] = await (await getConn()).execute(
+/** Accounts looked up one by one before getTwitchAccounts groups every run instead. */
+const TWITCH_ACCOUNT_LOOKUPS = 8;
+
+/**
+ * A player's two most recently used Twitch accounts. Grouping scans one
+ * index entry per live run (21k for the busiest player), although players
+ * have a handful of accounts: step through the distinct names in the
+ * (uuid, twitch, insertTime) index instead, reading each one's newest entry.
+ */
+const readTwitchAccounts = async (uuid: string): Promise<any[]> => {
+    const accounts: any[] = [];
+    let previous: string | null = null;
+    for (let lookup = 0; lookup <= TWITCH_ACCOUNT_LOOKUPS; lookup++) {
+        const [rows]: [any[], unknown] = await (await getConn()).execute<any[]>(
+            `SELECT next.twitch,
+                (SELECT UNIX_TIMESTAMP(MAX(insertTime)) FROM pace WHERE uuid=? AND twitch=next.twitch) AS time
+             FROM (
+                 SELECT twitch FROM pace
+                 WHERE uuid=? AND twitch IS NOT NULL${previous === null ? "" : " AND twitch > ?"}
+                 ORDER BY twitch ASC LIMIT 1
+             ) next;`,
+            previous === null ? [uuid, uuid] : [uuid, uuid, previous]
+        );
+        if (rows.length === 0) {
+            // Newest first; the sort is stable, so ties keep the grouped order.
+            return accounts
+                .sort((left, right) => (right.time ?? -Infinity) - (left.time ?? -Infinity))
+                .slice(0, 2);
+        }
+        accounts.push(rows[0]);
+        previous = rows[0].twitch;
+    }
+    const [results] = await (await getConn()).execute<any[]>(
         `SELECT twitch, UNIX_TIMESTAMP(MAX(insertTime)) AS time
          FROM pace
          WHERE uuid=? AND twitch IS NOT NULL
@@ -1631,7 +1662,12 @@ export const getTwitchAccounts = async (uuid: string) => {
          ORDER BY MAX(insertTime) DESC
          LIMIT 2;`,
         [uuid]
-    ) as any[];
+    );
+    return results;
+};
+
+export const getTwitchAccounts = async (uuid: string) => {
+    const results = await readTwitchAccounts(uuid);
     if (Array.isArray(results) && results.length === 0) {
         return null;
     }
@@ -2657,7 +2693,14 @@ export const getNPH = async (uuid: string, hours: number, hoursBetween: number, 
     let session = walkNphSession(results, safeHoursBetween);
     if (results.length === SESSION_PAGE_ROWS) {
         if (session.stopped) {
-            windowRows = await countWindowRows(nphCountWindow(liveOnly), windowValues, MAX_SESSION_ROWS + 1);
+            // Only whether the window exceeds MAX_SESSION_ROWS matters. The
+            // live rows are a subset of all the player's nether rows, which
+            // the nethers index counts without the join; the join is needed
+            // only when that count is itself over the limit.
+            windowRows = await countWindowRows(nphCountWindow(false), windowValues, MAX_SESSION_ROWS + 1);
+            if (liveOnly && windowRows > MAX_SESSION_ROWS) {
+                windowRows = await countWindowRows(nphCountWindow(true), windowValues, MAX_SESSION_ROWS + 1);
+            }
         } else {
             results = await readRows(MAX_SESSION_ROWS + 1);
             windowRows = results.length;
