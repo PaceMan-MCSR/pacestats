@@ -17,23 +17,23 @@ export function AARecentRuns({runs}: { runs: {} }) {
             <tr className="paceHeader">
                 <th style={{width: "125px"}}>Time</th>
                 <th>
-                    <img src="/stats/nether.webp" alt="Nether" className="icon d-md-none"/>
+                    <img src="/stats/nether.webp" alt="Nether" className="icon d-md-none" loading="lazy"/>
                     <p className="d-none d-md-inline">Nether</p>
                 </th>
                 <th>
-                    <img src="/stats/bastion.webp" alt="Bastion" className="icon d-md-none"/>
+                    <img src="/stats/bastion.webp" alt="Bastion" className="icon d-md-none" loading="lazy"/>
                     <p className="d-none d-md-inline">Bastion</p>
                 </th>
                 <th>
-                    <img src="/stats/fortress.webp" alt="Fortress" className="icon d-md-none"/>
+                    <img src="/stats/fortress.webp" alt="Fortress" className="icon d-md-none" loading="lazy"/>
                     <p className="d-none d-md-inline">Fortress</p>
                 </th>
                 <th>
-                    <img src="/stats/stronghold.webp" alt="Stronghold" className="icon d-md-none"/>
+                    <img src="/stats/stronghold.webp" alt="Stronghold" className="icon d-md-none" loading="lazy"/>
                     <p className="d-none d-md-inline">Eye Spy</p>
                 </th>
                 <th>
-                    <img src="/stats/end.webp" alt="End" className="icon d-md-none"/>
+                    <img src="/stats/end.webp" alt="End" className="icon d-md-none" loading="lazy"/>
                     <p className="d-none d-md-inline">End</p>
                 </th>
                 <th>
@@ -43,7 +43,7 @@ export function AARecentRuns({runs}: { runs: {} }) {
                     <p className="d-inline">End Exit</p>
                 </th>
                 <th>
-                    <img src="/stats/finish.webp" alt="Finish" className="icon d-md-none"/>
+                    <img src="/stats/finish.webp" alt="Finish" className="icon d-md-none" loading="lazy"/>
                     <p className="d-none d-md-inline">Finish</p>
                 </th>
             </tr>

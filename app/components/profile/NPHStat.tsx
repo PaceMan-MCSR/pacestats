@@ -1,12 +1,11 @@
 'use client'
 
-import { formatTime, getDarkerColor, numberWithCommas } from "@/app/utils";
-import OverlayTrigger from "react-bootstrap/OverlayTrigger";
-import Tooltip from "react-bootstrap/Tooltip";
+import { formatTime, numberWithCommas } from "@/app/utils";
+import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 import Link from "next/link";
 import { useContext, useState } from "react";
 import { UserColoursContext } from "@/app/contexts";
-import Box from "@mui/material/Box";
+import { colourVars, customClass } from "@/app/components/customColours";
 
 function TooltipLine({tooltip, value}: {tooltip: string, value: string}) {
     return <OverlayTrigger overlay={
@@ -39,50 +38,25 @@ export function NPHStat({nick, headUrl, days, data}: {
     const colours = useContext(UserColoursContext)
     const [focus, setFocus] = useState(false);
     if(data === null) {
-        return <Box className="stat nph mb-4" sx={colours.isCustom ? {
-            backgroundColor: `#${colours?.fg} !important`,
-            borderColor: `#${getDarkerColor(colours?.fg, 0.6)} !important`,
-            '& p, h4': {
-                ...colours.fgText
-            },
-        } : {}}>
+        return <div className={customClass(colours, "ccStat", "stat nph mb-4")} style={colourVars(colours)}>
             <h4 className="statHeader" style={{marginBottom: 10, userSelect: "none"}}>
                 Resetting
             </h4>
             <p style={{lineHeight: 1.4}}>{nick} does not have any enters with the latest version of PaceMan Tracker.</p>
-        </Box>
+        </div>
     }
-    return <Box className="stat nph mb-4" onClick={() => {setFocus(!focus)}} sx={colours.isCustom ? {
-        backgroundColor: `#${colours?.fg} !important`,
-        borderColor: `#${getDarkerColor(colours?.fg, 0.6)} !important`,
-        '& p, h4': {
-            ...colours.fgText
-        },
-        '& h5': {
-            color: `#${colours.name}`,
-            filter: `drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000)`
-        }
-    } : {}}>
+    return <div className={customClass(colours, "ccStat", "stat nph mb-4")} onClick={() => {setFocus(!focus)}} style={colourVars(colours)}>
         {!focus && (
             <h4 className="statHeader" style={{marginBottom: 10, userSelect: "none"}}>
                 Resetting
             </h4>
         )}
         {!focus && (
-            <Box className="openHistory" sx={colours.isCustom ? {
-                '& button': {
-                    backgroundColor: `#${getDarkerColor(colours.fg, 0.9)}`,
-                    ...colours.bgText
-                },
-                '& button:hover': {
-                    backgroundColor: `#${getDarkerColor(colours.fg, 0.8)}`,
-                    ...colours.fgText
-                }
-            } : {}}>
+            <div className={customClass(colours, "ccOpenHistory", "openHistory")}>
                 <Link href={`/player/${nick}/nethers`}>
                     <button className="btn btn-dark">Debug</button>
                 </Link>
-            </Box>
+            </div>
         )}
         {focus && (
             <div>
@@ -114,5 +88,5 @@ export function NPHStat({nick, headUrl, days, data}: {
         <TooltipLine
             tooltip={"Requires OBS Lua script. Total reset count is from Julti (or other macros)"}
             value={`Resets: ${numberWithCommas(data.resets)}, total: ${numberWithCommas(data.totalResets)}`}/>
-    </Box>
+    </div>
 }

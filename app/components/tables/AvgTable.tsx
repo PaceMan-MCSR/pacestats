@@ -7,8 +7,7 @@ import {
     getMinAAQty,
     getMinQty
 } from "@/app/utils";
-import OverlayTrigger from "react-bootstrap/OverlayTrigger";
-import Tooltip from "react-bootstrap/Tooltip";
+import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 import {Entry} from "@/app/types";
 import BoardLink from "@/app/components/tables/BoardLink";
 

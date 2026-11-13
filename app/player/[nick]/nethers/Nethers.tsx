@@ -3,8 +3,7 @@
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
 import {useRouter} from "next/navigation";
 import {formatIfNotNull, numberWithCommas} from "@/app/utils";
-import OverlayTrigger from "react-bootstrap/OverlayTrigger";
-import Tooltip from "react-bootstrap/Tooltip";
+import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 
 function TooltipLine({tooltip, value}: {tooltip: string, value: string}) {
     return <OverlayTrigger overlay={

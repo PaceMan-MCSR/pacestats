@@ -1,11 +1,10 @@
 'use client'
 
 import Link from "next/link";
-import {useRouter} from "next/navigation";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext } from "react";
 import { UsersContext } from "@/app/contexts";
 import { getNameColor } from "@/app/utils";
-import { schedulePlayerPrefetch } from "@/app/components/playerPrefetch";
+import { useIntentLink } from "@/app/components/useIntentLink";
 
 export default function BoardLink({name, displayName, uuid, linkUrl, color, lowPriority = false}: {
     name: string,
@@ -15,42 +14,10 @@ export default function BoardLink({name, displayName, uuid, linkUrl, color, lowP
     color?: string,
     lowPriority?: boolean,
 }) {
-    const [pending, setPending] = useState(false);
-    const router = useRouter()
     const users = useContext(UsersContext);
-    const linkRef = useRef<HTMLAnchorElement>(null);
+    const {linkProps, pending} = useIntentLink(linkUrl);
 
-    useEffect(() => {
-        const link = linkRef.current;
-        if (!link) return;
-
-        let releasePrefetch: (() => void) | undefined;
-        const observer = new IntersectionObserver(([entry]) => {
-            if (entry.isIntersecting) {
-                releasePrefetch ??= schedulePlayerPrefetch(linkUrl, () => router.prefetch(linkUrl));
-            } else {
-                releasePrefetch?.();
-                releasePrefetch = undefined;
-            }
-        });
-        observer.observe(link);
-
-        return () => {
-            observer.disconnect();
-            releasePrefetch?.();
-        };
-    }, [linkUrl, router]);
-
-    return <Link
-        ref={linkRef}
-        className="boardLink"
-        href={linkUrl}
-        prefetch={false}
-        onMouseDown={(e) => {
-            if (e.button !== 0) return; // Only handle left mouse button
-            router.push(linkUrl);
-            setPending(true);
-        }}>
+    return <Link className="boardLink" {...linkProps}>
         <p className="playerName" style={{opacity: pending ? 0.7 : 1.0, color: color ?? getNameColor(users, uuid)}}>
             <img
                 className="avatar"

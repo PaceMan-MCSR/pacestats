@@ -1,14 +1,14 @@
 import {
     getCached,
     getAllNamesByNick,
-    getAllNamesByTwitch, getAllUserInfo,
+    getAllNamesByTwitch, getAllUserInfo, getPlayerRunsOffsetPage,
 } from "@/app/data";
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
 import RecentRuns from "@/app/player/[nick]/runs/RecentRuns";
 import {Suspense} from "react";
-import { Button } from "@mui/material";
 import { defaultNameColor, getNameColor } from "@/app/utils";
+import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
 
 export default async function Page(
     props: {
@@ -59,34 +59,47 @@ export default async function Page(
     }
     const uuid = names.uuid
 
-    const userInfo = await getCached(getAllUserInfo, "getAllUserInfo")
+    // Send the first page of runs with the page itself. The table used to
+    // fetch it after rendering, which cost a second round trip.
+    const [userInfo, initialRuns] = await Promise.all([
+        getCached(getAllUserInfo, "getAllUserInfo"),
+        getCached(
+            getPlayerRunsOffsetPage,
+            "getPlayerRunsOffsetPage",
+            uuid,
+            initialPaginationModel.page,
+            initialPaginationModel.pageSize,
+            [],
+            initialSort
+        ).catch(() => null),
+    ])
 
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
     const nameColor = getNameColor(userInfo, uuid)
+    const playerUser = (userInfo as any[])?.find((user) => user.uuid === uuid)
 
     return (<main className="main allRuns">
         <div className="container">
             <ResetScroll/>
+            <PlayerInfoSeed nick={names.nick} info={{
+                id: uuid,
+                displayName: playerUser?.displayName || null,
+                color: playerUser?.color || null,
+                bgColor: playerUser?.bgColor || null,
+            }}/>
             <div className="row justify-content-center">
                 <div className="col-lg-9 col-xl-8">
                     <h1 className="header mb-3">
-                        <Link href={`/player/${realNick}/`}>
-                            <Button color={"info"} aria-label="Back to player profile" sx={{
-                                marginTop: "-5px",
-                                minWidth: "40px",
-                                maxWidth: "40px",
-                                textTransform: "none",
-                            }}>
-                                <svg
-                                    aria-hidden="true"
-                                    viewBox="0 0 24 24"
-                                    width="24"
-                                    height="24"
-                                    focusable="false"
-                                >
-                                    <path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z" />
-                                </svg>
-                            </Button>
+                        <Link href={`/player/${realNick}/`} className="runsBackButton" aria-label="Back to player profile">
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                width="24"
+                                height="24"
+                                focusable="false"
+                            >
+                                <path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z" />
+                            </svg>
                         </Link>
                         Run history for <span style={{color: nameColor}}>{realNick}</span>
                         <img className="titleHead mx-2" style={nameColor !== defaultNameColor ? {
@@ -101,6 +114,7 @@ export default async function Page(
                             bf={bastionFort}
                             initialPaginationModel={initialPaginationModel}
                             initialSort={initialSort}
+                            initialRuns={initialRuns}
                         />
                     </Suspense>
                 </div>

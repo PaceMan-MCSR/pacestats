@@ -6,14 +6,6 @@
     font-display: swap;
 }
 
-@font-face {
-    font-family: 'Inter';
-    src: url('/stats/fonts/inter-latin-v1.woff2') format('woff2');
-    font-style: normal;
-    font-weight: 100 900;
-    font-display: swap;
-}
-
 #body {
     min-height: 100vh;
     background-color: rgb(18, 18, 21);
@@ -1065,26 +1057,151 @@ td p {
     color: rgb(230, 230, 230) !important;
 }
 
-.fastRunsGridPagination .MuiTablePagination-toolbar,
-.fastRunsGridPagination .MuiTablePagination-selectLabel,
-.fastRunsGridPagination .MuiTablePagination-displayedRows,
-.fastRunsGridPagination .MuiTablePagination-select,
-.fastRunsGridPagination .MuiTablePagination-selectIcon,
-.fastRunsGridPagination .MuiInputBase-root,
-.fastRunsGridPagination .MuiIconButton-root {
-    color: rgb(230, 230, 230) !important;
+.fastRunsGridPagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: 52px;
+    padding: 0 2px 0 16px;
+    font-size: 0.875rem;
 }
 
-.fastRunsGridPagination .MuiTablePagination-selectLabel,
-.fastRunsGridPagination .MuiTablePagination-displayedRows {
-    margin-bottom: 0;
+.fastRunsPageSize {
+    margin: 0 32px 0 8px;
+    padding: 4px 2px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
 }
 
-.fastRunsGridPagination .MuiIconButton-root.Mui-disabled {
-    color: rgba(230, 230, 230, 0.3) !important;
+.fastRunsPageSize option {
+    background: #212529;
+    color: rgb(230, 230, 230);
+}
+
+.fastRunsPageButton {
+    display: inline-flex;
+    padding: 8px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: rgb(230, 230, 230);
+    cursor: pointer;
+}
+
+.fastRunsPageButton:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.fastRunsPageButton:disabled {
+    color: rgba(230, 230, 230, 0.3);
+    cursor: default;
+}
+
+/* Indeterminate loading bar above the runs table. */
+.fastRunsProgress {
+    position: relative;
+    height: 3px;
+    overflow: hidden;
+    background: rgba(25, 118, 210, 0.35);
+}
+
+.fastRunsProgress::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 40%;
+    background: #1976d2;
+    animation: fastRunsProgress 1.2s ease-in-out infinite;
+}
+
+@keyframes fastRunsProgress {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(250%); }
+}
+
+/* Back arrow beside the run history title. */
+.runsBackButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    margin-top: -5px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    color: #0288d1;
+    vertical-align: middle;
+}
+
+.runsBackButton:hover {
+    background: rgba(2, 136, 209, 0.08);
+    color: #0288d1;
+}
+
+/* Stand-in for react-bootstrap's Collapse; see components/HoverTooltip.tsx. */
+.collapsePanel {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.35s ease;
+}
+
+.collapsePanel.open {
+    grid-template-rows: 1fr;
+}
+
+.collapsePanelInner {
+    min-height: 0;
+    overflow: hidden;
 }
 
 .fastRunsPaginationActions {
     display: flex;
     margin-left: 20px;
+}
+
+/* Native date field in the run filters, sized to sit beside the MUI selects. */
+.runDateFilter {
+    position: relative;
+    display: inline-block;
+    margin-right: 10px;
+    vertical-align: top;
+}
+
+.runDateFilter input {
+    width: 150px;
+    height: 48px;
+    padding: 0 10px;
+    border: 1px solid rgba(0, 0, 0, 0.23);
+    border-radius: 3px;
+    background-color: rgb(18, 18, 21);
+    color: rgb(230, 230, 230);
+    color-scheme: dark;
+    font: inherit;
+}
+
+.runDateFilter input:hover {
+    border-color: rgba(0, 0, 0, 0.87);
+}
+
+.runDateFilter input:focus {
+    border-color: #1976d2;
+    outline: 1px solid #1976d2;
+}
+
+.runDateFilterLabel {
+    position: absolute;
+    top: -9px;
+    left: 9px;
+    padding: 0 5px;
+    /* Upper half over the panel, lower half over the field. */
+    background: linear-gradient(rgb(29, 29, 33) 50%, rgb(18, 18, 21) 50%);
+    color: rgb(170, 170, 180);
+    font-size: 0.75rem;
+    line-height: 18px;
+    pointer-events: none;
 }

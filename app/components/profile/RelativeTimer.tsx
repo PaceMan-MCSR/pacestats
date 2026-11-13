@@ -2,8 +2,7 @@
 
 import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {formatExactTime, fromNow} from "@/app/components/profile/relativeTime";
-import OverlayTrigger from "react-bootstrap/OverlayTrigger";
-import Tooltip from "react-bootstrap/Tooltip";
+import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;

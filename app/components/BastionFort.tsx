@@ -3,8 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useContext } from "react";
 import { UserColoursContext } from "@/app/contexts";
-import Box from "@mui/material/Box";
-import { getDarkerColor } from "@/app/utils";
+import { colourVars, customClass } from "@/app/components/customColours";
 
 export default function BastionFort({bastionFort: controlledBastionFort, setBastionFort}: {
     bastionFort?: boolean,
@@ -15,16 +14,7 @@ export default function BastionFort({bastionFort: controlledBastionFort, setBast
     const paramString = searchParams.toString()
     const bastionFort = controlledBastionFort ?? searchParams.get("bastionFort") === "true"
     const colours = useContext(UserColoursContext)
-    return <Box sx={colours?.isCustom ?{
-        '& button': {
-            backgroundColor: `#${colours.fg}`,
-            ...colours.fgText
-        },
-        '& button:hover': {
-            backgroundColor: `#${getDarkerColor(colours.fg, 0.9)} !important`,
-            ...colours.bgText
-        }
-    } : {}}>
+    return <div className={customClass(colours, "ccButtons")} style={colourVars(colours)}>
         <button
             className={"btn btn-dark"}
             type="button"
@@ -44,5 +34,5 @@ export default function BastionFort({bastionFort: controlledBastionFort, setBast
             }}
         >{bastionFort ? "First/Second Structure" : "Bastion/Fortress"}
         </button>
-    </Box>
+    </div>
 }

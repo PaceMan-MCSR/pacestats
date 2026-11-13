@@ -11,8 +11,9 @@ import BastionFort from "@/app/components/BastionFort";
 import { useEffect, useState } from "react";
 import { UserColoursContext, UsersContext } from "@/app/contexts";
 import { defaultNameColor, getDarkerColor, getDisplayName, getNameColor, getUserColours } from "@/app/utils";
-import Box from "@mui/material/Box";
-import { useRouter } from "next/navigation";
+import { colourVars, customClass } from "@/app/components/customColours";
+import { useIntentLink } from "@/app/components/useIntentLink";
+import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
 
 export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data, days, bf, users}: {
     name: string,
@@ -25,17 +26,14 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
     bf: boolean,
     users: any
 }) {
-    const router = useRouter();
     const skinUrl = "https://mc-api.io/render/FULL/" + uuid
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
     const [bastionFort, setBastionFort] = useState(bf)
     const nameColor = getNameColor(users, uuid)
     const colours : any = getUserColours(users, uuid)
-    const [pendingMoreRuns, setPendingMoreRuns] = useState(false);
-
-    useEffect(() => {
-        router.prefetch(`/player/${name}/runs`);
-    }, []);
+    const playerUser = users?.find((user: any) => user.uuid === uuid)
+    const moreRunsLink = useIntentLink(`/player/${name}/runs`);
+    const pendingMoreRuns = moreRunsLink.pending;
 
     return (
         <UsersContext.Provider value={users}>
@@ -47,6 +45,12 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
                 }}>
                     <div className="container">
                         <ResetScroll/>
+                        <PlayerInfoSeed nick={name === "jojoe77777" ? "COVlD19" : name} info={{
+                            id: uuid,
+                            displayName: playerUser?.displayName || null,
+                            color: playerUser?.color || null,
+                            bgColor: playerUser?.bgColor || null,
+                        }}/>
                         <h1 className="header" style={{marginTop: 0, paddingTop: 30, marginBottom: 30}}>
                             <span style={{
                                 color: nameColor,
@@ -75,26 +79,10 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
                                 <div className="recentContainer mb-2">
                                     <RecentRuns runs={recentRuns}/>
                                     <div className="openRuns">
-                                        <Link href={`/player/${name}/runs`} onMouseEnter={() => {
-                                            router.prefetch(`/player/${name}/runs`);
-                                        }} onMouseDown={(e) => {
-                                            if (e.button !== 0) return; // Only handle left mouse button
-                                            setPendingMoreRuns(true);
-                                            router.push(`/player/${name}/runs`);
-                                        }}>
-                                            <Box sx={colours.isCustom ? {
-                                                '& button': {
-                                                    backgroundColor: `#${colours.fg} !important`,
-                                                    ...colours.fgText
-                                                },
-                                                '& button:hover': {
-                                                    backgroundColor: `#${getDarkerColor(colours.fg, 0.9)} !important`,
-                                                    ...colours.fgText
-                                                },
-                                                opacity: pendingMoreRuns ? 0.7 : 1
-                                            } : {opacity: pendingMoreRuns ? 0.7 : 1}}>
+                                        <Link {...moreRunsLink.linkProps}>
+                                            <div className={customClass(colours, "ccMoreRuns")} style={{opacity: pendingMoreRuns ? 0.7 : 1, ...colourVars(colours)}}>
                                                 <button className="btn btn-dark">More runs</button>
-                                            </Box>
+                                            </div>
                                         </Link>
                                     </div>
                                 </div>

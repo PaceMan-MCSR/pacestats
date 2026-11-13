@@ -3,14 +3,11 @@
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
 import { formatIfNotNull } from "@/app/utils";
 import { useRouter } from "next/navigation";
-import type {GridPaginationModel} from '@mui/x-data-grid';
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useMediaQuery } from "@mui/system";
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import BastionFort from "@/app/components/BastionFort";
 import RunFilters from "@/app/components/RunFilters";
 import {formatExactTime, fromNow} from "@/app/components/profile/relativeTime";
 import Link from "next/link";
-import {IconButton, LinearProgress, TablePagination} from "@mui/material";
 
 type RunFilter = {
     column: string;
@@ -34,52 +31,72 @@ const PAGE_CACHE_TTL_MS = 30_000;
 const MAX_CACHED_PAGES = 12;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-function FastPaginationActions({count, page, rowsPerPage, onPageChange, getItemAriaLabel}: any) {
-    const lastPage = Math.max(0, Math.ceil(count / rowsPerPage) - 1);
-    const changePage = (event: React.PointerEvent<HTMLButtonElement>, targetPage: number) => {
-        if (!event.isPrimary || event.button !== 0) return;
-        event.preventDefault();
-        event.currentTarget.focus();
-        onPageChange(event, targetPage);
-    };
+type GridPaginationModel = {page: number, pageSize: number};
 
-    return <div className="fastRunsPaginationActions">
-        <IconButton
-            aria-label={getItemAriaLabel('previous')}
-            disabled={page === 0}
-            onPointerDown={(event) => changePage(event, page - 1)}
-            onClick={(event) => {
-                if (event.detail === 0) onPageChange(event, page - 1);
+const SMALL_SCREEN_QUERY = '(max-width: 768px)';
+const subscribeToSmallScreen = (onChange: () => void) => {
+    const query = window.matchMedia(SMALL_SCREEN_QUERY);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+};
+// False on the server and for the first client render, like MUI's hook.
+const useSmallScreen = () => useSyncExternalStore(
+    subscribeToSmallScreen,
+    () => window.matchMedia(SMALL_SCREEN_QUERY).matches,
+    () => false
+);
+
+// Plain controls in place of MUI's TablePagination, which brought its Select,
+// Menu, Modal and Popover (about 100 KB) to this page.
+function RunsPagination({count, page, pageSize, onChange}: {
+    count: number,
+    page: number,
+    pageSize: number,
+    onChange: (model: GridPaginationModel) => void,
+}) {
+    const lastPage = Math.max(0, Math.ceil(count / pageSize) - 1);
+    const from = count === 0 ? 0 : page * pageSize + 1;
+    const to = Math.min(count, (page + 1) * pageSize);
+
+    // Change page on pointer-down, without waiting for the click.
+    const pageButton = (label: string, targetPage: number, disabled: boolean, path: string) => (
+        <button
+            type="button"
+            className="fastRunsPageButton"
+            aria-label={label}
+            disabled={disabled}
+            onPointerDown={(event) => {
+                if (!event.isPrimary || event.button !== 0) return;
+                event.preventDefault();
+                event.currentTarget.focus();
+                onChange({page: targetPage, pageSize});
             }}
-            onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    onPageChange(event, page - 1);
-                }
+            onClick={(event) => {
+                // Keyboard and assistive-technology activation only.
+                if (event.detail === 0) onChange({page: targetPage, pageSize});
             }}
         >
             <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24">
-                <path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+                <path fill="currentColor" d={path}/>
             </svg>
-        </IconButton>
-        <IconButton
-            aria-label={getItemAriaLabel('next')}
-            disabled={page >= lastPage}
-            onPointerDown={(event) => changePage(event, page + 1)}
-            onClick={(event) => {
-                if (event.detail === 0) onPageChange(event, page + 1);
-            }}
-            onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    onPageChange(event, page + 1);
-                }
-            }}
+        </button>
+    );
+
+    return <div className="fastRunsGridPagination">
+        <label className="fastRunsPageSizeLabel" htmlFor="fastRunsPageSize">Rows per page:</label>
+        <select
+            id="fastRunsPageSize"
+            className="fastRunsPageSize"
+            value={pageSize}
+            onChange={(event) => onChange({page: 0, pageSize: Number(event.target.value)})}
         >
-            <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24">
-                <path fill="currentColor" d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
-            </svg>
-        </IconButton>
+            {PAGE_SIZE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+        <span className="fastRunsPageRange">{from}–{to} of {count}</span>
+        <div className="fastRunsPaginationActions">
+            {pageButton('Go to previous page', page - 1, page === 0, 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z')}
+            {pageButton('Go to next page', page + 1, page >= lastPage, 'M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z')}
+        </div>
     </div>;
 }
 const RUN_TIME_FIELDS = [
@@ -104,11 +121,14 @@ const prepareRunForDisplay = (run: any, gridIndex: number) => {
     };
 };
 
-export default function RecentRuns({uuid, bf, initialPaginationModel, initialSort}: {
+export default function RecentRuns({uuid, bf, initialPaginationModel, initialSort, initialRuns}: {
     uuid: string,
     bf: boolean,
     initialPaginationModel: GridPaginationModel,
     initialSort: RunSort,
+    // First page of runs, rendered on the server for the initial page model,
+    // sort and no filters. Null if the server could not load it.
+    initialRuns?: {rows: any[], rowCount: number} | null,
 }) {
 
     const router = useRouter();
@@ -134,9 +154,14 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
 
     const [filters, setFilters] = useState<RunFilter[]>([])
     const [sort, setSort] = useState<RunSort>(initialSort);
-    const [rows, setRows] = useState<any[]>([]);
-    const [rowCount, setRowCount] = useState(0);
-    const [isLoading, setIsLoading] = useState(true);
+    const [seedPage] = useState<RunsPage | null>(() => initialRuns ? {
+        rows: initialRuns.rows.map(prepareRunForDisplay),
+        rowCount: initialRuns.rowCount,
+        fetchedAt: Date.now(),
+    } : null);
+    const [rows, setRows] = useState<any[]>(seedPage?.rows ?? []);
+    const [rowCount, setRowCount] = useState(seedPage?.rowCount ?? 0);
+    const [isLoading, setIsLoading] = useState(seedPage === null);
     const [bastionFort, setBastionFort] = useState(bf)
     const pageCache = useRef(new Map<string, RunsPage>());
     const pendingPages = useRef(new Map<string, Promise<RunsPage>>());
@@ -236,6 +261,22 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
         setPaginationModel(newModel);
     }, [cachedPage, pageKey, paginationModel, serializedFilters, serializedSort]);
 
+    // Runs once, before the loading effect below, so that effect finds the
+    // server-rendered page in the cache and skips the request for it.
+    useEffect(() => {
+        if (!seedPage) return;
+        pageCache.current.set(
+            pageKey(
+                initialPaginationModel.page,
+                initialPaginationModel.pageSize,
+                "[]",
+                `${initialSort.column}:${initialSort.direction}`
+            ),
+            seedPage
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         let active = true;
         const {page, pageSize} = paginationModel;
@@ -289,16 +330,16 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
         setSort({column: 'date', direction: 'desc'});
     }, [sort.column]);
 
-    const small = useMediaQuery('(max-width: 768px)');
+    const small = useSmallScreen();
     const fastColumns = React.useMemo(() => [
         {field: 'date', label: 'Date', icon: null},
         {field: 'nether', label: 'Nether', icon: '/stats/nether.webp'},
         bastionFort
             ? {field: 'bastion', label: 'Bastion', icon: '/stats/bastion.webp'}
-            : {field: 'first_structure', label: 'Struct 1', icon: '/stats/struct1.png'},
+            : {field: 'first_structure', label: 'Struct 1', icon: '/stats/struct1.webp'},
         bastionFort
             ? {field: 'fortress', label: 'Fortress', icon: '/stats/fortress.webp'}
-            : {field: 'second_structure', label: 'Struct 2', icon: '/stats/struct2.png'},
+            : {field: 'second_structure', label: 'Struct 2', icon: '/stats/struct2.webp'},
         {field: 'first_portal', label: 'First Portal', icon: '/stats/first_portal.webp'},
         {field: 'stronghold', label: 'Stronghold', icon: '/stats/stronghold.webp'},
         {field: 'end', label: 'End', icon: '/stats/end.webp'},
@@ -332,7 +373,7 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
             <p style={{lineHeight: 0}}>{rowCount} results</p>
         </div>
         <div style={{height: "3px"}}>
-            {isLoading && rows.length > 0 && <LinearProgress aria-label="Loading run history"/>}
+            {isLoading && rows.length > 0 && <div className="fastRunsProgress" role="progressbar" aria-label="Loading run history"/>}
         </div>
         <div className="fastRunsGrid" role="grid" aria-busy={isLoading}>
             <div className="fastRunsGridHeader" role="row">
@@ -381,7 +422,8 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
                                     {run.twitch !== null && <span className="liveIndicator"/>}
                                     {Date.now() / 1000 - start < 60
                                         ? <RelativeTimer start={start}/>
-                                        : <span title={run._dateTitle}>{run._relativeDate}</span>}
+                                        // The server formats these in its own time zone and a moment earlier.
+                                        : <span title={run._dateTitle} suppressHydrationWarning>{run._relativeDate}</span>}
                                 </div>;
                             }
                             return <div className="fastRunsGridCell" role="gridcell" key={column.field}>
@@ -392,19 +434,11 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
                 ))}
                 {!isLoading && rows.length === 0 && <div className="fastRunsGridEmpty">No rows</div>}
             </div>
-            <TablePagination
-                component="div"
-                className="fastRunsGridPagination"
+            <RunsPagination
                 count={rowCount}
                 page={paginationModel.page}
-                rowsPerPage={paginationModel.pageSize}
-                rowsPerPageOptions={PAGE_SIZE_OPTIONS}
-                ActionsComponent={FastPaginationActions}
-                onPageChange={(_, page) => handlePaginationModelChange({...paginationModel, page})}
-                onRowsPerPageChange={(event) => handlePaginationModelChange({
-                    page: 0,
-                    pageSize: Number(event.target.value),
-                })}
+                pageSize={paginationModel.pageSize}
+                onChange={handlePaginationModelChange}
             />
         </div>
     </div>

@@ -2,13 +2,26 @@
 import ResetScroll from "@/app/components/ResetScroll";
 import PlayerSearch from "@/app/components/PlayerSearch";
 import {ChangeEvent, useMemo, useState} from "react";
-import {HexColorInput, HexColorPicker} from "react-colorful";
-import Tooltip from "react-bootstrap/Tooltip";
-import OverlayTrigger from "react-bootstrap/OverlayTrigger";
+import lazyLoad from "next/dynamic";
+import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 import SessionNethers from "@/app/obs/sessionNethers/[nick]/SessionNethers";
 import Session from "@/app/obs/session/[nick]/Session";
-import FontPicker from "@/app/obs/FontPicker";
 import MaterialIcon from "@/app/components/MaterialIcon";
+
+// The font and colour pickers load after the page renders. react-select and
+// react-colorful (about 65 KB together) then stay out of the first load.
+const FontPicker = lazyLoad(() => import("@/app/obs/FontPicker"), {
+    ssr: false,
+    loading: () => <div className="font-wrapper" style={{minHeight: 78}}/>,
+});
+const ColorPicker = lazyLoad(() => import("@/app/obs/ObsColorPicker").then((module) => module.ColorPicker), {
+    ssr: false,
+    loading: () => <div style={{width: 200, height: 200}}/>,
+});
+const ColorInput = lazyLoad(() => import("@/app/obs/ObsColorPicker").then((module) => module.ColorInput), {
+    ssr: false,
+    loading: () => <input disabled aria-label="Colour"/>,
+});
 
 export default function ObsWrapper({userInfo, params}: {
         userInfo: any, params: { }
@@ -109,10 +122,10 @@ export default function ObsWrapper({userInfo, params}: {
                         <div className="colorSection col-5 col-xl-5 col-xxl-4">
                             <label>Text color:</label>
                             <div className="colorPicker">
-                                <HexColorPicker color={color} onChange={setColor} />
+                                <ColorPicker color={color} onChange={setColor} />
                             </div>
                             <div className="colorPickerInput">
-                                <HexColorInput color={color} onChange={setColor} />
+                                <ColorInput color={color} onChange={setColor} />
                             </div>
                         </div>
                     </div>

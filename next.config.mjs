@@ -7,6 +7,15 @@ const nextConfig = {
     // never apply. See ops/nginx/pacestats.conf.
     compress: false,
     trailingSlash: true,
+    experimental: {
+        // Let the browser reuse page data it already has for 30 seconds:
+        // going back to the leaderboard, reopening a player or switching the
+        // day range back needs no request. The pages themselves are cached
+        // for 15 to 30 seconds on the server, so this adds no staleness.
+        staleTimes: {
+            dynamic: 30,
+        },
+    },
     async headers() {
         // These pages are the same for every visitor, so a shared cache
         // (nginx proxy_cache, a CDN) may reuse them briefly instead of
@@ -19,6 +28,15 @@ const nextConfig = {
             },
         ];
         return [
+            // Icons, backgrounds and fonts in public/. Their names carry no
+            // content hash, so cache for a day and refresh in the background.
+            {
+                source: '/:file(.+\\.(?:webp|png|ico|ttf|woff2?|svg))',
+                headers: [{
+                    key: 'Cache-Control',
+                    value: 'public, max-age=86400, stale-while-revalidate=604800',
+                }],
+            },
             {source: '/', headers: sharedCache(30, 120)},
             {source: '/aa', headers: sharedCache(30, 120)},
             {source: '/obs', headers: sharedCache(300, 600)},

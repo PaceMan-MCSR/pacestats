@@ -1,7 +1,7 @@
 import {fixDisplayName, formatTime, generateHexCode, getGoodQty, getMinQty} from "@/app/utils";
 import BoardLink from "@/app/components/tables/BoardLink";
 import React, { useState } from "react";
-import {Collapse} from "react-bootstrap";
+import { Collapse } from "@/app/components/HoverTooltip";
 import TimeSlider from "@/app/components/TimeSlider";
 import NPHSlider from "@/app/components/NPHSlider";
 import QtySlider from "@/app/components/QtySlider";

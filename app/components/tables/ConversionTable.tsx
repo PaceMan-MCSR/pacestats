@@ -9,8 +9,7 @@ import {
 } from "@/app/utils";
 import {useEffect, useState} from "react";
 import {Entry} from "@/app/types";
-import OverlayTrigger from "react-bootstrap/OverlayTrigger";
-import Tooltip from "react-bootstrap/Tooltip";
+import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 import BoardLink from "@/app/components/tables/BoardLink";
 
 export function ConversionTable({catName, catId, days, lb, showQty = false, aa = false} : {catName: string, catId: string, days: number, lb?: any, showQty: boolean, aa?: boolean}) {

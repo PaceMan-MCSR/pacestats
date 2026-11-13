@@ -6,21 +6,39 @@ import {SearchName} from "@/app/types";
 import { defaultNameColor, getDarkerColor, getNameColor } from "@/app/utils";
 import { useContext, useEffect, useRef, useState } from "react";
 import { UserColoursContext, UsersContext } from "@/app/contexts";
+import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 import { schedulePlayerPrefetch } from "@/app/components/playerPrefetch";
+import { usePlayerInfo } from "@/app/components/playerInfoStore";
 
 type SearchItem = SearchName & { color?: string | null };
+
+// Player pages loaded in full after a hover, kept for as long as the router
+// reuses them.
+const fullyPrefetchedPlayers = new Set<string>();
 
 let playerNamesRequest: Promise<SearchItem[]> | undefined;
 // Shared by every search box on the page and kept across client navigations.
 let loadedPlayerNames: SearchItem[] | null = null;
 
+// A blank image keeps the row's layout until the player's UUID is known.
+const BLANK_AVATAR = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+
 function loadPlayerNames() {
-    playerNamesRequest ??= fetch("/stats/api/getAllUsers/")
+    // Names and Twitch handles only (about 45 KB compressed, against 155 KB
+    // for the full list with UUIDs). Each entry is a nick or
+    // [nick, ...twitchHandles]. SearchResult asks for the UUID and colour of
+    // the few players that reach the screen.
+    playerNamesRequest ??= fetch("/stats/api/getPlayerNames/")
         .then((response) => {
             if (!response.ok) throw new Error(`Unable to load player names (${response.status})`);
-            return response.json() as Promise<SearchItem[]>;
+            return response.json() as Promise<Array<string | string[]>>;
         })
-        .then((players) => {
+        .then((names) => {
+            const players = names.map((entry): SearchItem => {
+                const [nick, ...twitches] = typeof entry === "string" ? [entry] : entry;
+                // The nick stands in as the id; it is unique in the list.
+                return {id: nick, nick, twitches};
+            });
             loadedPlayerNames = players;
             return players;
         })
@@ -29,6 +47,32 @@ function loadPlayerNames() {
             throw error;
         });
     return playerNamesRequest;
+}
+
+function SearchResult({item, colourUsers}: {item: SearchItem, colourUsers: any}) {
+    // Items from the name list carry no UUID; items from a per-query search do.
+    const needsInfo = item.id === item.nick;
+    const info = usePlayerInfo(needsInfo ? item.nick : null);
+    const uuid = needsInfo ? info?.id : item.id;
+    const colour = item.color ?? info?.color;
+    const nameColor = colour ? `#${colour}` : uuid ? getNameColor(colourUsers, uuid) : defaultNameColor;
+    return (
+        <span style={{ display: 'block', textAlign: 'left' }}>
+            <img
+                className="avatarSmall"
+                src={uuid ? `https://mc-api.io/render/FACE/${uuid}?size=8` : BLANK_AVATAR}
+                alt={item.nick}
+                style={{
+                    marginTop: '-2px',
+                }}
+            />
+            <span style={{
+                color: nameColor,
+                filter: nameColor !== defaultNameColor ? `drop-shadow(0px 0px 1px #000000) drop-shadow(0px 0px 1px #000000)` : '',
+                fontSize: '1.15em',
+            }}>{item.nick}</span>
+        </span>
+    );
 }
 
 export default function PlayerSearch({data, input, setOutput, userInfo}: {
@@ -129,26 +173,18 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
     }
 
 
+    // Hovering or arrowing to a result is a strong sign of intent, so load
+    // the whole player page. Selecting it then needs no request.
     const handleOnHover = (item: any) => {
-        prefetchPlayer(item.nick)
+        if (setOutput !== undefined) return;
+        const path = `/player/${item.nick}`;
+        if (fullyPrefetchedPlayers.has(path)) return;
+        fullyPrefetchedPlayers.add(path);
+        setTimeout(() => fullyPrefetchedPlayers.delete(path), 30_000);
+        router.prefetch(path, {kind: PrefetchKind.FULL});
     }
 
-    const formatResult = (item: any) => {
-        const url = `https://mc-api.io/render/FACE/${item.id}?size=8`
-        const nameColor = item.color ? `#${item.color}` : getNameColor(colourUsers, item.id);
-        return (
-            <span style={{ display: 'block', textAlign: 'left' }}>
-                <img className="avatarSmall" src={url} alt={item.nick} style={{
-                    marginTop: '-2px',
-                }}/>
-                <span style={{
-                    color: nameColor,
-                    filter: nameColor !== defaultNameColor ? `drop-shadow(0px 0px 1px #000000) drop-shadow(0px 0px 1px #000000)` : '',
-                    fontSize: '1.15em',
-                }}>{item.nick}</span>
-            </span>
-        )
-    }
+    const formatResult = (item: any) => <SearchResult item={item} colourUsers={colourUsers}/>;
 
     const themeStyle = hasColours ? {
         "--search-background": `#${getDarkerColor(colours?.fg, 0.9)}`,

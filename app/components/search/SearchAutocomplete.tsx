@@ -29,7 +29,7 @@
  * SOFTWARE.
  */
 
-import Fuse from "fuse.js";
+import type Fuse from "fuse.js";
 import {
     ChangeEvent,
     FocusEvent,
@@ -38,7 +38,6 @@ import {
     MouseEvent,
     ReactNode,
     useEffect,
-    useMemo,
     useRef,
     useState,
 } from "react";
@@ -46,6 +45,19 @@ import "./searchAutocomplete.css";
 
 export const DEFAULT_INPUT_DEBOUNCE = 200;
 export const MAX_RESULTS = 10;
+
+// Fuse.js (about 15 KB) loads the first time someone focuses or types in a
+// search box, so pages that never search do not download it.
+type FuseConstructor = typeof Fuse;
+let loadedFuse: FuseConstructor | null = null;
+let fuseRequest: Promise<FuseConstructor> | undefined;
+const loadFuse = () => {
+    fuseRequest ??= import("fuse.js").then((module) => {
+        loadedFuse = module.default;
+        return loadedFuse;
+    });
+    return fuseRequest;
+};
 
 const defaultFuseOptions = {
     shouldSort: true,
@@ -82,17 +94,6 @@ export interface SearchAutocompleteProps<T extends Item> {
     showItemsOnFocus?: boolean;
     maxLength?: number;
     className?: string;
-}
-
-function debounce<A extends unknown[]>(func: (...args: A) => void, wait: number) {
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    return (...args: A) => {
-        if (timeout) clearTimeout(timeout);
-        timeout = setTimeout(() => {
-            timeout = null;
-            func(...args);
-        }, wait);
-    };
 }
 
 function SearchIcon({ showIcon }: { showIcon: boolean }) {
@@ -308,8 +309,13 @@ export default function SearchAutocomplete<T extends Item>({
     className,
 }: SearchAutocompleteProps<T>) {
     const options = { ...defaultFuseOptions, ...fuseOptions };
-    const fuse = new Fuse(items, options);
-    fuse.setCollection(items);
+    const [FuseClass, setFuseClass] = useState<FuseConstructor | null>(() => loadedFuse);
+    const fuse = FuseClass ? new FuseClass(items, options) : null;
+
+    const requestFuse = () => {
+        if (FuseClass) return;
+        void loadFuse().then((loaded) => setFuseClass(() => loaded));
+    };
 
     const [searchString, setSearchString] = useState(inputSearchString);
     const [results, setResults] = useState<T[]>([]);
@@ -317,16 +323,24 @@ export default function SearchAutocomplete<T extends Item>({
     const [isSearchComplete, setIsSearchComplete] = useState(false);
     const [isTyping, setIsTyping] = useState(false);
     const [hasFocus, setHasFocus] = useState(false);
+    // True from a keystroke until the results are dismissed (blur, selection
+    // or a click elsewhere).
+    const [hasTyped, setHasTyped] = useState(false);
 
-    const fuseResults = (keyword: string) =>
+    // Empty until Fuse.js has loaded; the effect on `items` and `FuseClass`
+    // below fills in the results when it arrives.
+    const fuseResults = (keyword: string): T[] =>
         fuse
-            .search(keyword, { limit: maxResults })
-            .map((result) => ({ ...result.item }))
-            .slice(0, maxResults);
+            ? fuse
+                .search(keyword, { limit: maxResults })
+                .map((result) => ({ ...result.item }))
+                .slice(0, maxResults)
+            : [];
 
     const eraseResults = () => {
         setResults([]);
         setIsSearchComplete(true);
+        setHasTyped(false);
     };
 
     // The three effects below sync state from props exactly as the package
@@ -334,6 +348,7 @@ export default function SearchAutocomplete<T extends Item>({
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setSearchString(inputSearchString);
+        if (inputSearchString?.length > 0) requestFuse();
         const timeoutId = setTimeout(() => setResults(fuseResults(inputSearchString)), 0);
         return () => clearTimeout(timeoutId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -344,13 +359,15 @@ export default function SearchAutocomplete<T extends Item>({
         // package, this also covers a focused box that has no results yet:
         // the player list loads on first use, so someone can finish typing
         // before the items they are searching arrive.
-        const awaitingResults = hasFocus && !isSearchComplete;
+        // `hasFocus` cannot be used here: the click that focuses the input
+        // also reaches the document-level click handler, which clears it.
+        const awaitingResults = hasTyped && !isSearchComplete;
         if (searchString?.length > 0 && (results?.length > 0 || awaitingResults)) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             setResults(fuseResults(searchString));
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [items]);
+    }, [items, FuseClass]);
 
     const showNoResultsFlag =
         showNoResults && searchString.length > 0 && !isTyping && results.length === 0 && !isSearchComplete;
@@ -374,6 +391,7 @@ export default function SearchAutocomplete<T extends Item>({
 
     const handleOnFocus = (event: FocusEvent<HTMLInputElement>) => {
         onFocus(event);
+        requestFuse();
         setHasFocus(true);
     };
 
@@ -384,15 +402,26 @@ export default function SearchAutocomplete<T extends Item>({
         setIsTyping(false);
     };
 
-    // As in the package, the debounced search is rebuilt only when `items`
-    // changes, so it searches the collection it was created with.
-    const handleOnSearch = useMemo(
-        () => inputDebounce > 0
-            ? debounce((keyword: string) => callOnSearch(keyword), inputDebounce)
-            : (keyword: string) => callOnSearch(keyword),
+    // Debounced search. The pending keyword lives in state and the timer in
+    // an effect that restarts when `items` changes, so the search always runs
+    // against the newest collection. The original package debounced a
+    // function that closed over one render's items: a keystroke typed just
+    // before the player list arrived searched the old (empty) list 100 ms
+    // later and wiped the results the new list had just produced.
+    const [pendingKeyword, setPendingKeyword] = useState<string | null>(null);
+    useEffect(() => {
+        if (pendingKeyword === null) return;
+        const timeoutId = setTimeout(() => {
+            callOnSearch(pendingKeyword);
+            setPendingKeyword(null);
+        }, Math.max(0, inputDebounce));
+        return () => clearTimeout(timeoutId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [items]
-    );
+    }, [pendingKeyword, items, FuseClass, inputDebounce]);
+    const handleOnSearch = (keyword: string) => {
+        requestFuse();
+        setPendingKeyword(keyword);
+    };
 
     const handleOnClick = (result: T) => {
         eraseResults();
@@ -406,6 +435,7 @@ export default function SearchAutocomplete<T extends Item>({
         setSearchString(keyword);
         handleOnSearch(keyword);
         setIsTyping(true);
+        setHasTyped(true);
         if (isSearchComplete) setIsSearchComplete(false);
     };
 

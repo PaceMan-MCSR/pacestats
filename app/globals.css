@@ -1,5 +1,7 @@
-@import "bootstrap/dist/css/bootstrap.min.css";
+/* Generated from Bootstrap by scripts/trim-bootstrap.mjs (npm run css:bootstrap). */
+@import "./styles/bootstrap.trimmed.css";
 @import "./styles/main.css";
+@import "./styles/customColours.css";
 
 :root {
   --foreground-rgb: 0, 0, 0;

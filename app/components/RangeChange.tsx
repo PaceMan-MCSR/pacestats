@@ -3,8 +3,7 @@
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useContext, useTransition } from "react";
 import { UserColoursContext } from "@/app/contexts";
-import Box from "@mui/material/Box";
-import { getDarkerColor } from "@/app/utils";
+import { colourVars, customClass } from "@/app/components/customColours";
 
 export default function RangeChange() {
     // Hooks for navigation and state
@@ -44,33 +43,13 @@ export default function RangeChange() {
     };
 
     return (
-        <Box
-            className="rangeButtons"
-            sx={{
-                // Add a style to indicate the loading state
+        <div
+            className={customClass(colours, "ccRange", "rangeButtons")}
+            style={{
+                // Dim the buttons while the new range loads.
                 opacity: isPending ? 0.7 : 1,
                 transition: 'opacity 0.2s ease-in-out',
-                ...(colours?.isCustom ? {
-                    '& button': {
-                        backgroundColor: `#${colours.fg}`,
-                        ...colours.fgText
-                    },
-                    '& button.btn-primary': {
-                        backgroundColor: `#${getDarkerColor(colours.fg, 0.8)}`,
-                        borderColor: `#000000`,
-                    },
-                    '& button:hover:not(:disabled)': { // Prevent hover effect when disabled
-                        backgroundColor: `#${getDarkerColor(colours.fg, 0.9)}`,
-                        ...colours.bgText
-                    },
-                    '& button:disabled': {
-                        cursor: 'not-allowed',
-                    }
-                } : {
-                    '& button:disabled': {
-                        cursor: 'not-allowed',
-                    }
-                })
+                ...colourVars(colours),
             }}
         >
             <button
@@ -121,6 +100,6 @@ export default function RangeChange() {
             >
                 Lifetime
             </button>
-        </Box>
+        </div>
     );
 }

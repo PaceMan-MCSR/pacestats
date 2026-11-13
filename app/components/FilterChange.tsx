@@ -2,7 +2,7 @@
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Collapse } from "react-bootstrap";
+import { Collapse } from "@/app/components/HoverTooltip";
 
 export default function FilterChange() {
     // Hooks for navigation and state

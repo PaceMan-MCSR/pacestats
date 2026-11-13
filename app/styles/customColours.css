@@ -1,0 +1,99 @@
+/*
+ * Custom player colours. Each rule keeps the selector weight of the MUI `sx`
+ * rule it replaced (one class plus the element), so it wins and loses against
+ * Bootstrap in the same places. The --cc-* variables come from
+ * components/customColours.ts.
+ */
+
+.rangeButtons button:disabled {
+    cursor: not-allowed;
+}
+
+.ccButtons button,
+.ccRange button {
+    background-color: var(--cc-fg);
+    color: var(--cc-fg-text);
+    filter: var(--cc-fg-text-filter);
+}
+
+.ccButtons button:hover {
+    background-color: var(--cc-fg-90) !important;
+    color: var(--cc-bg-text);
+    filter: var(--cc-bg-text-filter);
+}
+
+.ccRange button.btn-primary {
+    background-color: var(--cc-fg-80);
+    border-color: #000000;
+}
+
+.ccRange button:hover:not(:disabled) {
+    background-color: var(--cc-fg-90);
+    color: var(--cc-bg-text);
+    filter: var(--cc-bg-text-filter);
+}
+
+.ccStat {
+    background-color: var(--cc-fg) !important;
+    border-color: var(--cc-fg-60) !important;
+}
+
+.ccStat p,
+.ccStat h4 {
+    color: var(--cc-fg-text);
+    filter: var(--cc-fg-text-filter);
+}
+
+.ccStat h5 {
+    color: var(--cc-name);
+    filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000);
+}
+
+.ccOpenHistory button {
+    background-color: var(--cc-fg-90);
+    color: var(--cc-bg-text);
+    filter: var(--cc-bg-text-filter);
+}
+
+.ccOpenHistory button:hover {
+    background-color: var(--cc-fg-80);
+    color: var(--cc-fg-text);
+    filter: var(--cc-fg-text-filter);
+}
+
+.ccRecentRuns .table tr:hover td {
+    background-color: var(--cc-bg) !important;
+}
+
+.ccRecentRuns .table tr {
+    background-color: var(--cc-bg) !important;
+    border-color: var(--cc-fg-70);
+}
+
+.ccRecentRuns .table {
+    --bs-table-bg: var(--cc-fg);
+    --bs-table-color: var(--cc-fg-text);
+}
+
+.ccMoreRuns button {
+    background-color: var(--cc-fg) !important;
+    color: var(--cc-fg-text);
+    filter: var(--cc-fg-text-filter);
+}
+
+.ccMoreRuns button:hover {
+    background-color: var(--cc-fg-90) !important;
+    color: var(--cc-fg-text);
+    filter: var(--cc-fg-text-filter);
+}
+
+/* Replaces MUI's SvgIcon defaults for components/MaterialIcon.tsx. */
+.materialIcon {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 1em;
+    height: 1em;
+    font-size: 1.5rem;
+    fill: currentColor;
+    user-select: none;
+}

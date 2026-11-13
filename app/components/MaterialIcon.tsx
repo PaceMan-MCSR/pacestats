@@ -1,4 +1,3 @@
-import SvgIcon from "@mui/material/SvgIcon";
 import type {CSSProperties} from "react";
 
 const paths = {
@@ -15,7 +14,7 @@ export default function MaterialIcon({icon, className, style}: {
     className?: string,
     style?: CSSProperties,
 }) {
-    return <SvgIcon className={className} style={style} aria-hidden="true" focusable="false">
+    return <svg className={className ? `materialIcon ${className}` : "materialIcon"} style={style} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d={paths[icon]}/>
-    </SvgIcon>;
+    </svg>;
 }

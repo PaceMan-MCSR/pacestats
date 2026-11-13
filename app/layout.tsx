@@ -1,7 +1,6 @@
 import type {Metadata} from "next";
 import "./globals.css";
 import {inter} from "@/app/styles/inter";
-import { AppRouterCacheProvider } from '@mui/material-nextjs/v14-appRouter';
 import Header from "@/app/Header";
 
 export const metadata: Metadata = {
@@ -59,13 +58,13 @@ export default function RootLayout({children}: Readonly<{
         <html lang="en" data-bs-theme="dark" style={{backgroundColor: "rgb(18, 18, 21)"}}>
         <head>
             <meta name="darkreader-lock"/>
+            {/* Every avatar and skin comes from this host. */}
+            <link rel="preconnect" href="https://mc-api.io"/>
             <style id="critical-theme">{criticalThemeCss}</style>
         </head>
         <body className={inter.className} id="body" style={{backgroundColor: "rgb(18, 18, 21)"}}>
-        <AppRouterCacheProvider>
-            <Header/>
-            {children}
-        </AppRouterCacheProvider>
+        <Header/>
+        {children}
         </body>
         </html>
     );

@@ -6,41 +6,16 @@ import PaceManLink from "@/app/components/PaceManLink";
 import { usePathname } from "next/navigation";
 import { defaultNameColor, getUserColours } from "@/app/utils";
 import { UserColoursContext } from "@/app/contexts";
-import { useEffect, useState } from "react";
 import PendingLink from "@/app/components/PendingLink";
-
-type PlayerTheme = {
-    id: string;
-    displayName: string | null;
-    color: string | null;
-    bgColor: string | null;
-};
+import { usePlayerInfo } from "@/app/components/playerInfoStore";
 
 export default function Header() {
     const path = usePathname();
-    const [playerTheme, setPlayerTheme] = useState<PlayerTheme | null>(null);
-
-    useEffect(() => {
-        const player = path.startsWith("/player/") ? path.split("/")[2] : null;
-        if (!player) return;
-
-        const lookupName = player === "jojoe77777" ? "COVlD19" : player;
-        const controller = new AbortController();
-        fetch(`/stats/api/searchPlayers/?q=${encodeURIComponent(lookupName)}&limit=8`, {
-            signal: controller.signal,
-        })
-            .then((response) => response.ok ? response.json() : [])
-            .then((results) => {
-                const match = results.find((result: any) =>
-                    result.name.toLocaleLowerCase() === lookupName.toLocaleLowerCase()
-                );
-                setPlayerTheme(match ?? null);
-            })
-            .catch((error) => {
-                if (error.name !== "AbortError") setPlayerTheme(null);
-            });
-        return () => controller.abort();
-    }, [path]);
+    const player = path.startsWith("/player/") ? decodeURIComponent(path.split("/")[2] ?? "") : "";
+    const lookupName = player === "jojoe77777" ? "COVlD19" : player;
+    // Player pages put their player's colours in the store before the first
+    // paint (PlayerInfoSeed), so this only asks the server when a page did not.
+    const playerTheme = usePlayerInfo(lookupName || null);
 
     let colours : any = {
         bg: "rgb(18, 18, 21)",
