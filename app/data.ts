@@ -88,8 +88,9 @@ const dbCombinedQueryTimeoutMs = boundedEnvInteger(
 const dbSlowAcquireMs = boundedEnvInteger(process.env.DB_POOL_SLOW_ACQUIRE_MS, 250, 10, 30_000);
 const slowDataFetchMs = boundedEnvInteger(process.env.SLOW_DATA_FETCH_MS, 750, 50, 60_000);
 
+const DEFAULT_CACHE_TTL_SECONDS = 60 * 30;
 const cache = runtime.__paceStatsCache ?? new NodeCache({
-    stdTTL: 60 * 30,
+    stdTTL: DEFAULT_CACHE_TTL_SECONDS,
     checkperiod: 60,
     useClones: false,
     maxKeys: cacheMaxKeys,
@@ -1702,22 +1703,39 @@ const makeRoomInCache = (incomingKey: string) => {
     if (cache.has(incomingKey) || cache.getStats().keys < cacheMaxKeys) return;
 
     const entriesToRemove = Math.max(1, Math.ceil(cacheMaxKeys * 0.1));
-    // Map iteration order is insertion order. touchCacheKey moves recently
-    // accessed keys to the end, making the leading keys the LRU entries.
-    const oldestKeys = [...cacheAccess.keys()].slice(0, entriesToRemove);
+    // node-cache drops an expired entry only when it is read or at its
+    // periodic check, so most of a full cache is usually dead short-TTL
+    // entries. Remove those first; evicting by age alone throws away live
+    // entries (name lookups, 20-60 s row caches) while the dead ones stay.
+    const now = Date.now();
+    const victims: string[] = [];
+    for (const [key, expiresAt] of cacheAccess) {
+        if (expiresAt <= now) victims.push(key);
+    }
+    if (victims.length < entriesToRemove) {
+        // Map iteration order is insertion order. touchCacheKey moves recently
+        // accessed keys to the end, making the leading keys the LRU entries.
+        const expired = new Set(victims);
+        for (const key of cacheAccess.keys()) {
+            if (victims.length >= entriesToRemove) break;
+            if (!expired.has(key)) victims.push(key);
+        }
+    }
 
-    if (oldestKeys.length > 0) {
-        cache.del(oldestKeys);
-        for (const key of oldestKeys) cacheAccess.delete(key);
+    if (victims.length > 0) {
+        cache.del(victims);
+        for (const key of victims) cacheAccess.delete(key);
     }
 };
 
 const shouldCacheResult = (result: unknown) =>
     !Array.isArray(result) || result.length <= cacheMaxArrayRows;
 
-const touchCacheKey = (key: string) => {
+/** Moves a key to the recently-used end; the value is when its entry expires. */
+const touchCacheKey = (key: string, expiresAt?: number) => {
+    const known = expiresAt ?? cacheAccess.get(key) ?? Number.POSITIVE_INFINITY;
     cacheAccess.delete(key);
-    cacheAccess.set(key, Date.now());
+    cacheAccess.set(key, known);
 };
 
 export const getCached = async <T>(
@@ -1769,7 +1787,7 @@ export const getCached = async <T>(
                 } else {
                     cache.set(key, result, ttl);
                 }
-                touchCacheKey(key);
+                touchCacheKey(key, Date.now() + (ttl ?? DEFAULT_CACHE_TTL_SECONDS) * 1_000);
             } catch (error) {
                 // A full local cache must never turn a successful database/Redis read into a 500.
                 console.error(`Unable to cache ${funcName}:`, error);
