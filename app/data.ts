@@ -2852,18 +2852,38 @@ export interface PlayerSearchResult {
     bgColor: string | null;
 }
 
+type SearchableUser = {user: any; name: string; normalizedName: string; aliases: string[]};
+
+// getCached hands out the same users array until its entry expires, so the
+// lower-cased names are computed once per array instead of on every search.
+const searchIndexes = new WeakMap<object, SearchableUser[]>();
+
+const searchIndexFor = (users: any[]): SearchableUser[] => {
+    let index = searchIndexes.get(users);
+    if (!index) {
+        index = users.map((user) => {
+            const name = String(user.nick || "");
+            return {
+                user,
+                name,
+                normalizedName: name.toLocaleLowerCase(),
+                aliases: Array.isArray(user.twitches)
+                    ? user.twitches.map((alias: unknown) => String(alias).toLocaleLowerCase())
+                    : [],
+            };
+        });
+        searchIndexes.set(users, index);
+    }
+    return index;
+};
+
 export const searchPlayers = async (query: string, limit: number = 8): Promise<PlayerSearchResult[]> => {
     const normalizedQuery = query.trim().toLocaleLowerCase().slice(0, 64);
     if (normalizedQuery.length < 2) return [];
     const safeLimit = boundedInteger(limit, 8, 1, 20);
     const users = await getCached(getAllUsers, "getAllUsers");
-    const matches = (users as any[])
-        .map((user) => {
-            const name = String(user.nick || "");
-            const normalizedName = name.toLocaleLowerCase();
-            const aliases = Array.isArray(user.twitches)
-                ? user.twitches.map((alias: unknown) => String(alias).toLocaleLowerCase())
-                : [];
+    const matches = searchIndexFor(users as any[])
+        .map(({user, name, normalizedName, aliases}) => {
             let score = Number.POSITIVE_INFINITY;
             if (normalizedName === normalizedQuery) score = 0;
             else if (normalizedName.startsWith(normalizedQuery)) score = 1;
