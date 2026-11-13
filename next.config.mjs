@@ -20,41 +20,38 @@ const nextConfig = {
         remotePatterns: [
             {
                 protocol: 'https',
-                hostname: 'mc-heads.net',
+                hostname: 'mc-api.io',
                 port: '',
-                pathname: '/avatar/*/*',
+                pathname: '/render/**',
             },
         ],
     },
 };
 
-const sentryWebpackPluginOptions = {
-// For all available options, see:
-// https://github.com/getsentry/sentry-webpack-plugin#options
-
-// Suppresses source map uploading logs during build
-silent: true,
-org: "jojoe-pacestats",
-project: "javascript-nextjs",
-};
-
 const sentryBuildOptions = {
-// For all available options, see:
-// https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
-
-// Route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
-// This can increase your server load as well as your hosting bill.
-// Note: Check that the configured route will not match with your Next.js middleware, otherwise reporting of client-
-// side errors will fail.
-// Hides source maps from generated client bundles
-hideSourceMaps: true,
-
-// Automatically tree-shake Sentry logger statements to reduce bundle size
-disableLogger: true,
+    // The token is supplied by the production build environment. It needs
+    // project:releases scope so the build can create the release and upload maps.
+    authToken: process.env.SENTRY_AUTH_TOKEN,
+    org: "jojoe-pacestats",
+    project: "javascript-nextjs",
+    // Keep the release injected into the client in sync with the release that
+    // receives source maps. When unset, the SDK falls back to the git revision.
+    release: {
+        name: process.env.SENTRY_RELEASE ?? process.env.VERCEL_GIT_COMMIT_SHA,
+    },
+    // `executors/*.js` and other Turbopack runtime chunks live outside the
+    // default app/page upload paths. Upload all client chunks so their frames
+    // symbolicate in Sentry, then remove maps from the deploy output.
+    widenClientFileUpload: true,
+    sourcemaps: {
+        deleteSourcemapsAfterUpload: true,
+    },
+    // Do not hide upload failures: a successful build without source maps is
+    // otherwise difficult to spot until the next production exception.
+    silent: false,
 };
 
-// The Sentry wrapper injects webpack-only build hooks. Retain those hooks for
-// production source maps, but keep Turbopack development on a native config.
+// Only production builds need release creation and source-map uploads.
 export default process.env.NODE_ENV === "production"
-    ? withSentryConfig(nextConfig, sentryWebpackPluginOptions, sentryBuildOptions)
+    ? withSentryConfig(nextConfig, sentryBuildOptions)
     : nextConfig;

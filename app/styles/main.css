@@ -1014,6 +1014,41 @@ td p {
     padding-left: 10px;
 }
 
+.fastRunsSortButton {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.fastRunsGridHeader .fastRunsGridCell:first-child .fastRunsSortButton {
+    justify-content: flex-start;
+}
+
+.fastRunsSortButton:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid #8ab4f8;
+    outline-offset: 1px;
+}
+
+.fastRunsSortIndicator {
+    color: rgba(230, 230, 230, 0.35);
+    font-size: 8px;
+    line-height: 1;
+}
+
+.fastRunsSortIndicator.active {
+    color: #90caf9;
+}
+
 .fastRunsGridDate .liveIndicator {
     flex: 0 0 auto;
 }

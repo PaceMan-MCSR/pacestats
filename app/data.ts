@@ -2402,6 +2402,11 @@ export type PlayerRunFilter = {
     endValue?: number;
 };
 
+export type PlayerRunSort = {
+    column: PlayerRunFilter["column"];
+    direction: "asc" | "desc";
+};
+
 export interface OffsetPage<T = any> {
     rows: T[];
     rowCount: number;
@@ -2436,7 +2441,8 @@ export const getPlayerRunsOffsetPage = async (
     uuid: string,
     page: number = 0,
     pageSize: number = 25,
-    filters: PlayerRunFilter[] = []
+    filters: PlayerRunFilter[] = [],
+    sort: PlayerRunSort = {column: "date", direction: "desc"}
 ): Promise<OffsetPage> => {
     const bans = await getCached(getBans, "getBans");
     if (bans.includes(uuid)) return {rows: [], rowCount: 0};
@@ -2449,11 +2455,24 @@ export const getPlayerRunsOffsetPage = async (
         uuid,
     ) as any[];
     const matchingRows = filters.length === 0
-        ? history
+        ? [...history]
         : history.filter((run) => filters.every((filter) => matchesPlayerRunFilter(run, filter)));
-    // Redis histories are already newest-first. Sorting also normalizes the
-    // MySQL fallback and protects pagination if a recent row was merged in.
-    matchingRows.sort((left, right) => Number(right.id) - Number(left.id));
+    matchingRows.sort((left, right) => {
+        const leftValue = playerRunFilterValue(left, sort.column);
+        const rightValue = playerRunFilterValue(right, sort.column);
+
+        // Keep missing splits at the bottom in either direction, matching the
+        // useful behavior of the old data grid.
+        if (leftValue === null && rightValue !== null) return 1;
+        if (leftValue !== null && rightValue === null) return -1;
+        if (leftValue !== null && rightValue !== null && leftValue !== rightValue) {
+            return sort.direction === "asc" ? leftValue - rightValue : rightValue - leftValue;
+        }
+
+        // A stable, deterministic tie-breaker prevents rows from moving
+        // between pages when several runs have the same split.
+        return Number(right.id) - Number(left.id);
+    });
     const offset = safePage * safePageSize;
 
     return {

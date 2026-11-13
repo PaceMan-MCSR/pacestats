@@ -32,7 +32,7 @@ export default function RunCard() {
 
 
     const last = getLastSplit(data, false)
-    const headUrl = `https://mc-heads.net/avatar/${data.uuid}/8`
+    const headUrl = `https://mc-api.io/render/FACE/${data.uuid}?size=8`
 
     const start = Math.floor(data.vodOffset + 2)
     const end = Math.floor(data.vodOffset + (data[last.split+ "Rta"] / 1000) + 2)

@@ -38,7 +38,7 @@ export default async function Page(
 
     const nethers = await getCached(getRecentNethers, "getRecentNethers", uuid, 100)
 
-    const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
+    const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
 
     return (<main className="main">
         <div className="container">

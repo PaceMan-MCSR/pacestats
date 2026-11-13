@@ -1,5 +1,11 @@
 import {NextRequest} from "next/server";
-import {getCached, getPlayerRunsOffsetPage, getPlayerRunsPage, type PlayerRunFilter} from "@/app/data";
+import {
+    getCached,
+    getPlayerRunsOffsetPage,
+    getPlayerRunsPage,
+    type PlayerRunFilter,
+    type PlayerRunSort,
+} from "@/app/data";
 import {
     ApiInputError,
     integerParam,
@@ -17,6 +23,7 @@ const filterOperators = new Set([
     "before", "after", "during", "lessThan", "greaterThan", "isNotEmpty", "isEmpty",
 ]);
 const dateFilterOperators = new Set(["before", "after", "during"]);
+const sortDirections = new Set(["asc", "desc"]);
 
 const parseFilters = (raw: string | null): PlayerRunFilter[] => {
     if (!raw) return [];
@@ -55,6 +62,18 @@ const parseFilters = (raw: string | null): PlayerRunFilter[] => {
     });
 };
 
+const parseSort = (column: string | null, direction: string | null): PlayerRunSort => {
+    const normalizedColumn = column ?? "date";
+    const normalizedDirection = direction ?? "desc";
+    if (!filterColumns.has(normalizedColumn) || !sortDirections.has(normalizedDirection)) {
+        throw new ApiInputError("Invalid sort column or direction");
+    }
+    return {
+        column: normalizedColumn as PlayerRunSort["column"],
+        direction: normalizedDirection as PlayerRunSort["direction"],
+    };
+};
+
 export async function GET(request: NextRequest) {
     const limited = rateLimit(request, {namespace: "getPlayerRuns", limit: 120, windowMs: 60_000});
     if (limited) return limited;
@@ -67,13 +86,18 @@ export async function GET(request: NextRequest) {
                 allowed: [10, 25, 50, 100],
             });
             const filters = parseFilters(request.nextUrl.searchParams.get("filters"));
+            const sort = parseSort(
+                request.nextUrl.searchParams.get("sort"),
+                request.nextUrl.searchParams.get("direction")
+            );
             const result = await getCached(
                 getPlayerRunsOffsetPage,
                 "getPlayerRunsOffsetPage",
                 uuid,
                 page,
                 pageSize,
-                filters
+                filters,
+                sort
             );
             return jsonResponse(result, {cacheSeconds: 5, staleSeconds: 15});
         }

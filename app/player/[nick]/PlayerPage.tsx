@@ -26,8 +26,8 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
     users: any
 }) {
     const router = useRouter();
-    const skinUrl = "https://mc-heads.net/body/" + uuid
-    const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
+    const skinUrl = "https://mc-api.io/render/FULL/" + uuid
+    const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
     const [bastionFort, setBastionFort] = useState(bf)
     const nameColor = getNameColor(users, uuid)
     const colours : any = getUserColours(users, uuid)

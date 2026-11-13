@@ -22,7 +22,7 @@ export function FastestAATable({catName, catId, days, data} : {catName: string, 
                             <td className="col-1"><p>{entryIdx + 1}</p></td>
                             <td className="col-10">
                                 <p>
-                                    <img className="avatar dummyAvatar" src="https://mc-heads.net/avatar/COVlD19/8" alt="Loading"/>
+                                    <img className="avatar dummyAvatar" src="https://mc-api.io/render/FACE/COVlD19/JAVA?size=8" alt="Loading"/>
                                 </p>
                                 <div className="loadingSkeleton"></div>
                             </td>

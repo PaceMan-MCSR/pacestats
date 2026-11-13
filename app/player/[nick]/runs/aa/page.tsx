@@ -39,7 +39,7 @@ export default async function Page(
 
     const recentRuns = await getCached(getAllAARuns, "getAllAARuns", uuid)
 
-    const headUrl = "https://mc-heads.net/avatar/" + uuid + "/8"
+    const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
 
     return (<main className="main allRuns">
         <div className="container">

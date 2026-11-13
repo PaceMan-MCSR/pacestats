@@ -3,12 +3,27 @@
 import { ReactSearchAutocomplete } from 'react-search-autocomplete'
 import { useRouter } from 'next/navigation'
 import {SearchName} from "@/app/types";
-import Link from "next/link";
 import { defaultNameColor, getDarkerColor, getNameColor } from "@/app/utils";
-import { useContext, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { UserColoursContext, UsersContext } from "@/app/contexts";
+import { schedulePlayerPrefetch } from "@/app/components/playerPrefetch";
 
 type SearchItem = SearchName & { color?: string | null };
+
+let playerNamesRequest: Promise<SearchItem[]> | undefined;
+
+function loadPlayerNames() {
+    playerNamesRequest ??= fetch("/stats/api/getAllUsers/")
+        .then((response) => {
+            if (!response.ok) throw new Error(`Unable to load player names (${response.status})`);
+            return response.json() as Promise<SearchItem[]>;
+        })
+        .catch((error) => {
+            playerNamesRequest = undefined;
+            throw error;
+        });
+    return playerNamesRequest;
+}
 
 export default function PlayerSearch({data, input, setOutput, userInfo}: {
     data?: SearchName[], input?: any, setOutput?: any, userInfo?: any
@@ -18,14 +33,53 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
     const hasColours = colours?.isCustom
     const router = useRouter()
     const [remoteItems, setRemoteItems] = useState<SearchItem[]>([]);
+    const [loadedItems, setLoadedItems] = useState<SearchItem[] | null>(null);
     const searchController = useRef<AbortController | null>(null);
-    const items = data ?? remoteItems;
+    const searchPrefetches = useRef<Array<() => void>>([]);
+    const items = data ?? loadedItems ?? remoteItems;
     const colourUsers = userInfo ?? contextUserInfo;
 
-    const handleOnSearch = (query: string) => {
+    const prefetchPlayer = (nick: string) => {
+        if (setOutput !== undefined) return;
+        const path = `/player/${nick}`;
+        return schedulePlayerPrefetch(path, () => router.prefetch(path));
+    };
+
+    const clearSearchPrefetches = () => {
+        searchPrefetches.current.forEach((release) => release());
+        searchPrefetches.current = [];
+    };
+
+    useEffect(() => {
         if (data !== undefined) return;
+
+        let active = true;
+        const startLoading = () => {
+            loadPlayerNames()
+                .then((players) => {
+                    if (active) setLoadedItems(players);
+                })
+                .catch(() => {
+                    // Per-query search remains available if the background list fails.
+                });
+        };
+
+        if (document.readyState === "complete") startLoading();
+        else window.addEventListener("load", startLoading, {once: true});
+
+        return () => {
+            active = false;
+            window.removeEventListener("load", startLoading);
+        };
+    }, [data]);
+
+    useEffect(() => () => clearSearchPrefetches(), []);
+
+    const handleOnSearch = (query: string) => {
+        if (data !== undefined || loadedItems !== null) return;
         searchController.current?.abort();
         if (query.trim().length < 2) {
+            clearSearchPrefetches();
             setRemoteItems([]);
             return;
         }
@@ -36,12 +90,20 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
             signal: controller.signal,
         })
             .then((response) => response.ok ? response.json() : [])
-            .then((results) => setRemoteItems(results.map((result: any) => ({
-                id: result.id,
-                nick: result.name,
-                twitches: [],
-                color: result.color,
-            }))))
+            .then((results) => {
+                const nextItems: SearchItem[] = results.map((result: any) => ({
+                    id: result.id,
+                    nick: result.name,
+                    twitches: [],
+                    color: result.color,
+                }));
+                setRemoteItems(nextItems);
+                clearSearchPrefetches();
+                searchPrefetches.current = nextItems
+                    .slice(0, 5)
+                    .map((item: SearchItem) => prefetchPlayer(item.nick))
+                    .filter((release): release is () => void => release !== undefined);
+            })
             .catch((error) => {
                 if (error.name !== "AbortError") setRemoteItems([]);
             });
@@ -59,17 +121,14 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
 
 
     const handleOnHover = (item: any) => {
-        if(setOutput === undefined) {
-            router.prefetch(`/player/${item.nick}`)
-        }
+        prefetchPlayer(item.nick)
     }
 
     const formatResult = (item: any) => {
-        const url = `https://mc-heads.net/avatar/${item.id}/8`
+        const url = `https://mc-api.io/render/FACE/${item.id}?size=8`
         const nameColor = item.color ? `#${item.color}` : getNameColor(colourUsers, item.id);
         return (
             <span style={{ display: 'block', textAlign: 'left' }}>
-                {setOutput === undefined && (<Link href={`/player/${item.nick}`}></Link>)}
                 <img className="avatarSmall" src={url} alt={item.nick} style={{
                     marginTop: '-2px',
                 }}/>

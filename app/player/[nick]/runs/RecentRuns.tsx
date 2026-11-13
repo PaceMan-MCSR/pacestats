@@ -19,6 +19,11 @@ type RunFilter = {
     inMs: number;
 };
 
+type RunSort = {
+    column: string;
+    direction: 'asc' | 'desc';
+};
+
 type RunsPage = {
     rows: any[];
     rowCount: number;
@@ -99,10 +104,11 @@ const prepareRunForDisplay = (run: any, gridIndex: number) => {
     };
 };
 
-export default function RecentRuns({uuid, bf, initialPaginationModel}: {
+export default function RecentRuns({uuid, bf, initialPaginationModel, initialSort}: {
     uuid: string,
     bf: boolean,
     initialPaginationModel: GridPaginationModel,
+    initialSort: RunSort,
 }) {
 
     const router = useRouter();
@@ -127,6 +133,7 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
     }, [paginationModel]);
 
     const [filters, setFilters] = useState<RunFilter[]>([])
+    const [sort, setSort] = useState<RunSort>(initialSort);
     const [rows, setRows] = useState<any[]>([]);
     const [rowCount, setRowCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
@@ -156,8 +163,10 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
         }];
     }));
 
-    const pageKey = useCallback((page: number, pageSize: number, pageFilters: string) =>
-        `${uuid}:${pageSize}:${page}:${pageFilters}`, [uuid]);
+    const serializedSort = `${sort.column}:${sort.direction}`;
+
+    const pageKey = useCallback((page: number, pageSize: number, pageFilters: string, pageSort: string) =>
+        `${uuid}:${pageSize}:${page}:${pageFilters}:${pageSort}`, [uuid]);
 
     const cachedPage = useCallback((key: string) => {
         const cached = pageCache.current.get(key);
@@ -172,8 +181,9 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
         return cached;
     }, []);
 
-    const loadPage = useCallback((page: number, pageSize: number, pageFilters: string) => {
-        const key = pageKey(page, pageSize, pageFilters);
+    const loadPage = useCallback((page: number, pageSize: number, pageFilters: string, pageSort: RunSort) => {
+        const serializedPageSort = `${pageSort.column}:${pageSort.direction}`;
+        const key = pageKey(page, pageSize, pageFilters, serializedPageSort);
         const cached = cachedPage(key);
         if (cached) return Promise.resolve(cached);
 
@@ -185,6 +195,8 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
             page: String(page),
             pageSize: String(pageSize),
             filters: pageFilters,
+            sort: pageSort.column,
+            direction: pageSort.direction,
         });
         const request = fetch(`/stats/api/getPlayerRuns/?${params}`)
             .then(async (response) => {
@@ -211,7 +223,7 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
     const handlePaginationModelChange = useCallback((newModel: GridPaginationModel) => {
         if (newModel.page === paginationModel.page && newModel.pageSize === paginationModel.pageSize) return;
 
-        const cached = cachedPage(pageKey(newModel.page, newModel.pageSize, serializedFilters));
+        const cached = cachedPage(pageKey(newModel.page, newModel.pageSize, serializedFilters, serializedSort));
         if (cached) {
             // Apply cached rows in the same React batch as the page model.
             setRows(cached.rows);
@@ -221,13 +233,12 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
             setIsLoading(true);
         }
         setPaginationModel(newModel);
-    }, [cachedPage, pageKey, paginationModel, serializedFilters]);
+    }, [cachedPage, pageKey, paginationModel, serializedFilters, serializedSort]);
 
     useEffect(() => {
         let active = true;
         const {page, pageSize} = paginationModel;
-        const key = pageKey(page, pageSize, serializedFilters);
-        loadPage(page, pageSize, serializedFilters)
+        loadPage(page, pageSize, serializedFilters, sort)
             .then((loadedPage) => {
                 if (!active) return;
                 setRows(loadedPage.rows);
@@ -235,7 +246,7 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
                 setIsLoading(false);
 
                 if ((page + 1) * pageSize < loadedPage.rowCount) {
-                    void loadPage(page + 1, pageSize, serializedFilters).catch(() => {
+                    void loadPage(page + 1, pageSize, serializedFilters, sort).catch(() => {
                         // Prefetch failures are retried normally if the user visits the page.
                     });
                 }
@@ -249,11 +260,37 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
         return () => {
             active = false;
         };
-    }, [cachedPage, loadPage, pageKey, paginationModel, serializedFilters]);
+    }, [loadPage, paginationModel, serializedFilters, sort]);
+
+    useEffect(() => {
+        const currentParams = new URLSearchParams(window.location.search);
+        currentParams.set('sort', sort.column);
+        currentParams.set('direction', sort.direction);
+        window.history.replaceState({}, '', `?${currentParams.toString()}`);
+    }, [sort]);
+
+    const changeSort = useCallback((column: string) => {
+        setIsLoading(true);
+        setPaginationModel((current) => current.page === 0 ? current : {...current, page: 0});
+        setSort((current) => current.column === column
+            ? {...current, direction: current.direction === 'asc' ? 'desc' : 'asc'}
+            : {column, direction: column === 'date' ? 'desc' : 'asc'});
+    }, []);
+
+    const changeBastionFort = useCallback((nextBastionFort: boolean) => {
+        setBastionFort(nextBastionFort);
+        const hiddenColumns = nextBastionFort
+            ? ['first_structure', 'second_structure']
+            : ['bastion', 'fortress'];
+        if (!hiddenColumns.includes(sort.column)) return;
+        setIsLoading(true);
+        setPaginationModel((current) => current.page === 0 ? current : {...current, page: 0});
+        setSort({column: 'date', direction: 'desc'});
+    }, [sort.column]);
 
     const small = useMediaQuery('(max-width: 768px)');
     const fastColumns = React.useMemo(() => [
-        {field: 'time', label: 'Date', icon: null},
+        {field: 'date', label: 'Date', icon: null},
         {field: 'nether', label: 'Nether', icon: '/stats/nether.webp'},
         bastionFort
             ? {field: 'bastion', label: 'Bastion', icon: '/stats/bastion.webp'}
@@ -272,7 +309,7 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
         <div className="row justify-content-center align-content-center">
             <div className="col-10 col-sm-9 col-md-6 col-lg-12 col-xl-12 col-xxl-12">
                 <div className="topRow">
-                    <BastionFort bastionFort={bastionFort} setBastionFort={setBastionFort}/>
+                    <BastionFort bastionFort={bastionFort} setBastionFort={changeBastionFort}/>
                 </div>
             </div>
         </div>
@@ -299,10 +336,30 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
         <div className="fastRunsGrid" role="grid" aria-busy={isLoading}>
             <div className="fastRunsGridHeader" role="row">
                 {fastColumns.map((column) => (
-                    <div className="fastRunsGridCell" role="columnheader" key={column.field}>
-                        {small && column.icon
-                            ? <img src={column.icon} alt={column.label} className="icon"/>
-                            : column.label}
+                    <div
+                        className="fastRunsGridCell"
+                        role="columnheader"
+                        aria-sort={sort.column === column.field
+                            ? (sort.direction === 'asc' ? 'ascending' : 'descending')
+                            : 'none'}
+                        key={column.field}
+                    >
+                        <button
+                            type="button"
+                            className="fastRunsSortButton"
+                            aria-label={`Sort by ${column.label}${sort.column === column.field
+                                ? `, currently ${sort.direction === 'asc' ? 'ascending' : 'descending'}`
+                                : ''}`}
+                            onClick={() => changeSort(column.field)}
+                        >
+                            {small && column.icon
+                                ? <img src={column.icon} alt={column.label} className="icon"/>
+                                : <span>{column.label}</span>}
+                            <span
+                                className={`fastRunsSortIndicator${sort.column === column.field ? ' active' : ''}`}
+                                aria-hidden="true"
+                            >{sort.column === column.field && sort.direction === 'desc' ? '▼' : '▲'}</span>
+                        </button>
                     </div>
                 ))}
             </div>
@@ -317,7 +374,7 @@ export default function RecentRuns({uuid, bf, initialPaginationModel}: {
                         onMouseEnter={() => router.prefetch(`/run/${run.id}`)}
                     >
                         {fastColumns.map((column) => {
-                            if (column.field === 'time') {
+                            if (column.field === 'date') {
                                 const start = Number(run.lastUpdated) / 1000;
                                 return <div className="fastRunsGridCell fastRunsGridDate" role="gridcell" key={column.field}>
                                     {run.twitch !== null && <span className="liveIndicator"/>}
