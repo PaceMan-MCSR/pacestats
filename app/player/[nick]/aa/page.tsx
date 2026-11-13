@@ -76,7 +76,13 @@ export default async function Page(
 
     let realNick = fixDisplayName(names.nick)
     const uuid = names.uuid
-    const lb = await getCached(getAALB, "getAALB", days + " day")
+    // Independent reads: start them together instead of one after another.
+    const [lb, recentRuns, nph, twitches] = await Promise.all([
+        getCached(getAALB, "getAALB", days + " day"),
+        getCached(getRecentAARuns, "getRecentAARuns", uuid, 4),
+        getCached(getNPH, "getNPH", uuid, days * 24, days * 24),
+        getCached(getTwitchAccounts, "getTwitchAccounts", uuid) as Promise<{ twitch: string, time: number }[]>,
+    ])
     const filters = [
         CategoryType.AVG,
         CategoryType.COUNT,
@@ -118,10 +124,6 @@ export default async function Page(
         }
     }
 
-    const recentRuns = await getCached(getRecentAARuns, "getRecentAARuns", uuid, 4)
-    const nph = await getCached(getNPH, "getNPH", uuid, days * 24, days * 24)
-
-    const twitches = await getCached(getTwitchAccounts, "getTwitchAccounts", uuid) as { twitch: string, time: number }[]
     let t = [];
     if(twitches !== null) {
         t = await Promise.all(twitches.map(async (t): Promise<any> => {

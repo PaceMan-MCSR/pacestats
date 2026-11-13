@@ -78,11 +78,13 @@ export default async function Page(
     let realNick = fixDisplayName(names.nick)
     const uuid = names.uuid
 
-    const data = await fetchPlayerStatsFromRedis(uuid, days);
-    const recentRuns = await getCached(getPlayerRuns, "getPlayerRuns", uuid, 4)
-    const nph = await fetchNphFromRedis(uuid, days)
-    const users = await getCached(getAllUserInfo, "getAllUserInfo")
-
-    const twitches = await fetchTwitchesFromRedis(uuid);
+    // Independent reads: start them together instead of one after another.
+    const [data, recentRuns, nph, users, twitches] = await Promise.all([
+        fetchPlayerStatsFromRedis(uuid, days),
+        getCached(getPlayerRuns, "getPlayerRuns", uuid, 4),
+        fetchNphFromRedis(uuid, days),
+        getCached(getAllUserInfo, "getAllUserInfo"),
+        fetchTwitchesFromRedis(uuid),
+    ]);
     return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} twitches={twitches} nph={nph} data={data} days={days} bf={bastionFort} users={users} />
 }

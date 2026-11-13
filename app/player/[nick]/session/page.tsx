@@ -70,10 +70,12 @@ export default async function Page(
     let realNick = fixDisplayName(names.nick)
     const uuid = names.uuid
 
-    const session = await getCached(getSessionStats, "getSessionStats", uuid, hours, hoursBetween)
-    const nph = await getCached(getNPH, "getNPH", uuid, hours, hoursBetween)
-
-    const twitches = await getCached(getTwitchAccounts, "getTwitchAccounts", uuid) as { twitch: string, time: number }[]
+    // Independent reads: start them together instead of one after another.
+    const [session, nph, twitches] = await Promise.all([
+        getCached(getSessionStats, "getSessionStats", uuid, hours, hoursBetween),
+        getCached(getNPH, "getNPH", uuid, hours, hoursBetween),
+        getCached(getTwitchAccounts, "getTwitchAccounts", uuid) as Promise<{ twitch: string, time: number }[]>,
+    ])
     let t = [];
     if(twitches !== null) {
         t = await Promise.all(twitches.map(async (t): Promise<any> => {
