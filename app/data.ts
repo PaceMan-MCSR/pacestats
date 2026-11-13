@@ -9,7 +9,7 @@ import {
 } from "@/app/utils";
 import mysql from 'mysql2/promise';
 import type {QueryResult} from 'mysql2';
-import { Entry, FastestEntry } from "@/app/types";
+import { Entry } from "@/app/types";
 import {calculateAvg, trimmedStats, type TrimmedStats} from "@/app/trimmedAverage";
 import {
     bucketStart,
@@ -737,7 +737,6 @@ const ttls = {
         "7 day": 30,
         "30 day": 30
     },
-    getFastestLeaderboards: 60 * 30,
     getLiveRuns: 5,
     getWorldLiveData: 5,
     getNPH: 5,
@@ -745,7 +744,6 @@ const ttls = {
     getRecentNethers: 20,
     getUUIDByAccessKey: 60 * 30,
     getRunId: 60 * 30,
-    getNPHLeaderboards: 30,
     getAALB: 60 * 10,
     getTrimmedAALB: 60 * 10,
     jude: 30,
@@ -2375,222 +2373,6 @@ export const getAALB = async (interval: string = "30 DAY") => {
         console.error(`Unable to read AA leaderboards for ${days} days from Redis:`, error);
     }
     return calculateAALeaderboardsFromDatabase(`${days} DAY`);
-};
-
-export const getNPHLeaderboards = async (days: number) => {
-    const safeDays = boundedInteger(days, 30, 1, MAX_LOOKBACK_DAYS);
-
-    let query = `SELECT pace.nickname, pace.uuid, pace.nether as nether, wallTime, playTime, UNIX_TIMESTAMP(nethers.insertTime) as time
-        FROM nethers INNER JOIN pace ON nethers.runId=pace.id 
-        WHERE nethers.insertTime >= NOW() - INTERVAL ? DAY
-        ORDER BY nethers.insertTime DESC, nethers.id DESC;`;
-
-    const [rows, _] = await (await getConn()).execute<any[]>(
-        query,
-        [mysqlIntegerParam(safeDays)]
-    );
-    const nickMap = new Map<string, string>()
-    let uuids: string[] = []
-    // @ts-ignore
-    for (let row of rows) {
-        if (!uuids.includes(row["uuid"])) {
-            uuids.push(row["uuid"])
-        }
-    }
-
-    const data: {[uuid: string] : {
-        enters: number,
-        enterTime: number,
-        wallTime: number,
-        playTime: number
-    } } = {};
-
-    let output: {
-        uuid: string,
-        nick: string,
-        qty: number,
-        avg: number,
-        nph: number
-    }[] = [];
-
-    for (let uuid of uuids) {
-        data[uuid] = {enters: 0, enterTime: 0, wallTime: 0, playTime: 0}
-    }
-
-    // @ts-ignore
-    for (let row of rows) {
-        const uuid = row["uuid"]
-        if (!nickMap.has(uuid)) {
-            nickMap.set(row["uuid"], row["nickname"])
-        }
-        data[uuid]["enterTime"] += row["nether"]
-        data[uuid]["wallTime"] += row["wallTime"]
-        data[uuid]["playTime"] += row["playTime"]
-        data[uuid]["enters"] += 1
-    }
-
-
-    for (let uuid in data) {
-        const wallTime = data[uuid]["wallTime"]
-        const playTime = data[uuid]["playTime"]
-        const enterTime = data[uuid]["enterTime"]
-        const qty = data[uuid]["enters"]
-        const avg = enterTime / qty
-        /*if(qty < 500 || avg > 95000){
-            continue
-        }*/
-
-        const nph = qty / (((wallTime + playTime) / 1000) / 60 / 60)
-
-        output.push({
-            uuid: uuid,
-            nick: nickMap.get(uuid) as string,
-            qty: qty,
-            avg: avg,
-            nph: roundNumber(nph)
-        })
-    }
-
-    return output;
-};
-
-export const getFastestLeaderboards = async (interval: string = "30 DAY") => {
-    const safeDays = intervalDays(interval);
-
-    // Define stats categories
-    const categories = [
-        "nether",
-        "bastion",
-        "first_structure",
-        "second_structure",
-        "fortress",
-        "first_portal",
-        "second_portal",
-        "stronghold",
-        "end",
-        "finish"
-    ]
-
-    // Init categories
-    let leaderboards: { [category: string]: FastestEntry[] } = {}
-    for (const category of categories) {
-        leaderboards[category] = []
-    }
-
-    const [rows, fields] = await (await getConn()).execute(
-        `SELECT id, nickname, uuid, 
-        nether, bastion, fortress, first_portal, second_portal, stronghold, end, finish,
-        lootBastion, obtainObsidian, obtainCryingObsidian, obtainRod
-        FROM pace WHERE insertTime >= NOW() - INTERVAL ? DAY ORDER BY insertTime DESC, id DESC;`,
-        [mysqlIntegerParam(safeDays)]
-    )
-
-    const nickMap = new Map<string, string>()
-
-    let splitData: {
-        [uuid: string]: {
-            [column: string]: { time: number, id: number }[]
-        }
-    } = {}
-
-    let uuids: string[] = []
-    // @ts-ignore
-    for (let row of rows) {
-        if (!uuids.includes(row["uuid"])) {
-            uuids.push(row["uuid"])
-        }
-    }
-
-    for (let uuid of uuids) {
-        splitData[uuid] = {}
-        for (const category of categories) {
-            splitData[uuid][category] = []
-        }
-        splitData[uuid]["first_structure"] = []
-        splitData[uuid]["second_structure"] = []
-    }
-
-    // @ts-ignore
-    for (let row of rows) {
-        const uuid = row["uuid"]
-        const bastion = row["bastion"]
-        const fortress = row["fortress"]
-        const firstStructure = getFirstStructure(bastion, fortress)
-        const secondStructure = getSecondStructure(bastion, fortress)
-        for (const category of categories) {
-            // Special case: 1st struct
-            if(category === "first_structure"){
-                if(firstStructure !== null){
-                    splitData[row["uuid"]]["first_structure"].push({time: firstStructure, id: row["id"]})
-                }
-                continue
-            }
-            // Special case: 2nd struct
-            if(category === "second_structure"){
-                if(secondStructure !== null){
-                    const id = row["id"]
-                    if(id >= 187307){ // when context logging was added, march 29th 2024
-                        const rod = row["obtainRod"]
-                        if(secondStructure === bastion && (rod === null || rod > secondStructure)){
-                            continue
-                        }
-                        if(secondStructure === fortress && (fortress - bastion < 50000)){
-                            continue
-                        }
-                    }
-                    splitData[row["uuid"]]["second_structure"].push({time: secondStructure, id: row["id"]})
-                }
-                continue
-            }
-            // Default, fetch stat from row
-            if (row[category] !== null) {
-                if (!nickMap.has(uuid)) {
-                    nickMap.set(row["uuid"], row["nickname"])
-                }
-                if(!splitData[uuid]){
-                    splitData[uuid] = {}
-                }
-                if(!splitData[uuid][category]){
-                    splitData[uuid][category] = []
-                }
-                splitData[uuid][category].push({time: row[category], id: row["id"]})
-            }
-        }
-    }
-
-    for (let uuid in splitData) {
-        for (const cat of categories) {
-            let val = 0
-            if(!splitData[uuid][cat] || splitData[uuid][cat].length === 0){
-                continue
-            }
-            val = Math.min(...splitData[uuid][cat].map((a) => a.time))
-            if(val > 0) {
-                // @ts-ignore
-                let runId = splitData[uuid][cat].find((a) => a.time === val).id
-                leaderboards[cat].push({
-                    uuid: uuid,
-                    name: nickMap.get(uuid) as string,
-                    value: val,
-                    runId: runId
-                })
-            }
-        }
-    }
-
-
-    // Sort and truncate categories
-    for (const category of categories) {
-        let cat = leaderboards[category]
-        if(cat == null || cat.length === 0){
-            continue
-        }
-        // remove empty values
-        cat = cat.filter((a) => a.value > 0)
-        cat = cat.sort((a, b) => a.value - b.value)
-        leaderboards[category] = cat
-    }
-    return leaderboards;
 };
 
 export const getRecentNethers = async (uuid: string, limit: number = 100, liveOnly: boolean = false) => {
