@@ -8,13 +8,17 @@ import {
     acquireRedisLock,
     deleteKeysIfLeaseHeld,
     envInt,
+    forgetChangedDigests,
     LockUnavailableError,
     publishStagedEntries,
+    readDigestLedger,
     replaceManifest,
     scanKeys,
     setHashIfLeaseHeld,
     setStringIfLeaseHeld,
+    stageChangedJsonEntries,
     stageJsonEntries,
+    writeDigestLedger,
     type RedisLease,
     type StagedKey,
 } from "./cache-runtime";
@@ -252,22 +256,6 @@ function partitionRowsByDays<T extends { insertTime: Date }>(
     return partitions;
 }
 
-function partitionNetherRowsByDays(
-    rows: NetherPaceRow[],
-    days: readonly number[],
-    asOfMs: number,
-): Map<number, NetherPaceRow[]> {
-    const partitions = new Map(days.map((day) => [day, [] as NetherPaceRow[]]));
-    const asOfSeconds = asOfMs / 1_000;
-    for (const row of rows) {
-        const ageSeconds = asOfSeconds - row.time;
-        for (const day of days) {
-            if (day === 9999 || ageSeconds <= day * 86_400) partitions.get(day)!.push(row);
-        }
-    }
-    return partitions;
-}
-
 type PaceMinimum = {time: number; id: number; insertTime: Date};
 type PacePlayerAccumulator = {
     name: string;
@@ -415,17 +403,58 @@ function finalizePacePlayers(players: Map<string, PacePlayerAccumulator>, days: 
     return {full: leaderboards, top, fastest};
 }
 
-async function calculateLeaderboards(rows: PaceRow[], days: number, pacer?: CachePacer): Promise<{
-    full: Leaderboards;
-    top: Leaderboards;
-    fastest: { [category: string]: FastestEntry[] };
-}> {
-    const players = new Map<string, PacePlayerAccumulator>();
+/**
+ * Accumulate every period from one pass over the newest-first source rows.
+ * Each period's accumulator receives its rows in the same order as a
+ * separate pass over that period would, and pacing counts source rows.
+ */
+async function accumulatePacePeriods(
+    rows: PaceRow[],
+    days: readonly number[],
+    asOfMs: number,
+    pacer?: CachePacer,
+): Promise<Map<number, Map<string, PacePlayerAccumulator>>> {
+    const periods = days.map((day) => ({
+        day,
+        maxAgeMs: day * 86_400_000,
+        players: new Map<string, PacePlayerAccumulator>(),
+    }));
     for (let index = 0; index < rows.length; index++) {
-        accumulatePaceRow(players, rows[index]);
+        const row = rows[index];
+        const ageMs = asOfMs - row.insertTime.getTime();
+        for (const period of periods) {
+            if (period.day === 9999 || ageMs <= period.maxAgeMs) accumulatePaceRow(period.players, row);
+        }
         if (pacer && (index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
     }
-    return finalizePacePlayers(players, days);
+    return new Map(periods.map(({day, players}) => [day, players]));
+}
+
+/** The NPH counterpart of accumulatePacePeriods, with calculateNph's filters. */
+async function accumulateNphPeriods(
+    rows: NetherPaceRow[],
+    days: readonly number[],
+    asOfMs: number,
+    pacer?: CachePacer,
+): Promise<Map<number, Map<string, NphAccumulator>>> {
+    const asOfSeconds = asOfMs / 1_000;
+    const periods = days.map((day) => ({
+        day,
+        cutoffSeconds: day === 9999 ? Number.NEGATIVE_INFINITY : asOfMs / 1000 - day * 86_400,
+        grouped: new Map<string, NphAccumulator>(),
+    }));
+    for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
+        const ageSeconds = asOfSeconds - row.time;
+        for (const period of periods) {
+            if (
+                (period.day === 9999 || ageSeconds <= period.day * 86_400)
+                && row.time >= period.cutoffSeconds
+            ) accumulateNphRow(period.grouped, row);
+        }
+        if (pacer && (index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
+    }
+    return new Map(periods.map(({day, grouped}) => [day, grouped]));
 }
 
 async function calculateAaLeaderboards(rows: AaRow[], pacer?: CachePacer): Promise<Leaderboards> {
@@ -577,22 +606,6 @@ function finalizeNph(grouped: Map<string, NphAccumulator>, days: number, asOfMs:
         }]);
     }
     return output;
-}
-
-async function calculateNph(
-    rows: NetherPaceRow[],
-    days: number,
-    asOfMs: number,
-    pacer?: CachePacer,
-): Promise<Array<[string, unknown]>> {
-    const cutoffSeconds = days === 9999 ? Number.NEGATIVE_INFINITY : asOfMs / 1000 - days * 86_400;
-    const grouped = new Map<string, NphAccumulator>();
-    for (let index = 0; index < rows.length; index++) {
-        const row = rows[index];
-        if (row.time >= cutoffSeconds) accumulateNphRow(grouped, row);
-        if (pacer && (index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
-    }
-    return finalizeNph(grouped, days, asOfMs);
 }
 
 async function fetchUserData(conn: Connection): Promise<{users: CachedUser[]; details: Array<[string, unknown]>}> {
@@ -1055,6 +1068,19 @@ async function main(): Promise<void> {
             lease: lock,
         };
         conn = await mysql.createConnection(mysqlConfig);
+        const digestLedger = await readDigestLedger(redis, `cache:digest:${scope}`);
+        const retainedDynamic: string[] = [];
+        // Per-player values rarely change between runs (most players have no
+        // runs in a period at all), so stage only values whose content differs
+        // from what was last published; the rest keep their key and get their
+        // TTL renewed.
+        const stageDynamic = async (entries: Iterable<[string, unknown]>) => {
+            const result = await stageChangedJsonEntries(
+                redis, entries, generation, batchSize, stagingTtlSeconds, digestLedger, targetTtlSeconds, lock!,
+            );
+            stagedDynamic.push(...result.staged);
+            retainedDynamic.push(...result.retained);
+        };
 
         const [asOfRows] = await conn.query("SELECT NOW(3) AS asOf") as any;
         const asOf = new Date(asOfRows[0].asOf);
@@ -1096,9 +1122,7 @@ async function main(): Promise<void> {
                 stagedFixed.push(...await stageJsonEntries(
                     redis, [["users", users]], generation, 1, stagingTtlSeconds,
                 ));
-                stagedDynamic.push(...await stageJsonEntries(
-                    redis, userData.details, generation, batchSize, stagingTtlSeconds,
-                ));
+                await stageDynamic(userData.details);
             } else {
                 users = await readUsersFromRedis(redis);
                 retainedIdentityTargets = await scanKeys(redis, "users:twitch_details:*");
@@ -1118,9 +1142,7 @@ async function main(): Promise<void> {
                     stagedFixed.push(...await stageJsonEntries(
                         redis, [["users", users]], generation, 1, stagingTtlSeconds,
                     ));
-                    stagedDynamic.push(...await stageJsonEntries(
-                        redis, userData.details, generation, batchSize, stagingTtlSeconds,
-                    ));
+                    await stageDynamic(userData.details);
                 }
             }
         }
@@ -1132,9 +1154,7 @@ async function main(): Promise<void> {
         if (full) {
             const pace = await measure("pace", () => buildFullPaceCaches(conn!, asOf, sqlBatchSize, lock!, pacer));
             applyCachedNames(pace.leaderboards.full, paceCategories, users, pace.leaderboards.fastest);
-            stagedDynamic.push(...await stageJsonEntries(
-                redis, calculatePlayerStats(users, pace.leaderboards.full, 9999), generation, batchSize, stagingTtlSeconds,
-            ));
+            await stageDynamic(calculatePlayerStats(users, pace.leaderboards.full, 9999));
             const fixed: Array<[string, unknown]> = [
                 ["topLeaderboards:9999day", pace.leaderboards.top],
                 ["leaderboards:9999day", pace.leaderboards.full],
@@ -1153,28 +1173,31 @@ async function main(): Promise<void> {
 
             await pacingPause(pacer);
             const nph = await measure("nph", () => buildFullNphCache(conn!, asOf, asOfMs, sqlBatchSize, lock!, pacer));
-            stagedDynamic.push(...await stageJsonEntries(
-                redis, nph.entries, generation, batchSize, stagingTtlSeconds,
-            ));
+            await stageDynamic(nph.entries);
             periodCounts.get(9999)!.nethers = nph.playerCount;
         } else {
             const paceStartedAt = Date.now();
             const paceRows = await fetchPaceRows(conn, cutoff, asOf);
-            const pacePeriods = partitionRowsByDays(paceRows, days, asOfMs);
+            const pacePeriods = await accumulatePacePeriods(paceRows, days, asOfMs, pacer);
+            const periodRowCounts = new Map(days.map((day) => [day, 0]));
+            for (const row of paceRows) {
+                const ageMs = asOfMs - row.insertTime.getTime();
+                for (const day of days) {
+                    if (day === 9999 || ageMs <= day * 86_400_000) periodRowCounts.set(day, periodRowCounts.get(day)! + 1);
+                }
+            }
             for (const day of days) {
                 lock.assertHeld();
-                const periodRows = pacePeriods.get(day)!;
-                const leaderboards = await calculateLeaderboards(periodRows, day, pacer);
-                stagedDynamic.push(...await stageJsonEntries(
-                    redis, calculatePlayerStats(users, leaderboards.full, day), generation, batchSize, stagingTtlSeconds,
-                ));
+                const leaderboards = finalizePacePlayers(pacePeriods.get(day)!, day);
+                pacePeriods.delete(day);
+                await stageDynamic(calculatePlayerStats(users, leaderboards.full, day));
                 const fixed: Array<[string, unknown]> = [
                     [`topLeaderboards:${day}day`, leaderboards.top],
                     [`leaderboards:${day}day`, leaderboards.full],
                     [`fastestLeaderboards:${day}day`, leaderboards.fastest],
                 ];
                 stagedFixed.push(...await stageJsonEntries(redis, fixed, generation, fixed.length, stagingTtlSeconds));
-                periodCounts.set(day, {pace: periodRows.length, aa: 0, nethers: 0});
+                periodCounts.set(day, {pace: periodRowCounts.get(day)!, aa: 0, nethers: 0});
                 await pacingPause(pacer);
             }
             paceRows.length = 0;
@@ -1198,10 +1221,11 @@ async function main(): Promise<void> {
 
             const nphStartedAt = Date.now();
             const netherRows = await fetchNetherRows(conn, cutoff, asOf);
-            const netherPeriods = partitionNetherRowsByDays(netherRows, days, asOfMs);
+            const netherPeriods = await accumulateNphPeriods(netherRows, days, asOfMs, pacer);
             for (const day of days) {
-                const periodEntries = await calculateNph(netherPeriods.get(day)!, day, asOfMs, pacer);
-                stagedDynamic.push(...await stageJsonEntries(redis, periodEntries, generation, batchSize, stagingTtlSeconds));
+                const periodEntries = finalizeNph(netherPeriods.get(day)!, day, asOfMs);
+                netherPeriods.delete(day);
+                await stageDynamic(periodEntries);
                 periodCounts.get(day)!.nethers = periodEntries.length;
                 await pacingPause(pacer);
             }
@@ -1227,6 +1251,7 @@ async function main(): Promise<void> {
         // Publish each period as a compact compatibility group. Dynamic keys are
         // renamed in bounded transactions; the small fixed board set for that
         // period is then switched in one atomic transaction.
+        await forgetChangedDigests(redis, digestLedger, lock);
         const userDynamic = stagedDynamic.filter(({ target }) => target.startsWith("users:twitch_details:"));
         const userFixed = stagedFixed.filter(({ target }) => target === "users");
         lock.assertHeld();
@@ -1250,12 +1275,19 @@ async function main(): Promise<void> {
                 generation,
                 asOf: asOf.toISOString(),
                 publishedAt: new Date().toISOString(),
-                dynamicKeyCount: String(periodDynamic.length),
+                dynamicKeyCount: String(
+                    periodDynamic.length + retainedDynamic.filter((target) => target.endsWith(suffix)).length,
+                ),
+                changedDynamicKeyCount: String(periodDynamic.length),
                 fixedKeyCount: String(periodFixed.length),
             }, lock);
         }
 
-        const dynamicTargets = [...stagedDynamic.map(({target}) => target), ...retainedIdentityTargets];
+        const dynamicTargets = [
+            ...stagedDynamic.map(({target}) => target),
+            ...retainedDynamic,
+            ...retainedIdentityTargets,
+        ];
         const legacyStaleDeleted = dynamicManifestWasPresent
             ? 0
             : await removeLegacyStaleDynamicKeys(redis, scope, dynamicTargets, batchSize, lock);
@@ -1268,6 +1300,7 @@ async function main(): Promise<void> {
             [],
             manifestBatchSize,
         );
+        await writeDigestLedger(redis, digestLedger, dynamicTargets, lock);
         phaseTimingsMs.publish = Date.now() - publishStartedAt;
         sampleMemory();
         lock.assertHeld();
@@ -1278,6 +1311,7 @@ async function main(): Promise<void> {
             durationMs: String(Date.now() - startedAt),
             fixedKeyCount: String(stagedFixed.length),
             dynamicKeyCount: String(dynamicTargets.length),
+            changedDynamicKeyCount: String(stagedDynamic.length),
             staleKeysDeleted: String(staleDeleted),
             peakRssBytes: String(peakRssBytes),
             phaseTimingsMs: JSON.stringify(phaseTimingsMs),
@@ -1297,7 +1331,8 @@ async function main(): Promise<void> {
             await acknowledgeIdentityOutboxClaims(conn, identityClaims, Math.min(sqlBatchSize, 500));
         }
         console.log(
-            `Published generation ${generation} (${stagedFixed.length} fixed, ${stagedDynamic.length} dynamic, `
+            `Published generation ${generation} (${stagedFixed.length} fixed, ${stagedDynamic.length} changed and `
+            + `${retainedDynamic.length} unchanged dynamic, `
             + `${staleDeleted} stale removed) in ${Date.now() - startedAt}ms.`,
         );
     } finally {

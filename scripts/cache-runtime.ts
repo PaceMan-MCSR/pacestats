@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type Redis from "ioredis";
 
 const publishCommandRegistered = new WeakSet<object>();
@@ -144,6 +144,183 @@ export async function stageJsonEntries(
     }
     await flush();
     return staged;
+}
+
+/**
+ * Content digests of the dynamic keys a job published, kept in one Redis hash
+ * per scope (`target -> digest`). Unchanged values can then skip staging and
+ * renaming entirely; only their TTL is renewed.
+ */
+export interface DigestLedger {
+    key: string;
+    previous: Map<string, string>;
+    /** Digests of values staged in this run, to record after publishing. */
+    changed: Map<string, string>;
+}
+
+export function contentDigest(serialized: string): string {
+    return createHash("sha1").update(serialized).digest("base64");
+}
+
+export async function readDigestLedger(redis: Redis, key: string): Promise<DigestLedger> {
+    const stored = await redis.hgetall(key);
+    return {key, previous: new Map(Object.entries(stored)), changed: new Map()};
+}
+
+/**
+ * Stage only the JSON entries whose serialized value differs from the last
+ * published one. An entry with a matching digest is kept as it is when its
+ * key still exists (its TTL is renewed, or it is persisted for ttl 0); a
+ * missing key is staged again. Returns the staged keys and the targets kept.
+ */
+export async function stageChangedJsonEntries(
+    redis: Redis,
+    entries: Iterable<[string, unknown]>,
+    generation: string,
+    batchSize: number,
+    stagingTtlSeconds: number,
+    ledger: DigestLedger,
+    targetTtlSeconds: number,
+    lease: RedisLease,
+): Promise<{staged: StagedKey[]; retained: string[]}> {
+    const staged: StagedKey[] = [];
+    const retained: string[] = [];
+    let stageBatch: Array<[string, string]> = [];
+    let keepBatch: Array<[string, string, string]> = [];
+    const renewScript = `
+        if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+            return redis.error_reply('CACHE_LOCK_LOST')
+        end
+        local ttl = tonumber(ARGV[2])
+        local missing = {}
+        for index = 2, #KEYS do
+            if redis.call('EXISTS', KEYS[index]) == 1 then
+                if ttl > 0 then
+                    redis.call('EXPIRE', KEYS[index], ttl)
+                else
+                    redis.call('PERSIST', KEYS[index])
+                end
+            else
+                missing[#missing + 1] = index - 2
+            end
+        end
+        return missing
+    `;
+
+    const flushStage = async () => {
+        if (stageBatch.length === 0) return;
+        const pipeline = redis.pipeline();
+        for (const [target, serialized] of stageBatch) {
+            const staging = stagingKey(generation, target);
+            pipeline.call("JSON.SET", staging, "$", serialized);
+            pipeline.expire(staging, stagingTtlSeconds);
+            staged.push({target, staging});
+        }
+        assertRedisResults(await pipeline.exec(), `staging ${stageBatch.length} JSON cache entries`);
+        stageBatch = [];
+    };
+    const flushKeep = async () => {
+        if (keepBatch.length === 0) return;
+        const batch = keepBatch;
+        keepBatch = [];
+        lease.assertHeld();
+        const missing = new Set((await redis.eval(
+            renewScript,
+            batch.length + 1,
+            lease.key,
+            ...batch.map(([target]) => target),
+            lease.token,
+            String(targetTtlSeconds),
+        ) as number[]).map(Number));
+        lease.assertHeld();
+        for (let index = 0; index < batch.length; index++) {
+            const [target, serialized, digest] = batch[index];
+            if (missing.has(index)) {
+                ledger.changed.set(target, digest);
+                stageBatch.push([target, serialized]);
+            } else {
+                retained.push(target);
+            }
+        }
+        if (stageBatch.length >= batchSize) await flushStage();
+    };
+
+    for (const [target, value] of entries) {
+        const serialized = JSON.stringify(value);
+        const digest = contentDigest(serialized);
+        if (ledger.previous.get(target) === digest) {
+            keepBatch.push([target, serialized, digest]);
+            if (keepBatch.length >= batchSize * 4) await flushKeep();
+        } else {
+            ledger.changed.set(target, digest);
+            stageBatch.push([target, serialized]);
+            if (stageBatch.length >= batchSize) await flushStage();
+        }
+    }
+    await flushKeep();
+    await flushStage();
+    return {staged, retained};
+}
+
+const digestLedgerScript = `
+        if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+            return redis.error_reply('CACHE_LOCK_LOST')
+        end
+        if ARGV[2] == 'set' then
+            for index = 3, #ARGV, 2 do redis.call('HSET', KEYS[2], ARGV[index], ARGV[index + 1]) end
+        else
+            for index = 3, #ARGV do redis.call('HDEL', KEYS[2], ARGV[index]) end
+        end
+        return 1
+    `;
+
+/**
+ * Forget the recorded digests of every target about to be overwritten. Call
+ * before publishing: if the job dies between publishing and recording the new
+ * digests, a later run must not mistake the old digest for the live value.
+ */
+export async function forgetChangedDigests(
+    redis: Redis,
+    ledger: DigestLedger,
+    lease: RedisLease,
+    batchSize = 1_000,
+): Promise<void> {
+    const targets = [...ledger.changed.keys()].filter((target) => ledger.previous.has(target));
+    for (let offset = 0; offset < targets.length; offset += batchSize) {
+        lease.assertHeld();
+        await redis.eval(digestLedgerScript, 2, lease.key, ledger.key, lease.token, "del",
+            ...targets.slice(offset, offset + batchSize));
+    }
+    lease.assertHeld();
+}
+
+/**
+ * Record the digests of the values just published and forget targets that no
+ * longer exist. Call only after the staged values were published: a ledger
+ * that lags behind Redis only causes a rewrite, never a skipped one.
+ */
+export async function writeDigestLedger(
+    redis: Redis,
+    ledger: DigestLedger,
+    currentTargets: Iterable<string>,
+    lease: RedisLease,
+    batchSize = 1_000,
+): Promise<void> {
+    const current = new Set(currentTargets);
+    const removed = [...ledger.previous.keys()].filter((target) => !current.has(target));
+    const changed = [...ledger.changed].filter(([target]) => current.has(target));
+    const script = digestLedgerScript;
+    for (let offset = 0; offset < changed.length; offset += batchSize) {
+        lease.assertHeld();
+        await redis.eval(script, 2, lease.key, ledger.key, lease.token, "set",
+            ...changed.slice(offset, offset + batchSize).flat());
+    }
+    for (let offset = 0; offset < removed.length; offset += batchSize) {
+        lease.assertHeld();
+        await redis.eval(script, 2, lease.key, ledger.key, lease.token, "del",
+            ...removed.slice(offset, offset + batchSize));
+    }
+    lease.assertHeld();
 }
 
 export async function stageStringEntries(

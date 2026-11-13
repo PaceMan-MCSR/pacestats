@@ -43,6 +43,14 @@ legacy readers do not consume a generation pointer, so all per-player keys
 cannot switch in one atomic operation. Metadata is advanced only after every
 publish and stale-key cleanup succeeds.
 
+`cache:digest:normal` and `cache:digest:full` hash each dynamic key the
+aggregate job published to a SHA-1 of its JSON. A run stages only values whose
+digest changed (or whose key is missing); the others keep their key and have
+their TTL renewed in a lock-guarded Lua batch. Digests of keys about to be
+overwritten are deleted before publishing and recorded after it, so a crash
+can only cause a rewrite, never a skipped one. Deleting a digest hash forces
+a full rewrite on the next run.
+
 `cache:manifest:*` sets let successful jobs delete keys that disappeared from
 the source. Each dynamic-key rename records the target in its manifest in the
 same lock-guarded Lua operation, closing the publish-before-manifest crash gap.
