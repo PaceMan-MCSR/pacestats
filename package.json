@@ -20,6 +20,7 @@
     "cache:runs:full": "tsx scripts/recent.ts --full",
     "cache:profile": "tsx scripts/profile-cache.ts",
     "cache:benchmark:incremental": "tsx scripts/benchmark-incremental.ts",
+    "verify:trimmed-average": "tsx scripts/verify-trimmed-average.ts",
     "ws:start": "node ws/index.mjs"
   },
   "dependencies": {

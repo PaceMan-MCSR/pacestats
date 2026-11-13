@@ -10,6 +10,7 @@ import {
 import mysql from 'mysql2/promise';
 import type {QueryResult} from 'mysql2';
 import { Entry, FastestEntry } from "@/app/types";
+import {calculateAvg, trimmedStats, type TrimmedStats} from "@/app/trimmedAverage";
 import Redis from "ioredis";
 import NodeCache from "node-cache";
 
@@ -506,6 +507,46 @@ async function fetchTopLeaderboardsFromRedis(days = 30) {
     return parsedData[0];
 }
 
+/**
+ * Run a query and hand each row to `onRow` as it arrives, as an array of
+ * column values. A large result is then never held in memory as row objects.
+ */
+const streamDbRows = async (
+    sql: string,
+    values: any,
+    onRow: (row: any[]) => void,
+    timeoutMs = dbQueryTimeoutMs
+): Promise<void> => {
+    const connection = await acquireDbConnection();
+    try {
+        await new Promise<void>((resolve, reject) => {
+            let failure: unknown;
+            // The promise wrapper buffers every row, so use the event-emitting
+            // connection underneath it.
+            const core = (connection as unknown as {connection: import("mysql2").Connection}).connection;
+            core.execute({sql, values, rowsAsArray: true, timeout: timeoutMs})
+                .on("error", reject)
+                .on("result", (row: unknown) => {
+                    if (failure !== undefined) return;
+                    try {
+                        onRow(row as any[]);
+                    } catch (error) {
+                        failure = error ?? new Error("Row handler failed");
+                    }
+                })
+                .on("end", () => failure === undefined ? resolve() : reject(failure));
+        });
+    } catch (error) {
+        if ((error as {code?: string})?.code === "PROTOCOL_SEQUENCE_TIMEOUT") {
+            dbPoolMetrics.queryTimeouts += 1;
+            warnAboutPoolPressure(`Query timeout (${timeoutMs}ms)`);
+        }
+        throw error;
+    } finally {
+        releaseDbConnection(connection);
+    }
+};
+
 // Keep the existing call shape while routing every ordinary query through
 // bounded checkout and execution timeouts.
 const dbExecutor = {execute: executeDb};
@@ -693,9 +734,44 @@ const combinedSessionCtes = (uuidPlaceholders: string, detectSessionGaps: boolea
         FROM filtered
     )`}`;
 
+/** Split times collected from a streamed result, eight bytes per value. */
+class TimeSeries {
+    private values = new Float64Array(1_024);
+    private length = 0;
+
+    push(value: number) {
+        if (this.length === this.values.length) {
+            const grown = new Float64Array(this.values.length * 2);
+            grown.set(this.values);
+            this.values = grown;
+        }
+        this.values[this.length++] = value;
+    }
+
+    view(): Float64Array {
+        return this.values.subarray(0, this.length);
+    }
+}
+
 /**
- * Aggregate combined split stats in MariaDB. The window calculations operate
- * on the original run set rather than expanding every run into nine rows.
+ * These averages used to come from SQL AVG() over an INT column, which
+ * returns a DECIMAL rounded half-up to four places. Round the same way so the
+ * endpoints keep returning the same numbers.
+ */
+const averageAsSqlDecimal = (stats: TrimmedStats): number => {
+    if (stats.kept === 0) return 0;
+    if (!Number.isSafeInteger(stats.sum) || stats.sum < 0) {
+        return Math.round(stats.avg * 10_000) / 10_000;
+    }
+    const kept = BigInt(stats.kept);
+    const scaled = (BigInt(stats.sum) * BigInt(20_000) + kept) / (BigInt(2) * kept);
+    return Number(scaled) / 10_000;
+};
+
+/**
+ * Combined split stats for several players. The database applies the session
+ * and structure rules and streams one row per run; the trimmed averages are
+ * then computed in a single pass per split, without ranking every run.
  */
 export const getCombinedSplitAggregates = async (
     uuids: string[],
@@ -709,18 +785,8 @@ export const getCombinedSplitAggregates = async (
     // gap is at least that large, a gap cannot split the result and both
     // window passes can be skipped (especially important for lifetime reads).
     const detectSessionGaps = hoursBetween < hours;
-    const rankColumns = combinedSplitCategories.map((category) => `
-                ROW_NUMBER() OVER (
-                    ORDER BY ${category} IS NULL ASC, ${category} ASC
-                ) AS ${category}Rank,
-                COUNT(${category}) OVER () AS ${category}Count`).join(",");
-    const aggregateColumns = combinedSplitCategories.map((category) => `
-            MAX(${category}Count) AS ${category}Count,
-            AVG(CASE WHEN ${category}Rank <= CASE
-                WHEN ${category}Count >= 50 THEN FLOOR(${category}Count * 0.98)
-                ELSE ${category}Count
-            END THEN ${category} END) AS ${category}Average`).join(",");
-    const [rows] = await (await getConn()).execute<any[]>(
+    const series = combinedSplitCategories.map(() => new TimeSeries());
+    await streamDbRows(
         `${combinedSessionCtes(placeholders, detectSessionGaps)}, structured AS (
             SELECT session_rows.*,
                 CASE
@@ -757,21 +823,22 @@ export const getCombinedSplitAggregates = async (
                     ELSE secondStructure
                 END AS second_structure
             FROM structured
-        ), ranked_values AS (
-            SELECT split_rows.*, ${rankColumns}
-            FROM split_rows
         )
-        SELECT ${aggregateColumns}
-        FROM ranked_values;`,
+        SELECT ${combinedSplitCategories.join(", ")}
+        FROM split_rows;`,
         [...uuids, hours, start, ...(detectSessionGaps ? [hoursBetween] : [])],
+        (row) => {
+            for (let index = 0; index < series.length; index++) {
+                const value = row[index];
+                if (value !== null) series[index].push(Number(value));
+            }
+        },
         dbCombinedQueryTimeoutMs
     );
-    const row = rows[0] ?? {};
-    return combinedSplitCategories.map((category) => ({
-        category,
-        count: Number(row[`${category}Count`] ?? 0),
-        average: Number(row[`${category}Average`] ?? 0),
-    }));
+    return combinedSplitCategories.map((category, index) => {
+        const stats = trimmedStats(series[index].view());
+        return {category, count: stats.count, average: averageAsSqlDecimal(stats)};
+    });
 };
 
 export const getCombinedNetherAggregate = async (
@@ -784,29 +851,18 @@ export const getCombinedNetherAggregate = async (
     if (uuids.length === 0) return {count: 0, average: 0};
     const placeholders = uuids.map(() => "?").join(",");
     const detectSessionGaps = hoursBetween < hours;
-    const [rows] = await (await getConn()).execute<any[]>(
-        `${combinedSessionCtes(placeholders, detectSessionGaps)}, ranked_values AS (
-            SELECT nether,
-                ROW_NUMBER() OVER (ORDER BY nether ASC) AS valueRank,
-                COUNT(*) OVER () AS valueCount
-            FROM session_rows
-            WHERE sessionNumber=0 AND nether IS NOT NULL AND nether <= ?
-        )
-        SELECT COUNT(*) AS count,
-            AVG(
-                CASE WHEN valueRank <= CASE
-                    WHEN valueCount >= 50 THEN FLOOR(valueCount * 0.98)
-                    ELSE valueCount
-                END THEN nether END
-            ) AS average
-        FROM ranked_values;`,
+    const nethers = new TimeSeries();
+    await streamDbRows(
+        `${combinedSessionCtes(placeholders, detectSessionGaps)}
+        SELECT nether
+        FROM session_rows
+        WHERE sessionNumber=0 AND nether IS NOT NULL AND nether <= ?;`,
         [...uuids, hours, start, ...(detectSessionGaps ? [hoursBetween] : []), maxTime],
+        (row) => nethers.push(Number(row[0])),
         dbCombinedQueryTimeoutMs
     );
-    return {
-        count: Number(rows[0]?.count ?? 0),
-        average: Number(rows[0]?.average ?? 0),
-    };
+    const stats = trimmedStats(nethers.view());
+    return {count: stats.count, average: averageAsSqlDecimal(stats)};
 };
 
 export async function fetchAALeaderboardsFromRedis(days = 30) {
@@ -1217,13 +1273,7 @@ function getPreviousAASplit(split: string) {
     }
 }
 
-export function calculateAvg(data: number[]): number {
-    if(data == null || data.length === 0) return 0
-    data = data.sort((a, b) => a - b)
-    const length = data.length
-    const p98 = length >= 50 ? Math.floor(length * 0.98) : length
-    return data.slice(0, p98).reduce((a, b) => a + b, 0) / p98 || 0
-}
+export {calculateAvg}
 
 export const getAllAAData = async (interval: string = "30 DAY", filterCategory: string, limit: number = 10_000) => {
     const safeDays = intervalDays(interval);
@@ -1737,22 +1787,25 @@ const calculateAALeaderboardsFromDatabase = async (interval: string = "30 DAY") 
 
     for (let uuid in splitData) {
         for (const cat of categories) {
+            if(!splitData[uuid][cat] || splitData[uuid][cat].length === 0){
+                continue
+            }
+            // One pass per series gives the count, trimmed average, and fastest
+            // value that all four boards share.
+            const stats = trimmedStats(splitData[uuid][cat])
             for(const filter of filters) {
                 let val = 0
-                if(!splitData[uuid][cat] || splitData[uuid][cat].length === 0){
-                    continue
-                }
                 if (filter === CategoryType.COUNT) {
-                    val = splitData[uuid][cat].length
+                    val = stats.count
                 } else if (filter === CategoryType.AVG) {
-                    val = calculateAvg(splitData[uuid][cat])
+                    val = stats.avg
                 } else if(filter === CategoryType.FASTEST) {
-                    val = Math.min(...splitData[uuid][cat])
+                    val = stats.min
                 } else if(filter === CategoryType.CONVERSION) {
                     const prev = getPreviousAASplit(cat)
                     if (prev !== null) {
                         const oldSplit = splitData[uuid][prev].length
-                        const newSplit = splitData[uuid][cat].length
+                        const newSplit = stats.count
                         val = (newSplit / oldSplit) * 100
                         if(val === Infinity){
                             val = 1
@@ -1764,8 +1817,8 @@ const calculateAALeaderboardsFromDatabase = async (interval: string = "30 DAY") 
                         uuid: uuid,
                         name: nickMap.get(uuid) as string,
                         value: val,
-                        qty: splitData[uuid][cat].length,
-                        avg: calculateAvg(splitData[uuid][cat])
+                        qty: stats.count,
+                        avg: stats.avg
                     })
                 }
             }

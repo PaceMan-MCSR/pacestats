@@ -3,6 +3,7 @@ import mysql, { type Connection } from "mysql2/promise";
 import Redis from "ioredis";
 import dotenv from "dotenv";
 import { type FastestEntry } from "@/app/types";
+import { calculateAvg, trimmedStats } from "@/app/trimmedAverage";
 import {
     acquireRedisLock,
     deleteKeysIfLeaseHeld,
@@ -195,18 +196,7 @@ function getPreviousAaSplit(split: string): string | null {
     }
 }
 
-function calculateAvgInPlace(data: number[]): number {
-    if (!data || data.length === 0) return 0;
-    data.sort((a, b) => a - b);
-    const p98 = data.length >= 50 ? Math.floor(data.length * 0.98) : data.length;
-    let sum = 0;
-    for (let index = 0; index < p98; index++) sum += data[index];
-    return sum / p98 || 0;
-}
-
-export function calculateAvg(data: number[]): number {
-    return calculateAvgInPlace([...data]);
-}
+export {calculateAvg};
 
 function roundNumber(num: number, decimals = 2): number {
     return Math.round(num * Math.pow(10, decimals)) / Math.pow(10, decimals);
@@ -368,9 +358,7 @@ function finalizePacePlayers(players: Map<string, PacePlayerAccumulator>, days: 
         for (const category of paceCategories) {
             const values = player.splits[category];
             if (values.length === 0) continue;
-            const qty = values.length;
-            const avg = calculateAvgInPlace(values);
-            const fastest = values[0];
+            const {count: qty, avg, min: fastest} = trimmedStats(values);
             const previous = getPreviousSplit(category);
             const conversion = previous === null
                 ? 0
@@ -466,9 +454,7 @@ async function calculateAaLeaderboards(rows: AaRow[], pacer?: CachePacer): Promi
         for (const category of aaCategories) {
             const values = player[category];
             if (values.length === 0) continue;
-            const qty = values.length;
-            const avg = calculateAvgInPlace(values);
-            const fastest = values[0];
+            const {count: qty, avg, min: fastest} = trimmedStats(values);
             const previous = getPreviousAaSplit(category);
             const conversion = previous === null
                 ? 0
@@ -581,7 +567,7 @@ function finalizeNph(grouped: Map<string, NphAccumulator>, days: number, asOfMs:
             rnph: roundNumber(totalGameTimeHours > 0 ? nethers / totalGameTimeHours : 0),
             lnph: roundNumber(playTimeHours > 0 ? nethers / playTimeHours : 0),
             count: nethers,
-            avg: calculateAvgInPlace(player.times),
+            avg: calculateAvg(player.times),
             playtime: player.playTime,
             walltime: player.wallTime,
             resets: player.resets,
