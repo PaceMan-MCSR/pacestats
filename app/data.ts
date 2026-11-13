@@ -15,6 +15,7 @@ import Redis from "ioredis";
 import NodeCache from "node-cache";
 
 const DEFAULT_DB_POOL_SIZE = 10;
+const DEFAULT_DB_POOL_QUEUE_LIMIT = 500;
 const DEFAULT_CACHE_MAX_KEYS = 2_000;
 const DEFAULT_CACHE_MAX_ARRAY_ROWS = 25_000;
 const MAX_LOOKBACK_DAYS = 9_999;
@@ -139,7 +140,12 @@ const dbPool = runtime.__paceStatsDbPool ?? mysql.createPool({
     connectionLimit: dbPoolSize,
     maxIdle: Math.min(dbPoolSize, boundedEnvInteger(process.env.DB_POOL_MAX_IDLE, dbPoolSize, 1, 30)),
     idleTimeout: boundedEnvInteger(process.env.DB_POOL_IDLE_TIMEOUT_MS, 60_000, 1_000, 600_000),
-    queueLimit: boundedEnvInteger(process.env.DB_POOL_QUEUE_LIMIT, 25, 1, 10_000),
+    // Queries take a millisecond or two, so a burst far larger than the pool
+    // drains in tens of milliseconds. A 25-entry queue turned such bursts
+    // (one client fetching many players at once, several page views landing
+    // together) into "Queue limit reached" errors while the database was
+    // idle. Waiting stays bounded by DB_POOL_ACQUIRE_TIMEOUT_MS.
+    queueLimit: boundedEnvInteger(process.env.DB_POOL_QUEUE_LIMIT, DEFAULT_DB_POOL_QUEUE_LIMIT, 1, 10_000),
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
 });
