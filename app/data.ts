@@ -511,13 +511,13 @@ async function fetchTopLeaderboardsFromRedis(days = 30) {
  * Run a query and hand each row to `onRow` as it arrives, as an array of
  * column values. A large result is then never held in memory as row objects.
  */
-const streamDbRows = async (
+const streamOnConnection = async (
+    connection: mysql.PoolConnection,
     sql: string,
     values: any,
     onRow: (row: any[]) => void,
     timeoutMs = dbQueryTimeoutMs
 ): Promise<void> => {
-    const connection = await acquireDbConnection();
     try {
         await new Promise<void>((resolve, reject) => {
             let failure: unknown;
@@ -542,8 +542,54 @@ const streamDbRows = async (
             warnAboutPoolPressure(`Query timeout (${timeoutMs}ms)`);
         }
         throw error;
+    }
+};
+
+const streamDbRows = async (
+    sql: string,
+    values: any,
+    onRow: (row: any[]) => void,
+    timeoutMs = dbQueryTimeoutMs
+): Promise<void> => {
+    const connection = await acquireDbConnection();
+    try {
+        await streamOnConnection(connection, sql, values, onRow, timeoutMs);
     } finally {
         releaseDbConnection(connection);
+    }
+};
+
+/**
+ * Run several reads against one consistent InnoDB snapshot, so a result
+ * assembled from more than one statement matches a single statement's view.
+ */
+const withReadSnapshot = async <T>(work: (connection: mysql.PoolConnection) => Promise<T>): Promise<T> => {
+    const connection = await acquireDbConnection();
+    let open = false;
+    try {
+        await connection.query("START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY");
+        open = true;
+        const result = await work(connection);
+        open = false;
+        await connection.query("COMMIT");
+        return result;
+    } finally {
+        let reusable = true;
+        if (open) {
+            try {
+                await connection.query("ROLLBACK");
+            } catch (error) {
+                // Never return a connection with an open transaction to the pool.
+                console.error("Unable to end a read snapshot:", error);
+                reusable = false;
+            }
+        }
+        if (reusable) {
+            releaseDbConnection(connection);
+        } else {
+            dbPoolMetrics.active = Math.max(0, dbPoolMetrics.active - 1);
+            connection.destroy();
+        }
     }
 };
 
@@ -700,39 +746,122 @@ const combinedSplitCategories = [
     "finish",
 ] as const;
 
-const combinedSessionCtes = (uuidPlaceholders: string, detectSessionGaps: boolean) => `
-    WITH filtered AS (
+/** Rows read per player while looking for the start of the current session. */
+const SESSION_GAP_SCAN_ROWS = 2_000;
+
+type CombinedSessionWindow = {
+    /** Lower edge of the window, as a Unix time, computed once by MySQL. */
+    lowerBound: unknown;
+    /** Per player: the Unix time of the oldest current-session run, or null for the whole window. */
+    sessionStarts: Map<string, number | null>;
+};
+
+/**
+ * Each player's current session is the run of newest rows before the first
+ * gap longer than `hoursBetween` (TIMESTAMPDIFF between consecutive rows in
+ * insertTime DESC, id DESC order). Rather than numbering the sessions of
+ * every row in the window with window functions, read each player's newest
+ * rows from the (uuid, insertTime, id) index until the first gap. Players
+ * without rows in the window are absent from the result.
+ */
+const findCombinedSessionWindow = async (
+    connection: mysql.PoolConnection,
+    uuids: string[],
+    hours: number,
+    hoursBetween: number,
+    start: number,
+    detectSessionGaps: boolean
+): Promise<CombinedSessionWindow> => {
+    const [boundRows] = await executeOnConnection<any[]>(
+        connection,
+        `SELECT GREATEST(0, UNIX_TIMESTAMP() - (? * 3600), ?) AS lowerBound;`,
+        [hours, start]
+    );
+    const lowerBound = boundRows[0].lowerBound;
+    const sessionStarts = new Map<string, number | null>();
+    if (!detectSessionGaps) {
+        for (const uuid of uuids) sessionStarts.set(uuid, null);
+        return {lowerBound, sessionStarts};
+    }
+
+    const gapSeconds = hoursBetween * 3600;
+    let pending = uuids;
+    let limit: number | null = SESSION_GAP_SCAN_ROWS;
+    while (pending.length > 0) {
+        const limitClause = limit === null ? "" : ` LIMIT ${limit}`;
+        const [rows] = await executeOnConnection<any[]>(
+            connection,
+            pending.map(() => `(SELECT uuid, id, UNIX_TIMESTAMP(insertTime) AS instant,
+                    TO_SECONDS(insertTime) AS wallSeconds
+                FROM pace
+                WHERE uuid=? AND insertTime >= FROM_UNIXTIME(?)
+                ORDER BY insertTime DESC, id DESC${limitClause})`).join(" UNION ALL ") + ";",
+            pending.flatMap((uuid) => [uuid, lowerBound])
+        );
+        const rowsByUuid = new Map<string, any[]>();
+        for (const row of rows) {
+            const playerRows = rowsByUuid.get(row.uuid);
+            if (playerRows) playerRows.push(row);
+            else rowsByUuid.set(row.uuid, [row]);
+        }
+        const unresolved: string[] = [];
+        for (const uuid of pending) {
+            const playerRows = rowsByUuid.get(uuid);
+            if (!playerRows) continue;
+            // UNION ALL does not promise to keep each branch's order.
+            playerRows.sort((left, right) =>
+                Number(right.instant) - Number(left.instant) || Number(right.id) - Number(left.id)
+            );
+            let sessionStart: number | null = null;
+            for (let index = 1; index < playerRows.length; index++) {
+                // TIMESTAMPDIFF(SECOND, ...) is the difference of the two
+                // session-time-zone wall clock values, as TO_SECONDS gives.
+                if (Number(playerRows[index - 1].wallSeconds) - Number(playerRows[index].wallSeconds) > gapSeconds) {
+                    sessionStart = Number(playerRows[index - 1].instant);
+                    break;
+                }
+            }
+            if (sessionStart !== null || limit === null || playerRows.length < limit) {
+                sessionStarts.set(uuid, sessionStart);
+            } else {
+                unresolved.push(uuid);
+            }
+        }
+        pending = unresolved;
+        limit = limit !== null && limit < SESSION_GAP_SCAN_ROWS * 8 ? limit * 8 : null;
+    }
+    return {lowerBound, sessionStarts};
+};
+
+/**
+ * The current-session rows of every player as the `session_rows` CTE. The
+ * window edge is the same FROM_UNIXTIME comparison as before; the session
+ * edge compares exact Unix times, with a range two hours wider so the index
+ * can be used whatever the session time zone does around it.
+ */
+const combinedSessionCtes = (window: CombinedSessionWindow): {sql: string; values: unknown[]} => {
+    const players = [...window.sessionStarts];
+    const values: unknown[] = [window.lowerBound];
+    const conditions = players.map(([uuid, sessionStart]) => {
+        if (sessionStart === null) {
+            values.push(uuid);
+            return "(uuid=?)";
+        }
+        values.push(uuid, sessionStart - 7_200, sessionStart);
+        return "(uuid=? AND insertTime >= FROM_UNIXTIME(?) AND UNIX_TIMESTAMP(insertTime) >= ?)";
+    });
+    return {
+        sql: `
+    WITH session_rows AS (
         SELECT id, uuid, insertTime, nether, bastion, fortress, first_portal,
             stronghold, end, finish, obtainRod
         FROM pace
-        WHERE uuid IN (${uuidPlaceholders})
-          AND insertTime >= FROM_UNIXTIME(
-              GREATEST(0, UNIX_TIMESTAMP() - (? * 3600), ?)
-          )
-    )${detectSessionGaps ? `, with_gaps AS (
-        SELECT filtered.*,
-            CASE
-                WHEN TIMESTAMPDIFF(
-                    SECOND,
-                    insertTime,
-                    LAG(insertTime) OVER (
-                        PARTITION BY uuid ORDER BY insertTime DESC, id DESC
-                    )
-                ) > (? * 3600) THEN 1
-                ELSE 0
-            END AS startsNewSession
-        FROM filtered
-    ), session_rows AS (
-        SELECT with_gaps.*,
-            SUM(startsNewSession) OVER (
-                PARTITION BY uuid ORDER BY insertTime DESC, id DESC
-                ROWS UNBOUNDED PRECEDING
-            ) AS sessionNumber
-        FROM with_gaps
-    )` : `, session_rows AS (
-        SELECT filtered.*, 0 AS sessionNumber
-        FROM filtered
-    )`}`;
+        WHERE insertTime >= FROM_UNIXTIME(?)
+          AND (${conditions.join(" OR ")})
+    )`,
+        values,
+    };
+};
 
 /** Split times collected from a streamed result, eight bytes per value. */
 class TimeSeries {
@@ -769,6 +898,39 @@ const averageAsSqlDecimal = (stats: TrimmedStats): number => {
 };
 
 /**
+ * Stream a query over the players' current-session rows. `buildSql` receives
+ * the `WITH session_rows AS (...)` clause; `values` bind after its values.
+ */
+const streamCombinedSessionRows = async (
+    uuids: string[],
+    hours: number,
+    hoursBetween: number,
+    start: number,
+    buildSql: (sessionRows: string) => string,
+    values: unknown[],
+    onRow: (row: any[]) => void
+): Promise<void> => {
+    // Every filtered row is within `hours` of now. If the permitted session
+    // gap is at least that large, a gap cannot split the result and the gap
+    // search can be skipped (especially important for lifetime reads).
+    const detectSessionGaps = hoursBetween < hours;
+    await withReadSnapshot(async (connection) => {
+        const window = await findCombinedSessionWindow(
+            connection, uuids, hours, hoursBetween, start, detectSessionGaps
+        );
+        if (window.sessionStarts.size === 0) return;
+        const sessionRows = combinedSessionCtes(window);
+        await streamOnConnection(
+            connection,
+            buildSql(sessionRows.sql),
+            [...sessionRows.values, ...values],
+            onRow,
+            dbCombinedQueryTimeoutMs
+        );
+    });
+};
+
+/**
  * Combined split stats for several players. The database applies the session
  * and structure rules and streams one row per run; the trimmed averages are
  * then computed in a single pass per split, without ranking every run.
@@ -780,14 +942,10 @@ export const getCombinedSplitAggregates = async (
     start: number
 ): Promise<CombinedSplitAggregate[]> => {
     if (uuids.length === 0) return [];
-    const placeholders = uuids.map(() => "?").join(",");
-    // Every filtered row is within `hours` of now. If the permitted session
-    // gap is at least that large, a gap cannot split the result and both
-    // window passes can be skipped (especially important for lifetime reads).
-    const detectSessionGaps = hoursBetween < hours;
     const series = combinedSplitCategories.map(() => new TimeSeries());
-    await streamDbRows(
-        `${combinedSessionCtes(placeholders, detectSessionGaps)}, structured AS (
+    await streamCombinedSessionRows(
+        uuids, hours, hoursBetween, start,
+        (sessionRows) => `${sessionRows}, structured AS (
             SELECT session_rows.*,
                 CASE
                     WHEN bastion IS NULL AND fortress IS NULL THEN NULL
@@ -802,7 +960,6 @@ export const getCombinedSplitAggregates = async (
                     ELSE bastion
                 END AS secondStructure
             FROM session_rows
-            WHERE sessionNumber=0
         ), split_rows AS (
             SELECT structured.*,
                 CASE
@@ -826,14 +983,13 @@ export const getCombinedSplitAggregates = async (
         )
         SELECT ${combinedSplitCategories.join(", ")}
         FROM split_rows;`,
-        [...uuids, hours, start, ...(detectSessionGaps ? [hoursBetween] : [])],
+        [],
         (row) => {
             for (let index = 0; index < series.length; index++) {
                 const value = row[index];
                 if (value !== null) series[index].push(Number(value));
             }
-        },
-        dbCombinedQueryTimeoutMs
+        }
     );
     return combinedSplitCategories.map((category, index) => {
         const stats = trimmedStats(series[index].view());
@@ -849,17 +1005,15 @@ export const getCombinedNetherAggregate = async (
     maxTime: number
 ): Promise<{count: number; average: number}> => {
     if (uuids.length === 0) return {count: 0, average: 0};
-    const placeholders = uuids.map(() => "?").join(",");
-    const detectSessionGaps = hoursBetween < hours;
     const nethers = new TimeSeries();
-    await streamDbRows(
-        `${combinedSessionCtes(placeholders, detectSessionGaps)}
+    await streamCombinedSessionRows(
+        uuids, hours, hoursBetween, start,
+        (sessionRows) => `${sessionRows}
         SELECT nether
         FROM session_rows
-        WHERE sessionNumber=0 AND nether IS NOT NULL AND nether <= ?;`,
-        [...uuids, hours, start, ...(detectSessionGaps ? [hoursBetween] : []), maxTime],
-        (row) => nethers.push(Number(row[0])),
-        dbCombinedQueryTimeoutMs
+        WHERE nether IS NOT NULL AND nether <= ?;`,
+        [maxTime],
+        (row) => nethers.push(Number(row[0]))
     );
     const stats = trimmedStats(nethers.view());
     return {count: stats.count, average: averageAsSqlDecimal(stats)};
