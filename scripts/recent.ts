@@ -407,6 +407,90 @@ async function incrementalRefresh(
     return {staged, rowCount, deletedTargets, exceededWorkBudget: false};
 }
 
+/**
+ * Merge changed runs into an encoded history. Both are newest-first by id;
+ * a changed run replaces the line with its id or is inserted in id order.
+ * Lines after the oldest changed run are copied as one substring.
+ */
+function spliceHistory(existing: string, changedRuns: RunRow[]): string {
+    const patches = changedRuns
+        .map((run) => ({id: run.id, line: csvEncodeRun(run)}))
+        .sort((left, right) => right.id - left.id);
+    const output: string[] = [];
+    let next = 0;
+    let position = 0;
+    while (position < existing.length && next < patches.length) {
+        const newline = existing.indexOf("\n", position);
+        const lineEnd = newline < 0 ? existing.length : newline;
+        const id = Number(existing.slice(position, existing.indexOf(",", position)));
+        while (next < patches.length && patches[next].id > id) output.push(patches[next++].line);
+        if (next < patches.length && patches[next].id === id) output.push(patches[next++].line);
+        else output.push(existing.slice(position, lineEnd));
+        position = lineEnd + 1;
+    }
+    while (next < patches.length) output.push(patches[next++].line);
+    if (position < existing.length) output.push(existing.slice(position));
+    return output.join("\n");
+}
+
+/**
+ * Bring changed players' histories up to date from the runs whose
+ * lastUpdated is at or after `since`. Every run changed after the published
+ * history was read has such a lastUpdated (the watermark overlap covers
+ * rounding), so the result equals a complete rebuild. Deletions leave no
+ * lastUpdated and go through incrementalRefresh instead, as do players whose
+ * history key is missing (returned in `fallback`).
+ */
+async function patchHistories(
+    conn: Connection,
+    redis: Redis,
+    uuids: string[],
+    since: Date,
+    generation: string,
+    redisBatchSize: number,
+    uuidBatchSize: number,
+    stagingTtlSeconds: number,
+    lease: RedisLease,
+): Promise<{staged: StagedKey[]; rowCount: number; fallback: string[]}> {
+    const staged: StagedKey[] = [];
+    const fallback: string[] = [];
+    let rowCount = 0;
+    const ordered = [...uuids].sort();
+    for (let offset = 0; offset < ordered.length; offset += uuidBatchSize) {
+        await lease.verifyHeld();
+        const batch = ordered.slice(offset, offset + uuidBatchSize);
+        const existing = await redis.mget(...batch.map((uuid) => `playerRunsOptimized:${uuid}`));
+        const placeholders = batch.map(() => "?").join(",");
+        const [rawRows] = await conn.execute(
+            `SELECT ${runColumns}
+             FROM pace
+             WHERE lastUpdated >= ? AND uuid IN (${placeholders});`,
+            [since, ...batch],
+        );
+        const rowsByUuid = new Map<string, RunRow[]>();
+        for (const row of rawRows as RunRow[]) {
+            const rows = rowsByUuid.get(row.uuid);
+            if (rows) rows.push(row);
+            else rowsByUuid.set(row.uuid, [row]);
+            rowCount++;
+        }
+        const entries: Array<[string, string]> = [];
+        for (let index = 0; index < batch.length; index++) {
+            const uuid = batch[index];
+            const history = existing[index];
+            if (!history) {
+                fallback.push(uuid);
+                continue;
+            }
+            const rows = rowsByUuid.get(uuid);
+            if (!rows) continue;
+            entries.push([`playerRunsOptimized:${uuid}`, spliceHistory(history, rows)]);
+        }
+        staged.push(...await stageRunEntries(redis, entries, generation, redisBatchSize, stagingTtlSeconds));
+    }
+    return {staged, rowCount, fallback};
+}
+
 async function deleteKeys(
     redis: Redis,
     keys: string[],
@@ -502,13 +586,14 @@ async function main(): Promise<void> {
         let full = forceFull || !previousWatermark || Number.isNaN(previousWatermark.getTime());
         let sourceMaxId: number | null = null;
         let changedUuids = new Set<string>();
+        let since: Date | null = null;
         const dirtyClaim = await claimDirtyUuids(redis, dirtyKey, lock);
         const dirtyUuids = dirtyClaim.uuids;
         claimedDirty = dirtyUuids;
         dirtyProcessingKeys = dirtyClaim.processingKeys;
 
         if (!full) {
-            const since = new Date(previousWatermark!.getTime() - overlapSeconds * 1000);
+            since = new Date(previousWatermark!.getTime() - overlapSeconds * 1000);
             changedUuids = await findChangedUuids(
                 conn, since, asOf, sqlBatchSize, maximumIncrementalPlayers, lock,
             );
@@ -535,11 +620,31 @@ async function main(): Promise<void> {
             );
             result = { ...fullResult, deletedTargets: [] };
         } else if (changedUuids.size > 0) {
-            console.log(`Refreshing complete histories for ${changedUuids.size} changed players.`);
-            const incremental = await incrementalRefresh(
-                conn, redis, changedUuids, generation, sqlBatchSize, redisBatchSize,
-                uuidBatchSize, maximumIncrementalRows, stagingTtlSeconds, lock,
+            // Deleted runs leave nothing to patch from, so those players (and
+            // any without a published history) are rebuilt completely.
+            const rebuildUuids = new Set<string>();
+            for (const uuid of dirtyUuids) rebuildUuids.add(uuid);
+            for (const claim of outboxClaims) rebuildUuids.add(claim.entityId);
+            const patchUuids = [...changedUuids].filter((uuid) => !rebuildUuids.has(uuid));
+            const patched = await patchHistories(
+                conn, redis, patchUuids, since!, generation, redisBatchSize, uuidBatchSize, stagingTtlSeconds, lock,
             );
+            for (const uuid of patched.fallback) rebuildUuids.add(uuid);
+            console.log(
+                `Patched ${patchUuids.length - patched.fallback.length} histories from ${patched.rowCount} changed runs; `
+                + `rebuilding ${rebuildUuids.size} complete histories.`,
+            );
+            const rebuilt = rebuildUuids.size === 0
+                ? {staged: [], rowCount: 0, deletedTargets: [], exceededWorkBudget: false}
+                : await incrementalRefresh(
+                    conn, redis, rebuildUuids, generation, sqlBatchSize, redisBatchSize,
+                    uuidBatchSize, maximumIncrementalRows - patched.rowCount, stagingTtlSeconds, lock,
+                );
+            const incremental = {
+                ...rebuilt,
+                staged: [...patched.staged, ...rebuilt.staged],
+                rowCount: patched.rowCount + rebuilt.rowCount,
+            };
             if (incremental.exceededWorkBudget) {
                 console.log(
                     `Incremental history work exceeded ${maximumIncrementalRows} rows; falling back to a full rebuild.`,
