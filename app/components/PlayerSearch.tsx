@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactSearchAutocomplete } from 'react-search-autocomplete'
+import SearchAutocomplete from "@/app/components/search/SearchAutocomplete";
 import { useRouter } from 'next/navigation'
 import {SearchName} from "@/app/types";
 import { defaultNameColor, getDarkerColor, getNameColor } from "@/app/utils";
@@ -149,7 +149,7 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
     } as React.CSSProperties : undefined;
 
     return <div className="playerSearchTheme" data-custom={hasColours || undefined} style={themeStyle}>
-        <ReactSearchAutocomplete
+        <SearchAutocomplete
                 items={items}
                 fuseOptions={{
                     keys: ["nick", "twitches"],

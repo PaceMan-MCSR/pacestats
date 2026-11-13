@@ -39,3 +39,10 @@ next-env.d.ts
 
 # Sentry Config File
 .sentryclirc
+
+# database dumps
+/*.sql
+
+# local Docker dev environment
+/docker/
+/docker-compose.yml

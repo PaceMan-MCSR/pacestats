@@ -1,0 +1,107 @@
+/*
+ * Base styles for SearchAutocomplete: the default react-search-autocomplete
+ * theme, written as plain CSS. Each rule keeps the specificity the package's
+ * styled-components rules had, so the site overrides in main.css still win.
+ */
+
+.rsa {
+    position: relative;
+    height: 46px;
+}
+
+.rsa .wrapper {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    border: 1px solid #dfe1e5;
+    border-radius: 24px;
+    background-color: white;
+    color: #212121;
+    font-size: 16px;
+    font-family: Arial;
+    z-index: 0;
+}
+
+.rsa .wrapper:hover,
+.rsa .wrapper:active,
+.rsa .wrapper:focus-within {
+    box-shadow: rgba(32, 33, 36, 0.28) 0px 1px 6px 0px;
+}
+
+.rsa-input {
+    min-height: 44px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.rsa-input > input {
+    width: 100%;
+    padding: 0 0 0 13px;
+    border: none;
+    outline: none;
+    background-color: rgba(0, 0, 0, 0);
+    font-size: inherit;
+    font-family: inherit;
+    color: #212121;
+}
+
+.rsa-input > input::placeholder {
+    color: grey;
+    opacity: 1;
+}
+
+.rsa-search-icon {
+    flex-shrink: 0;
+    margin: 0 0 0 16px;
+    fill: grey;
+}
+
+.rsa-clear-icon {
+    margin: 3px 14px 0 0;
+}
+
+.rsa-clear-icon:hover {
+    cursor: pointer;
+}
+
+.rsa-clear-icon > svg {
+    fill: grey;
+}
+
+.rsa-results > div.line {
+    border-top-color: rgb(232, 234, 237);
+    border-top-style: solid;
+    border-top-width: 1px;
+    margin: 0 20px 0 14px;
+    padding-bottom: 4px;
+}
+
+.rsa-results > ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0 0 16px 0;
+}
+
+.rsa-results > ul > li {
+    display: flex;
+    align-items: center;
+    padding: 4px 0 4px 0;
+}
+
+.rsa-results > ul > li > div {
+    margin-left: 13px;
+}
+
+.rsa-results .ellipsis {
+    text-align: left;
+    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rsa-results .selected {
+    background-color: #eee;
+}
