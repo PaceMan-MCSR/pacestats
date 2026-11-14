@@ -4,8 +4,10 @@ import {
     getAllUserInfo,
     getCached,
     getTrimmedLeaderboards,
+    CacheNotReadyError,
 } from "@/app/data";
 import type { Entry, FastestEntry } from "@/app/types";
+import LeaderboardUnavailable from "@/app/components/tables/LeaderboardUnavailable";
 import {
     CategoryType,
     defaultNameColor,
@@ -188,10 +190,15 @@ export default async function MainLeaderboardTables({days, view, showQty, bastio
     showQty: boolean,
     bastionFort: boolean,
 }) {
-    const [data, users] = await Promise.all([
+    const result = await Promise.all([
         getCached(getTrimmedLeaderboards, "getTrimmedLeaderboards", days),
         getCached(getAllUserInfo, "getAllUserInfo") as Promise<UserInfo[]>,
-    ]);
+    ]).catch((error) => {
+        if (error instanceof CacheNotReadyError) return null;
+        throw error;
+    });
+    if (!result) return <LeaderboardUnavailable/>;
+    const [data, users] = result;
     const colours = playerColours(users, data);
     const structureBoards = splitBoards[bastionFort ? "separate" : "combined"];
     const boards = [fixedBoards[0], ...structureBoards, ...fixedBoards.slice(1)];
