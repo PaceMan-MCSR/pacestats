@@ -1,9 +1,9 @@
 'use client'
 
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
-import {formatIfNotNull} from "@/app/utils";
+import type {RecentRunRow} from "./recentRunPresentation";
 
-export function AARecentRuns({runs}: { runs: {} }) {
+export function AARecentRuns({runs}: { runs: RecentRunRow[] }) {
     return <div className="recentRuns">
         <h4 className="runsHeader">Recent AA paces</h4>
         <div style={{textAlign: "center"}}>
@@ -49,40 +49,13 @@ export function AARecentRuns({runs}: { runs: {} }) {
             </tr>
             </thead>
             <tbody>
-            {Object.keys(runs).map((runId, index) => {
-                // @ts-ignore
-                const run = runs[runId]
-                if(run.twitch === null){
-                    return <tr key={index}>
-                        <td>
-                            <RelativeTimer start={run.lastUpdated / 1000} compactBelow="sm"/>
-                        </td>
-                        <td>{formatIfNotNull(run.nether)}</td>
-                        <td>{formatIfNotNull(run.bastion)}</td>
-                        <td>{formatIfNotNull(run.fortress)}</td>
-                        <td>{formatIfNotNull(run.stronghold)}</td>
-                        <td>{formatIfNotNull(run.end)}</td>
-                        <td>{formatIfNotNull(run.elytra)}</td>
-                        <td>{formatIfNotNull(run.credits)}</td>
-                        <td>{formatIfNotNull(run.finish)}</td>
-                    </tr>
-                } else {
-                    return <tr key={index}>
-                        <td>
-                            <span className="liveIndicator"/>
-                            <RelativeTimer start={run.lastUpdated / 1000} compactBelow="sm"/>
-                        </td>
-                        <td>{formatIfNotNull(run.nether)}</td>
-                        <td>{formatIfNotNull(run.bastion)}</td>
-                        <td>{formatIfNotNull(run.fortress)}</td>
-                        <td>{formatIfNotNull(run.stronghold)}</td>
-                        <td>{formatIfNotNull(run.end)}</td>
-                        <td>{formatIfNotNull(run.elytra)}</td>
-                        <td>{formatIfNotNull(run.credits)}</td>
-                        <td>{formatIfNotNull(run.finish)}</td>
-                    </tr>
-                }
-            })}
+            {runs.map(run => <tr key={run.id}>
+                <td>
+                    {run.live && <span className="liveIndicator"/>}
+                    <RelativeTimer start={run.time} compactBelow="sm"/>
+                </td>
+                {run.cells.map((cell, index) => <td key={index}>{cell}</td>)}
+            </tr>)}
             </tbody>
         </table>
     </div>

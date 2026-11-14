@@ -1,5 +1,7 @@
 'use client'
 
+import type {RecentRunRow} from '@/app/components/profile/recentRunPresentation';
+
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
 import RangeChange from "@/app/components/RangeChange";
@@ -19,7 +21,7 @@ import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
 export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data, days, bf, users}: {
     name: string,
     uuid: string,
-    recentRuns: {},
+    recentRuns: RecentRunRow[],
     twitches: any[],
     nph: any,
     data: any,

@@ -1,5 +1,7 @@
 'use client'
 
+import type {RecentRunRow} from '@/app/components/profile/recentRunPresentation';
+
 import ResetScroll from "@/app/components/ResetScroll";
 import RangeChange from "@/app/components/RangeChange";
 import {Stat} from "@/app/components/profile/Stat";
@@ -9,7 +11,7 @@ import {useDeferredPrefetch} from "@/app/components/useDeferredPrefetch";
 export default function AAPlayerPage({name, uuid, recentRuns, data, days}: {
     name: string,
     uuid: string,
-    recentRuns: {},
+    recentRuns: RecentRunRow[],
     data: any,
     days: number
 }) {

@@ -1,3 +1,4 @@
+import {recentRunRows} from '@/app/components/profile/recentRunPresentation';
 import {
     getCached,
     getAllNamesByNick,
@@ -88,5 +89,5 @@ export default async function Page(
     ]);
     // The profile only renders this player's customization. Search resolves
     // its own results, so other players do not need to cross the client boundary.
-    return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} twitches={twitches} nph={nph} data={data} days={days} bf={bastionFort} users={playerUser ? [playerUser] : []} />
+    return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRunRows(recentRuns)} twitches={twitches} nph={nph} data={data} days={days} bf={bastionFort} users={playerUser ? [playerUser] : []} />
 }

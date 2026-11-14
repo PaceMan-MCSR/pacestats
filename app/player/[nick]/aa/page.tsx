@@ -1,3 +1,4 @@
+import {recentRunRows} from '@/app/components/profile/recentRunPresentation';
 import {
     getCached,
     getAllNamesByNick,
@@ -121,5 +122,5 @@ export default async function Page(
         }
     }
 
-    return <AAPlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} data={data} days={days} />
+    return <AAPlayerPage name={realNick} uuid={uuid} recentRuns={recentRunRows(recentRuns, true)} data={data} days={days} />
 }

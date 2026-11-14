@@ -1,13 +1,13 @@
 'use client'
 
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
-import { formatIfNotNull } from "@/app/utils";
+import type {RecentRunRow} from "./recentRunPresentation";
 import RunRow from "@/app/components/profile/RunRow";
 import { useContext } from "react";
 import { UserColoursContext } from "@/app/contexts";
 import { colourVars, customClass } from "@/app/components/customColours";
 
-export function RecentRuns({runs}: { runs: {} }) {
+export function RecentRuns({runs}: { runs: RecentRunRow[] }) {
     const colours = useContext(UserColoursContext)
     return <div className="recentRuns">
         <h4 className="runsHeader" style={colours.isCustom ? {
@@ -60,38 +60,13 @@ export function RecentRuns({runs}: { runs: {} }) {
                 </tr>
                 </thead>
                 <tbody>
-                {Object.keys(runs).map((runId, index) => {
-                    // @ts-ignore
-                    const run = runs[runId]
-                    if(run.twitch === null){
-                        return <RunRow key={run.id} href={`/run/${run.id}`}>
-                            <td>
-                                <RelativeTimer start={run.lastUpdated / 1000} compactBelow="sm"/>
-                            </td>
-                            <td>{formatIfNotNull(run.nether)}</td>
-                            <td>{formatIfNotNull(run.bastion)}</td>
-                            <td>{formatIfNotNull(run.fortress)}</td>
-                            <td>{formatIfNotNull(run.first_portal)}</td>
-                            <td>{formatIfNotNull(run.stronghold)}</td>
-                            <td>{formatIfNotNull(run.end)}</td>
-                            <td>{formatIfNotNull(run.finish)}</td>
-                        </RunRow>
-                    } else {
-                        return <RunRow key={run.id} href={`/run/${run.id}`}>
-                            <td>
-                                <span className="liveIndicator"/>
-                                <RelativeTimer start={run.lastUpdated / 1000} compactBelow="sm"/>
-                            </td>
-                            <td>{formatIfNotNull(run.nether)}</td>
-                            <td>{formatIfNotNull(run.bastion)}</td>
-                            <td>{formatIfNotNull(run.fortress)}</td>
-                            <td>{formatIfNotNull(run.first_portal)}</td>
-                            <td>{formatIfNotNull(run.stronghold)}</td>
-                            <td>{formatIfNotNull(run.end)}</td>
-                            <td>{formatIfNotNull(run.finish)}</td>
-                        </RunRow>
-                    }
-                })}
+                {runs.map(run => <RunRow key={run.id} href={`/run/${run.id}`}>
+                    <td>
+                        {run.live && <span className="liveIndicator"/>}
+                        <RelativeTimer start={run.time} compactBelow="sm"/>
+                    </td>
+                    {run.cells.map((cell, index) => <td key={index}>{cell}</td>)}
+                </RunRow>)}
                 </tbody>
             </table>
         </div>
