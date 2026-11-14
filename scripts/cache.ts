@@ -514,30 +514,44 @@ async function readPacePeriods(
     };
 }
 
-/** The NPH counterpart of accumulatePacePeriods, with calculateNph's filters. */
-async function accumulateNphPeriods(
-    rows: NetherPaceRow[],
+/** The NPH counterpart of readPacePeriods, with calculateNph's filters. */
+async function readNphPeriods(
+    conn: Connection,
+    cutoff: Date | null,
+    asOf: Date,
     days: readonly number[],
-    asOfMs: number,
+    sqlBatchSize: number,
     pacer?: CachePacer,
 ): Promise<Map<number, Map<string, NphAccumulator>>> {
+    const asOfMs = asOf.getTime();
     const asOfSeconds = asOfMs / 1_000;
     const periods = days.map((day) => ({
         day,
         cutoffSeconds: day === 9999 ? Number.NEGATIVE_INFINITY : asOfMs / 1000 - day * 86_400,
         grouped: new Map<string, NphAccumulator>(),
     }));
-    for (let index = 0; index < rows.length; index++) {
-        const row = rows[index];
-        const ageSeconds = asOfSeconds - row.time;
-        for (const period of periods) {
-            if (
-                (period.day === 9999 || ageSeconds <= period.day * 86_400)
-                && row.time >= period.cutoffSeconds
-            ) accumulateNphRow(period.grouped, row);
+    let processed = 0;
+    const where = cutoff
+        ? "WHERE nethers.insertTime >= ? AND nethers.insertTime <= ?"
+        : "WHERE nethers.insertTime <= ?";
+    await streamRowBatches<NetherPaceRow>(conn, {
+        sql: `SELECT nethers.id, nethers.uuid, pace.nether AS nether, wallTime, playTime, enters,
+            UNIX_TIMESTAMP(nethers.insertTime) AS time, resets, totalResets
+         FROM nethers INNER JOIN pace ON nethers.runId = pace.id
+         ${where} ORDER BY nethers.insertTime DESC, nethers.id DESC;`,
+    }, cutoff ? [cutoff, asOf] : [asOf], sqlBatchSize, async (rows) => {
+        pacer?.lease?.assertHeld();
+        for (const row of rows) {
+            const ageSeconds = asOfSeconds - row.time;
+            for (const period of periods) {
+                if (
+                    (period.day === 9999 || ageSeconds <= period.day * 86_400)
+                    && row.time >= period.cutoffSeconds
+                ) accumulateNphRow(period.grouped, row);
+            }
+            if (pacer && ++processed % pacer.rowBatchSize === 0) await pacingPause(pacer);
         }
-        if (pacer && (index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
-    }
+    });
     return new Map(periods.map(({day, grouped}) => [day, grouped]));
 }
 
@@ -902,20 +916,6 @@ async function fetchAaRows(conn: Connection, cutoff: Date | null, asOf: Date): P
         cutoff ? [cutoff, asOf] : [asOf],
     );
     return rows as AaRow[];
-}
-
-async function fetchNetherRows(conn: Connection, cutoff: Date | null, asOf: Date): Promise<NetherPaceRow[]> {
-    const where = cutoff
-        ? "WHERE nethers.insertTime >= ? AND nethers.insertTime <= ?"
-        : "WHERE nethers.insertTime <= ?";
-    const [rows] = await conn.execute(
-        `SELECT nethers.id, nethers.uuid, pace.nether AS nether, wallTime, playTime, enters,
-            UNIX_TIMESTAMP(nethers.insertTime) AS time, resets, totalResets
-         FROM nethers INNER JOIN pace ON nethers.runId = pace.id
-         ${where} ORDER BY nethers.insertTime DESC, nethers.id DESC;`,
-        cutoff ? [cutoff, asOf] : [asOf],
-    );
-    return rows as NetherPaceRow[];
 }
 
 function mergeLeaderboards(target: Leaderboards, source: Leaderboards, categories: readonly string[]): void {
@@ -1654,8 +1654,7 @@ async function main(): Promise<void> {
             sampleMemory();
 
             const nphStartedAt = Date.now();
-            const netherRows = await fetchNetherRows(conn, cutoff, asOf);
-            const netherPeriods = await accumulateNphPeriods(netherRows, days, asOfMs, pacer);
+            const netherPeriods = await readNphPeriods(conn, cutoff, asOf, days, sqlBatchSize, pacer);
             for (const day of days) {
                 const periodEntries = finalizeNph(netherPeriods.get(day)!, day, asOfMs);
                 netherPeriods.delete(day);
@@ -1663,7 +1662,6 @@ async function main(): Promise<void> {
                 periodCounts.get(day)!.nethers = periodEntries.length;
                 await pacingPause(pacer);
             }
-            netherRows.length = 0;
             phaseTimingsMs.nph = Date.now() - nphStartedAt;
             sampleMemory();
         }
