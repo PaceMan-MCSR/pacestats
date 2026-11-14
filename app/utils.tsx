@@ -184,13 +184,35 @@ export function fixDisplayName(name: string){
     return name
 }
 
+const padClockPart = (value: number) => value < 10 ? `0${value}` : String(value);
+
 export const formatTime = (ms: any, truncate: boolean = true) => {
-    const formatted = new Date(Number.parseFloat(ms)).toISOString().slice(11, truncate ? 19 : 21)
+    const value = Number.parseFloat(ms);
+    // Splits are durations below one day. Avoid a Date, ISO string and regexp
+    // for every displayed cell; retain Date's wrap/error behavior otherwise.
+    if (value >= 0 && value < 86_400_000) {
+        const seconds = Math.floor(value / 1_000);
+        const hours = Math.floor(seconds / 3_600);
+        const minutes = Math.floor(seconds / 60) % 60;
+        const clock = hours === 0
+            ? `${minutes}:${padClockPart(seconds % 60)}`
+            : `${hours}:${padClockPart(minutes)}:${padClockPart(seconds % 60)}`;
+        return truncate ? clock : `${clock}.${Math.floor(value / 100) % 10}`;
+    }
+    const formatted = new Date(value).toISOString().slice(11, truncate ? 19 : 21);
     return formatted.replace(/^(?:00:)?0?/, '');
 }
 
 export const formatDecimals = (ms: any, dp: number = 0) => {
-    const formatted = new Date(Number.parseFloat(ms)).toISOString().slice(14, 19 + (dp > 0 ? dp + 1 : 0))
+    const value = Number.parseFloat(ms);
+    if (value >= 0 && value < 86_400_000 && Number.isInteger(dp) && dp >= 0 && dp <= 3) {
+        const seconds = Math.floor(value / 1_000);
+        const clock = `${Math.floor(seconds / 60) % 60}:${padClockPart(seconds % 60)}`;
+        if (dp === 0) return clock;
+        const fraction = Math.floor(value / (dp === 1 ? 100 : dp === 2 ? 10 : 1)) % (dp === 1 ? 10 : dp === 2 ? 100 : 1_000);
+        return `${clock}.${String(fraction).padStart(dp, '0')}`;
+    }
+    const formatted = new Date(value).toISOString().slice(14, 19 + (dp > 0 ? dp + 1 : 0));
     if (formatted.startsWith('0')) {
         return formatted.slice(1)
     }
