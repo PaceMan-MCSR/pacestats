@@ -1,8 +1,9 @@
 import {NextRequest} from "next/server";
-import { getAllUsers, getCached } from "@/app/data";
+import {fetchAllUsersFromRedis, getAllNamesByNick, getCached, getUserInfo} from "@/app/data";
 import {
     ApiInputError,
     jsonResponse,
+    mapWithConcurrency,
     rateLimit,
     stringParam,
     validationErrorResponse,
@@ -31,7 +32,25 @@ export async function GET(request: NextRequest) {
         const names = [...new Set(raw.split(",").map((name) => name.trim().toLocaleLowerCase()).filter(Boolean))];
         if (names.length > MAX_NAMES) throw new ApiInputError(`names must list at most ${MAX_NAMES} players`);
 
-        const users = await getCached(getAllUsers, "getAllUsers") as User[];
+        const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis") as User[];
+        if (users.length === 0) {
+            // A tooltip requests at most20 players. An empty Redis must not
+            // enumerate the complete lifetime just to resolve those names.
+            const entries = await mapWithConcurrency(names, 4, async (name) => {
+                const identity = await getCached(getAllNamesByNick, "getAllNamesByNick", name);
+                // This endpoint accepts current nicknames, rather than every
+                // historical alias accepted by the identity resolver.
+                if (!identity || identity.nick.toLocaleLowerCase() !== name) return [name, null] as const;
+                const info = await getCached(getUserInfo, "getUserInfo", identity.uuid);
+                return [name, {
+                    id: identity.uuid, nick: identity.nick,
+                    displayName: info?.displayName ?? null,
+                    color: info?.color ?? null,
+                    bgColor: info?.bgColor ?? null,
+                }] as const;
+            });
+            return jsonResponse(Object.fromEntries(entries), {cacheSeconds: 60, staleSeconds: 120});
+        }
         // getCached returns the same array until its entry expires, so the
         // index is rebuilt only when the list changes.
         if (users !== indexedUsers) {

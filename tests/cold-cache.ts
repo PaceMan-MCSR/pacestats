@@ -1,6 +1,7 @@
 /** Isolated local Docker Redis DB14 only; primary application cache is untouched. */
 import assert from "node:assert/strict";
 import Redis from "ioredis";
+import {NextRequest} from "next/server";
 
 process.env.REDIS_URL = "redis://127.0.0.1:6379/14";
 const fixture = new Redis(process.env.REDIS_URL);
@@ -44,6 +45,26 @@ async function main() {
     const localCache = (globalThis as typeof globalThis & {__paceStatsCache: {keys: () => string[]}}).__paceStatsCache;
     assert.ok(!localCache.keys().includes('["getAllUsers"]'), "One player's identity must not enumerate every player on a cold cache");
     console.log(JSON.stringify({case: "redis-empty-identity", ms: performance.now() - identityStart}));
+    const {GET: playerInfo} = await import("../app/api/getPlayerInfo/route");
+    const infoResponse = await playerInfo(new NextRequest("http://localhost:5050/stats/api/getPlayerInfo?names=NoFearr1337,not-a-player"));
+    assert.equal(infoResponse.status, 200);
+    const tooltip = await infoResponse.json();
+    const [customization] = await (await data.getConn()).execute<any[]>("SELECT displayName, color, bgColor FROM users WHERE uuid=?;", [uuid]);
+    assert.deepEqual(tooltip.nofearr1337, {id: uuid, nick: "NoFearr1337", displayName: customization[0]?.displayName ?? null,
+        color: customization[0]?.color ?? null, bgColor: customization[0]?.bgColor ?? null});
+    assert.equal(tooltip["not-a-player"], null);
+    const [customized] = await (await data.getConn()).execute<any[]>(
+        `SELECT users.uuid, displayName, color, bgColor,
+            (SELECT nickname FROM pace WHERE pace.uuid=users.uuid ORDER BY id DESC LIMIT 1) AS nick
+         FROM users WHERE displayName IS NOT NULL OR color IS NOT NULL OR bgColor IS NOT NULL LIMIT 1;`
+    );
+    assert.ok(customized[0]?.nick, "A customized player is required for metadata parity");
+    const custom = customized[0];
+    const customResponse = await playerInfo(new NextRequest(`http://localhost:5050/stats/api/getPlayerInfo?names=${encodeURIComponent(custom.nick)}`));
+    const customTooltip = await customResponse.json();
+    assert.deepEqual(customTooltip[custom.nick.toLocaleLowerCase()], {id: custom.uuid, nick: custom.nick,
+        displayName: custom.displayName, color: custom.color, bgColor: custom.bgColor});
+    assert.ok(!localCache.keys().includes('["getAllUsers"]'));
     await assert.rejects(data.getTrimmedLeaderboards(30), {code: "CACHE_NOT_READY"});
     const {validationErrorResponse} = await import("../app/api/_utils");
     const unavailable = validationErrorResponse(new data.CacheNotReadyError())!;
