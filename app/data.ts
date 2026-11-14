@@ -2156,10 +2156,15 @@ export const getNethersByPeriod = async (uuid: string, days: number, limit : num
 }
 
 export const jude = async (uuid: string) => {
+    // Find the newest completed ID in the compact finish index, then fetch
+    // its payload once rather than reading every completion's wide row.
     let query = `SELECT id, nether, bastion, fortress, first_portal, stronghold, end, finish, 
         lootBastion, obtainObsidian, obtainCryingObsidian, obtainRod,
         UNIX_TIMESTAMP(insertTime) AS time, UNIX_TIMESTAMP(lastUpdated) AS updatedTime, UNIX_TIMESTAMP(realUpdated) AS realUpdated
-        FROM pace WHERE uuid=? AND finish IS NOT NULL ORDER BY id DESC LIMIT 1;`;
+        FROM pace WHERE id=(
+            SELECT id FROM pace WHERE uuid=? AND finish IS NOT NULL
+            ORDER BY id DESC LIMIT 1
+        );`;
     const [rows, fields] = await (await getConn()).execute(
         query,
         [uuid]
