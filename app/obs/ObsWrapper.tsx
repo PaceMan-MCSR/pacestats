@@ -20,9 +20,7 @@ const ColorInput = lazyLoad(() => import("@/app/obs/ObsColorPicker").then((modul
     loading: () => <input disabled aria-label="Colour"/>,
 });
 
-export default function ObsWrapper({userInfo, params}: {
-        userInfo: any, params: { }
-    }) {
+export default function ObsWrapper() {
     const [search, setSearch] = useState("")
     const [color, setColor] = useState("#000000")
     const [hours, setHours] = useState(24)
@@ -93,7 +91,7 @@ export default function ObsWrapper({userInfo, params}: {
                         <div className="col">
                             <img className="avatar" src={url} alt={search}/>
                             <div className="nameSearch">
-                                <PlayerSearch userInfo={userInfo} input={search} setOutput={setSearch} />
+                                <PlayerSearch input={search} setOutput={setSearch} />
                             </div>
                             <OverlayTrigger overlay={
                                 <Tooltip className="hoursTooltip">
