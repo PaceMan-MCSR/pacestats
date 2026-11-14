@@ -8,6 +8,10 @@ const nextConfig = {
     compress: false,
     trailingSlash: true,
     experimental: {
+        // Avoid two render-blocking CSS requests on a cold visit. At 300ms
+        // latency this brought the first large paint forward by one RTT.
+        // Next keeps RSC navigation styles as shared stylesheet references.
+        inlineCss: true,
         // Let the browser reuse page data it already has for 30 seconds:
         // going back to the leaderboard, reopening a player or switching the
         // day range back needs no request. The pages themselves are cached
