@@ -39,7 +39,7 @@ export default function AAPlayerPage({name, uuid, recentRuns, twitches, nph, dat
                     <div className="recentContainer mb-2">
                         <AARecentRuns runs={recentRuns}/>
                         <div className="openRuns">
-                            <Link href={`/player/${name}/runs/aa`}>
+                            <Link href={`/player/${name}/runs/aa`} prefetch={true}>
                                 <button className="btn btn-dark">More runs</button>
                             </Link>
                         </div>

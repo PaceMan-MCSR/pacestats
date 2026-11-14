@@ -79,7 +79,8 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
                                 <div className="recentContainer mb-2">
                                     <RecentRuns runs={recentRuns}/>
                                     <div className="openRuns">
-                                        <Link {...moreRunsLink.linkProps}>
+                                        {/* Prepare this one bounded 25-row destination while visible. */}
+                                        <Link {...moreRunsLink.linkProps} prefetch={true}>
                                             <div className={customClass(colours, "ccMoreRuns")} style={{opacity: pendingMoreRuns ? 0.7 : 1, ...colourVars(colours)}}>
                                                 <button className="btn btn-dark">More runs</button>
                                             </div>

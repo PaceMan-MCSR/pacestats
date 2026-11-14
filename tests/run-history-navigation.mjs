@@ -29,6 +29,15 @@ async function change(action, predicate) {
     return result.json();
 }
 try {
+    const prepared = page.waitForResponse(response => new URL(response.url()).pathname === '/stats/player/NoFearr1337/runs/'
+        && response.request().headers()['next-router-prefetch'] === '1' && response.status() === 200);
+    await page.goto(new URL('player/NoFearr1337/', base).href, {waitUntil: 'domcontentloaded'});
+    await (await prepared).finished();
+    assert.equal(new URL(page.url()).pathname, '/stats/player/NoFearr1337/');
+    await page.getByRole('button', {name: 'More runs', exact: true}).click();
+    await page.waitForURL(current => current.pathname.endsWith('/runs/'));
+    await page.locator('.fastRunsGridRow').first().waitFor();
+    console.log('PASS: the single More runs destination fully prepares while the profile is visible');
     await page.goto(new URL('player/NoFearr1337/runs/', base).href, {waitUntil: 'networkidle'});
     await page.waitForFunction(() => {
         const button = document.querySelector('.filterToggle');
