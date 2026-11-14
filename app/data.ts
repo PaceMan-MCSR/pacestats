@@ -797,6 +797,7 @@ const ttls = {
     getAllPlayerRunsOptimized: 10,
     getAllPlayerRunsByPeriod: 20,
     getAllPlayerRunsByHours: 20,
+    readSessionSplitRows: 20,
     getRecentTimestamps: 10,
     getLeaderboards: {
         default: 60 * 60,
@@ -2633,7 +2634,7 @@ const countWindowRows = async (from: string, values: unknown[], limit: number): 
     return Number(rows[0].windowRows);
 };
 
-const nphColumns = `pace.nether as nether, twitch, wallTime, playTime, enters, isAccurate,
+const nphColumns = `pace.nether as nether, wallTime, playTime, enters,
     UNIX_TIMESTAMP(nethers.insertTime) as time, resets, totalResets`;
 
 const nphWindow = (liveOnly: boolean) => `FROM nethers INNER JOIN pace ON nethers.runId=pace.id
@@ -2863,6 +2864,18 @@ const sessionStatsCategories = [
     "finish"
 ]
 
+/** Internal aggregate projection; the public run-history helper keeps its full shape. */
+const readSessionSplitRows = async (uuid: string, hours: number, limit: number) => {
+    const [rows] = await executeDb<any[]>(
+        `SELECT id, nether, bastion, fortress, first_portal, stronghold, end, finish,
+            obtainRod, UNIX_TIMESTAMP(insertTime) AS time
+         FROM pace WHERE uuid=? AND insertTime >= NOW() - INTERVAL ? HOUR
+         ORDER BY insertTime DESC, id DESC LIMIT ?;`,
+        [uuid, mysqlIntegerParam(hours), mysqlIntegerParam(limit)]
+    );
+    return rows;
+};
+
 /** Collects session split times newest first until a long gap or the window edge. */
 const walkSessionStats = (boundedRuns: any[], safeHours: number, safeHoursBetween: number) => {
     let lastTime = 0
@@ -2931,12 +2944,11 @@ export const getSessionStats = async (uuid: string, hours: number, hoursBetween:
     // Most sessions end inside the newest page; read the whole window only
     // when the walk runs off the end of a full page.
     let runs = await getCached(
-        getAllPlayerRunsByHours,
-        "getAllPlayerRunsByHours",
+        readSessionSplitRows,
+        "readSessionSplitRows",
         uuid,
         safeHours,
-        SESSION_PAGE_ROWS,
-        false
+        SESSION_PAGE_ROWS
     )
     let windowRows = runs.length
     let walk = walkSessionStats(runs, safeHours, safeHoursBetween)
@@ -2949,12 +2961,11 @@ export const getSessionStats = async (uuid: string, hours: number, hoursBetween:
             )
         } else {
             runs = await getCached(
-                getAllPlayerRunsByHours,
-                "getAllPlayerRunsByHours",
+                readSessionSplitRows,
+                "readSessionSplitRows",
                 uuid,
                 safeHours,
-                MAX_SESSION_ROWS + 1,
-                false
+                MAX_SESSION_ROWS + 1
             )
             windowRows = runs.length
             walk = walkSessionStats(runs.slice(0, MAX_SESSION_ROWS), safeHours, safeHoursBetween)
