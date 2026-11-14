@@ -22,6 +22,7 @@ import { refreshCombinedSummaries } from "./combined-summaries";
 import {
     formatRunHistoryHead,
     layoutRunHistory,
+    layoutEncodedRunHistory,
     LEGACY_RUN_HISTORY_PREFIX,
     parseRunHistoryBase,
     parseRunHistoryHead,
@@ -162,10 +163,12 @@ async function acknowledgeOutboxClaims(
 function pushHistoryEntries(
     pending: Array<[string, string]>,
     uuid: string,
-    newestFirst: string[],
+    newestFirst: string[] | string,
     generation: string,
 ): string | null {
-    const {head, base} = layoutRunHistory(newestFirst, generation);
+    const {head, base} = typeof newestFirst === "string"
+        ? layoutEncodedRunHistory(newestFirst, generation)
+        : layoutRunHistory(newestFirst, generation);
     // Base first: the pair is published together, in this order.
     if (base !== null) pending.push([runHistoryBaseKey(uuid), base]);
     pending.push([runHistoryHeadKey(uuid), head]);
@@ -572,7 +575,7 @@ async function patchHistories(
                     complete += "\n" + base.body;
                 }
                 const absentBase = pushHistoryEntries(
-                    entries, uuid, spliceHistory(complete, rows).split("\n"), generation,
+                    entries, uuid, spliceHistory(complete, rows), generation,
                 );
                 if (absentBase !== null) deletedTargets.push(absentBase);
                 baseRewrites++;

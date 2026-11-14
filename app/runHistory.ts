@@ -121,3 +121,21 @@ export function layoutRunHistory(newestFirst: string[], version: string): {head:
         base: `${MARK},${version}\n${baseLines.join("\n")}`,
     };
 }
+
+/** Lay out an already encoded CSV history without splitting its complete base. */
+export function layoutEncodedRunHistory(body: string, version: string): {head: string; base: string | null} {
+    let position = 0;
+    let boundary = -1;
+    for (let run = 0; run < RUN_HISTORY_HEAD_RUNS; run++) {
+        boundary = body.indexOf("\n", position);
+        if (boundary < 0) return {head: formatRunHistoryHead(null, 0, body), base: null};
+        position = boundary + 1;
+    }
+    const baseBody = body.slice(position);
+    const newline = baseBody.indexOf("\n");
+    const firstBaseLine = newline < 0 ? baseBody : baseBody.slice(0, newline);
+    return {
+        head: formatRunHistoryHead(version, runLineId(firstBaseLine), body.slice(0, boundary)),
+        base: `${MARK},${version}\n${baseBody}`,
+    };
+}
