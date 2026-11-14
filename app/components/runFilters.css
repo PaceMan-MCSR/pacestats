@@ -1,0 +1,68 @@
+.runFiltersPanel {
+    background: rgb(29, 29, 33);
+    padding: 25px 15px 10px;
+    border: 1px solid rgb(9, 9, 11);
+    border-radius: 5px;
+    text-align: left;
+}
+.runFilterPresetsTitle { margin-bottom: 12px; line-height: .1; }
+.runFilterPresets { display: flex; flex-wrap: wrap; gap: 8px; }
+.runFilterPreset {
+    padding: 6px 16px;
+    border: 0;
+    border-radius: 4px;
+    background: #1976d2;
+    color: #fff;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.75;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+.runFilterPreset:hover { background: #1565c0; }
+.runFiltersTitle { margin: 20px 0 12px; }
+.runFilterRow { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
+.runFilterField { display: inline-block; position: relative; }
+.runFilterField > span {
+    position: absolute;
+    top: -9px;
+    left: 9px;
+    padding: 0 5px;
+    background: linear-gradient(rgb(29, 29, 33) 50%, rgb(18, 18, 21) 50%);
+    color: rgb(170, 170, 180);
+    font-size: .75rem;
+    line-height: 18px;
+    pointer-events: none;
+}
+.runFilterField select, .runFilterField input {
+    height: 48px;
+    padding: 0 10px;
+    border: 1px solid rgba(0, 0, 0, .23);
+    border-radius: 3px;
+    background: rgb(18, 18, 21);
+    color: rgb(230, 230, 230);
+    font: inherit;
+    color-scheme: dark;
+}
+.runFilterColumn select { width: 175px; }
+.runFilterOperator select { width: 100px; }
+.runFilterTime input { width: 80px; }
+.runFilterRow .runDateFilter { margin-right: 0; }
+.runFilterField select:hover, .runFilterField input:hover { border-color: #111; }
+.runFilterField select:focus, .runFilterField input:focus { border-color: #1976d2; outline: 1px solid #1976d2; }
+.runFilterIconButton {
+    width: 40px;
+    height: 40px;
+    padding: 8px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #1976d2;
+    vertical-align: top;
+    cursor: pointer;
+}
+.runFilterIconButton:hover { background: rgba(25, 118, 210, .1); }
+.runFilterRemove { color: #d32f2f; }
+.runFilterRemove:hover { background: rgba(211, 47, 47, .1); }
+.runFilterIconButton:focus-visible, .runFilterPreset:focus-visible { outline: 2px solid #90caf9; outline-offset: 2px; }

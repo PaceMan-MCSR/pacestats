@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import dynamic from "next/dynamic";
 import { Collapse } from "@/app/components/HoverTooltip";
 
-// Loaded when the panel first opens; see RunFiltersPanel.tsx.
+// Keep even the small filter form off the initial run-history path.
 const RunFiltersPanel = dynamic(() => import("@/app/components/RunFiltersPanel"), {
     ssr: false,
     loading: () => <p style={{margin: "15px 0"}}>Loading filters...</p>,
