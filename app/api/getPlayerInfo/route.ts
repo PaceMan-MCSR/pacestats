@@ -32,7 +32,10 @@ export async function GET(request: NextRequest) {
         const names = [...new Set(raw.split(",").map((name) => name.trim().toLocaleLowerCase()).filter(Boolean))];
         if (names.length > MAX_NAMES) throw new ApiInputError(`names must list at most ${MAX_NAMES} players`);
 
-        const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis") as User[];
+        const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis").catch((error) => {
+            console.error("Unable to read compact player information from Redis; falling back to MySQL:", error);
+            return [];
+        }) as User[];
         if (users.length === 0) {
             // A tooltip requests at most20 players. An empty Redis must not
             // enumerate the complete lifetime just to resolve those names.

@@ -42,7 +42,7 @@ async function main() {
     const identityStart = performance.now();
     assert.deepEqual(await data.getAllNamesByNick("NoFearr1337"), {uuid, nick: "NoFearr1337"});
     assert.deepEqual(await data.getAllNamesByTwitch("nofearr1337"), {uuid, nick: "NoFearr1337"});
-    const localCache = (globalThis as typeof globalThis & {__paceStatsCache: {keys: () => string[]}}).__paceStatsCache;
+    const localCache = (globalThis as typeof globalThis & {__paceStatsCache: {keys: () => string[]; del: (key: string) => number}}).__paceStatsCache;
     assert.ok(!localCache.keys().includes('["getAllUsers"]'), "One player's identity must not enumerate every player on a cold cache");
     console.log(JSON.stringify({case: "redis-empty-identity", ms: performance.now() - identityStart}));
     const {GET: playerInfo} = await import("../app/api/getPlayerInfo/route");
@@ -65,6 +65,27 @@ async function main() {
     assert.deepEqual(customTooltip[custom.nick.toLocaleLowerCase()], {id: custom.uuid, nick: custom.nick,
         displayName: custom.displayName, color: custom.color, bgColor: custom.bgColor});
     assert.ok(!localCache.keys().includes('["getAllUsers"]'));
+    // Inject a command failure in this isolated process, without stopping or
+    // changing the primary Redis service. Identity metadata must still render.
+    const localRedis = (globalThis as typeof globalThis & {__paceStatsRedis: Redis}).__paceStatsRedis;
+    const originalCall = localRedis.call.bind(localRedis);
+    let rejectedReads = 0;
+    localCache.del('["fetchAllUsersFromRedis"]');
+    localRedis.call = ((command: string, ...args: any[]) => {
+        if (command === "JSON.GET" && args[0] === "users") {
+            rejectedReads++;
+            return Promise.reject(new Error("Injected compact user read failure"));
+        }
+        return originalCall(command, ...args);
+    }) as typeof localRedis.call;
+    try {
+        const failedCacheResponse = await playerInfo(new NextRequest(`http://localhost:5050/stats/api/getPlayerInfo?names=${encodeURIComponent(custom.nick)}`));
+        assert.equal(failedCacheResponse.status, 200);
+        assert.deepEqual(await failedCacheResponse.json(), customTooltip);
+        assert.ok(rejectedReads > 0, "The Redis command failure must be exercised");
+    } finally {
+        localRedis.call = originalCall;
+    }
     await assert.rejects(data.getTrimmedLeaderboards(30), {code: "CACHE_NOT_READY"});
     const {validationErrorResponse} = await import("../app/api/_utils");
     const unavailable = validationErrorResponse(new data.CacheNotReadyError())!;
