@@ -43,6 +43,7 @@ import {
     useState,
 } from "react";
 import "./searchAutocomplete.css";
+import {defaultFuseOptions, sharedSearchIndex} from './searchIndex';
 
 export const DEFAULT_INPUT_DEBOUNCE = 200;
 export const MAX_RESULTS = 10;
@@ -58,15 +59,6 @@ const loadFuse = () => {
         return loadedFuse;
     });
     return fuseRequest;
-};
-
-const defaultFuseOptions = {
-    shouldSort: true,
-    threshold: 0.6,
-    location: 0,
-    distance: 100,
-    minMatchCharLength: 1,
-    keys: ["name"],
 };
 
 type Item = Record<string, any>;
@@ -315,7 +307,7 @@ export default function SearchAutocomplete<T extends Item>({
     // Building an index walks the entire player list. Reuse it while typing,
     // highlighting results and opening/closing the menu.
     const fuse = useMemo(
-        () => FuseClass ? new FuseClass(items, {...defaultFuseOptions, ...fuseOptions}) : null,
+        () => FuseClass ? sharedSearchIndex(FuseClass, items, fuseOptions) : null,
         [FuseClass, items, fuseOptions]
     );
 
@@ -399,7 +391,6 @@ export default function SearchAutocomplete<T extends Item>({
         document.addEventListener("click", handleDocumentClick);
         return () => document.removeEventListener("click", handleDocumentClick);
         // eraseResults only uses stable setters and the current callback ref.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hasFocus, hasTyped]);
 
     const handleOnFocus = (event: FocusEvent<HTMLInputElement>) => {
