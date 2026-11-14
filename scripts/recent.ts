@@ -31,6 +31,7 @@ import {
     RUN_HISTORY_LAYOUT,
     runHistoryBaseKey,
     runHistoryHeadKey,
+    spliceRunHistory,
     type RunHistoryHead,
 } from "@/app/runHistory";
 
@@ -472,21 +473,7 @@ function spliceHistory(existing: string, changedRuns: RunRow[]): string {
     const patches = changedRuns
         .map((run) => ({id: run.id, line: csvEncodeRun(run)}))
         .sort((left, right) => right.id - left.id);
-    const output: string[] = [];
-    let next = 0;
-    let position = 0;
-    while (position < existing.length && next < patches.length) {
-        const newline = existing.indexOf("\n", position);
-        const lineEnd = newline < 0 ? existing.length : newline;
-        const id = Number(existing.slice(position, existing.indexOf(",", position)));
-        while (next < patches.length && patches[next].id > id) output.push(patches[next++].line);
-        if (next < patches.length && patches[next].id === id) output.push(patches[next++].line);
-        else output.push(existing.slice(position, lineEnd));
-        position = lineEnd + 1;
-    }
-    while (next < patches.length) output.push(patches[next++].line);
-    if (position < existing.length) output.push(existing.slice(position));
-    return output.join("\n");
+    return spliceRunHistory(existing, patches);
 }
 
 const countLines = (text: string) => {

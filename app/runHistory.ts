@@ -69,6 +69,42 @@ export const formatRunHistoryHead = (baseVersion: string | null, baseMaxId: numb
 /** The id an encoded run line starts with. */
 export const runLineId = (line: string) => Number(line.slice(0, line.indexOf(",")));
 
+/** Merge newest-first encoded patches, copying unchanged runs in whole blocks. */
+export function spliceRunHistory(
+    existing: string,
+    patches: ReadonlyArray<{id: number; line: string}>,
+): string {
+    const output: string[] = [];
+    let next = 0;
+    let position = 0;
+    let copyStart = 0;
+    while (position < existing.length && next < patches.length) {
+        const newline = existing.indexOf("\n", position);
+        const lineEnd = newline < 0 ? existing.length : newline;
+        const id = Number(existing.slice(position, existing.indexOf(",", position)));
+        if (patches[next].id >= id) {
+            if (copyStart < position) output.push(existing.slice(copyStart, position - 1));
+            copyStart = position;
+            while (next < patches.length && patches[next].id > id) output.push(patches[next++].line);
+            if (next < patches.length && patches[next].id === id) {
+                output.push(patches[next++].line);
+                copyStart = lineEnd + 1;
+            }
+        }
+        position = lineEnd + 1;
+    }
+    if (next < patches.length) {
+        if (copyStart < position) output.push(existing.slice(copyStart, Math.min(position - 1, existing.length)));
+        copyStart = position;
+        while (next < patches.length) output.push(patches[next++].line);
+    }
+    if (copyStart < existing.length) {
+        const end = position >= existing.length ? Math.min(position - 1, existing.length) : existing.length;
+        output.push(existing.slice(copyStart, end));
+    }
+    return output.join("\n");
+}
+
 /**
  * Lay a complete history (run lines, newest first) out as head and base.
  * `version` names the new base and must be unique to this write.
