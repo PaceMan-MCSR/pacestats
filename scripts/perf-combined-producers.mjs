@@ -65,7 +65,16 @@ try {
         rows = stale.size;
     }
     const used = process.cpuUsage(cpu);
+    // Redis hash fields have no iteration-order contract. Record both the
+    // producer's argument order and a canonical digest of each field's bytes.
+    const fieldHash = kind === 'rebuildPlayers' ? createHash('sha256').update(JSON.stringify(
+        [...values].map(([key, fields]) => [key,
+            Array.from({length: fields.length / 2}, (_, index) => fields.slice(index * 2, index * 2 + 2))
+                .sort(([a], [b]) => a.localeCompare(b)),
+        ]).sort(([a], [b]) => a.localeCompare(b)),
+    )).digest('hex') : undefined;
     const result = {sourcePath, kind, rows, sqlRows, keys: values.size, commands,
+        fieldHash,
         hash: createHash('sha256').update(JSON.stringify([...values].sort(([a], [b]) => a.localeCompare(b)))).digest('hex'),
         durationMs: Math.round(performance.now() - start), cpuMs: Math.round((used.user + used.system) / 1000),
         peakRssMiB: process.resourceUsage().maxRSS / 1024};

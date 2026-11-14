@@ -217,7 +217,7 @@ async function rebuildPlayers(
                 sql: sourceRowsSql(
                     `uuid IN (${batch.map(() => "?").join(",")})
                      AND insertTime < FROM_UNIXTIME(?) AND UNIX_TIMESTAMP(insertTime) < ?`,
-                    "ORDER BY uuid ASC",
+                    "ORDER BY uuid ASC, BINARY uuid ASC, id ASC",
                 ),
                 rowsAsArray: true,
             },
