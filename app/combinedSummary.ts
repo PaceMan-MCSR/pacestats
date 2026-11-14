@@ -117,6 +117,18 @@ export type BucketSummary = SplitSummary[];
 export const tailDepth = (count: number) => count <= 64 ? count : Math.max(64, Math.ceil(count * 0.5));
 
 export function summarizeSplit(values: number[]): SplitSummary {
+    // Short player/category series need no typed-array allocation or sort.
+    if (values.length === 0) return [0, 0, []];
+    if (values.length === 1) return [1, 0 + values[0], [Number(values[0])]];
+    if (values.length === 2) {
+        const first = Number(values[0]);
+        const second = Number(values[1]);
+        // Match Float64Array.sort's order for NaN and signed zero too.
+        const swap = !Number.isNaN(first) && (
+            Number.isNaN(second) || first < second || (Object.is(first, -0) && second === 0)
+        );
+        return [2, 0 + values[0] + values[1], swap ? [second, first] : [first, second]];
+    }
     let total = 0;
     for (let index = 0; index < values.length; index++) total += values[index];
     const depth = tailDepth(values.length);
