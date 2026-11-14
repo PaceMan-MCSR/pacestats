@@ -458,12 +458,14 @@ export async function fetchPlayerStatsFromRedis(uuid: string, days = 30) {
 }
 
 export async function fetchTwitchesFromRedis(uuid: string) {
-    const jsonString = await redis.call('JSON.GET', `users:twitch_details:${uuid}`, '$');
-    if (!jsonString) {
-        return []
+    try {
+        const jsonString = await redis.call('JSON.GET', `users:twitch_details:${uuid}`, '$');
+        if (jsonString) return JSON.parse(String(jsonString))[0];
+    } catch (error) {
+        console.error("Unable to read Twitch details from Redis; falling back to MySQL:", error);
     }
-    const parsedData = JSON.parse(jsonString as string);
-    return parsedData[0];
+    const accounts = await getCached(getTwitchAccounts, "getTwitchAccounts", uuid);
+    return (accounts ?? []).map((account: any) => ({...account, live: false}));
 }
 
 export async function fetchAllUsersFromRedis() {
@@ -624,39 +626,15 @@ export async function fetchAllPlayerRunsFromRedis(uuid: string){
 }
 
 export async function fetchNphFromRedis(uuid: string, days: number) {
-    const jsonString = await redis.call('JSON.GET', `nph:${uuid}:${days}day`, '$');
-    if (!jsonString) {
-        return {
-            rtanph: 0,
-            rnph: 0,
-            lnph: 0,
-            count: 0,
-            avg: 0,
-            playtime: 0,
-            walltime: 0,
-            resets: 0,
-            totalResets: 0,
-            seedsPlayed: 0,
-            rpe: 0
-        };
+    const safeDays = leaderboardPeriods.has(days) ? days : 30;
+    try {
+        const jsonString = await redis.call('JSON.GET', `nph:${uuid}:${safeDays}day`, '$');
+        const parsed = jsonString ? JSON.parse(String(jsonString))[0] : null;
+        if (parsed) return parsed;
+    } catch (error) {
+        console.error("Unable to read NPH from Redis; falling back to MySQL:", error);
     }
-    const parsedData = JSON.parse(jsonString as string)[0];
-    if (!parsedData) {
-        return {
-            rtanph: 0,
-            rnph: 0,
-            lnph: 0,
-            count: 0,
-            avg: 0,
-            playtime: 0,
-            walltime: 0,
-            resets: 0,
-            totalResets: 0,
-            seedsPlayed: 0,
-            rpe: 0
-        };
-    }
-    return parsedData;
+    return getCached(calculateNphFromDatabase, "calculateNphFromDatabase", uuid, safeDays);
 }
 
 async function fetchTopLeaderboardsFromRedis(days = 30) {
@@ -831,6 +809,7 @@ const ttls = {
     getRunsPaginated: 60,
     fetchAllUsersFromRedis: 60,
     fetchPlayerStatsFromRedis: 10,
+    calculateNphFromDatabase: 10,
     fetchAllPlayerRunsFromRedis: 5,
     fetchFastestLeaderboardsFromRedis: 60,
     fetchFastestLeaderboardCategoryFromRedis: 60 * 30,
@@ -1123,6 +1102,44 @@ const calculatePlayerStatsFromDatabase = async (uuid: string, days: number): Pro
         }
     }
     return result;
+};
+
+/** ResetTracker totals for one player; never substitute zeroes for a missing cache. */
+const calculateNphFromDatabase = async (uuid: string, days: number) => {
+    const times = new TimeSeries();
+    let count = 0, playTime = 0, wallTime = 0, resets = 0, enters = 0, totalResets = 0;
+    let firstTime = 0, lastTime = Number.POSITIVE_INFINITY, latestId = 0;
+    await streamDbRows(
+        `SELECT nethers.id, pace.nether, wallTime, playTime, enters,
+                UNIX_TIMESTAMP(nethers.insertTime), resets, totalResets
+         FROM nethers INNER JOIN pace ON nethers.runId=pace.id
+         WHERE nethers.uuid=? AND nethers.insertTime >= NOW() - INTERVAL ? DAY;`,
+        [uuid, mysqlIntegerParam(days)],
+        ([id, nether, wall, play, entered, instant, resetCount, allResets]) => {
+            const time = Number(instant);
+            count++;
+            times.push(Number(nether));
+            wallTime += Number(wall);
+            playTime += Number(play);
+            if (Number(resetCount) > 0) resets += Number(resetCount);
+            enters += Number(entered);
+            lastTime = Math.min(lastTime, time);
+            if (time > firstTime || (time === firstTime && Number(id) > latestId)) {
+                firstTime = time;
+                latestId = Number(id);
+                totalResets = Number(allResets);
+            }
+        }
+    );
+    const elapsedHours = count > 1 ? (firstTime - lastTime) / 3_600 : (Date.now() / 1_000 - lastTime) / 3_600;
+    return {
+        rtanph: roundNumber(elapsedHours > 0 ? count / elapsedHours : 0),
+        rnph: roundNumber(wallTime + playTime > 0 ? count / ((wallTime + playTime) / 3_600_000) : 0),
+        lnph: roundNumber(playTime > 0 ? count / (playTime / 3_600_000) : 0),
+        count, avg: trimmedStats(times.view()).avg, playtime: playTime, walltime: wallTime,
+        resets, totalResets, seedsPlayed: roundNumber(resets > 0 ? enters / resets * 100 : 0),
+        rpe: roundNumber(count > 0 ? resets / count : 0),
+    };
 };
 
 /**
@@ -1634,7 +1651,7 @@ export const deleteRun = async (id: string) => {
 
 export const getAllUsers = async () => {
     try {
-        const redisUsers = await fetchAllUsersFromRedis();
+        const redisUsers = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis");
         if (redisUsers.length > 0) return redisUsers;
     } catch (error) {
         console.error("Unable to read users from Redis; falling back to MySQL:", error);
@@ -1676,7 +1693,9 @@ export const getAllUsers = async () => {
 export const getAllNamesByNick = async (nick: string) => {
     try {
         const normalizedNick = nick.toLocaleLowerCase();
-        const users = await getCached(getAllUsers, "getAllUsers");
+        // Missing Redis must not enumerate all 3M runs merely to resolve one
+        // nickname. Use a compact cached list only; SQL below reads one index entry.
+        const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis");
         const matches = (users as any[]).filter(
             (candidate) => String(candidate.nick || "").toLocaleLowerCase() === normalizedNick
         );
@@ -1710,7 +1729,7 @@ export const getAllNamesByNick = async (nick: string) => {
 export const getAllNamesByTwitch = async (twitch: string) => {
     try {
         const normalizedTwitch = twitch.toLocaleLowerCase();
-        const users = await getCached(getAllUsers, "getAllUsers");
+        const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis");
         const matches = (users as any[]).filter((candidate) =>
             Array.isArray(candidate.twitches) && candidate.twitches.some(
                 (account: unknown) => String(account).toLocaleLowerCase() === normalizedTwitch
@@ -3081,7 +3100,7 @@ export const getPlayerRunsOffsetPage = async (
                 ${playerRunColumns.first_structure} AS first_structure,
                 ${playerRunColumns.second_structure} AS second_structure,
                 first_portal, stronghold, \`end\`, finish,
-                UNIX_TIMESTAMP(lastUpdated) * 1000 AS lastUpdated, vodId, twitch
+                UNIX_TIMESTAMP(lastUpdated) * 1000 AS lastUpdated, CAST(vodId AS CHAR) AS vodId, twitch
              FROM pace WHERE ${where.sql}
              ORDER BY ${nullsLast}${sortColumn} ${direction}, id DESC
              LIMIT ? OFFSET ?;`,

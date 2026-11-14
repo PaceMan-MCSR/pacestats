@@ -28,6 +28,22 @@ async function main() {
     }
     console.log(JSON.stringify({case: "redis-empty-lifetime-profile", ms: performance.now() - start,
         categories: Object.keys(profile).length}));
+    const nphStart = performance.now();
+    const nph = await data.fetchNphFromRedis(uuid, 9999);
+    const nphRaw = await primary.call("JSON.GET", `nph:${uuid}:9999day`, "$");
+    assert.ok(nphRaw);
+    assert.deepEqual(nph, JSON.parse(String(nphRaw))[0]);
+    console.log(JSON.stringify({case: "redis-empty-lifetime-nph", ms: performance.now() - nphStart, count: nph.count}));
+    const twitches = await data.fetchTwitchesFromRedis(uuid);
+    const twitchRaw = await primary.call("JSON.GET", `users:twitch_details:${uuid}`, "$");
+    assert.ok(twitchRaw);
+    assert.deepEqual(twitches, JSON.parse(String(twitchRaw))[0]);
+    const identityStart = performance.now();
+    assert.deepEqual(await data.getAllNamesByNick("NoFearr1337"), {uuid, nick: "NoFearr1337"});
+    assert.deepEqual(await data.getAllNamesByTwitch("nofearr1337"), {uuid, nick: "NoFearr1337"});
+    const localCache = (globalThis as typeof globalThis & {__paceStatsCache: {keys: () => string[]}}).__paceStatsCache;
+    assert.ok(!localCache.keys().includes('["getAllUsers"]'), "One player's identity must not enumerate every player on a cold cache");
+    console.log(JSON.stringify({case: "redis-empty-identity", ms: performance.now() - identityStart}));
     await assert.rejects(data.getTrimmedLeaderboards(30), {code: "CACHE_NOT_READY"});
     const {validationErrorResponse} = await import("../app/api/_utils");
     const unavailable = validationErrorResponse(new data.CacheNotReadyError())!;
@@ -64,7 +80,7 @@ async function main() {
     const recoveredProfile = await data.fetchPlayerStatsFromRedis(uuid, 1);
     assert.equal(recoveredProfile.nether[CategoryType.COUNT].value, 31);
     assert.equal(recoveredProfile.nether[CategoryType.COUNT].ranking, -1);
-    console.log("Cold cache: SQL profile parity, controlled503, bounded category reads, compact-board recovery and profile recovery passed");
+    console.log("Cold cache: scoped SQL profile/NPH/Twitch/identity parity, controlled503, bounded category reads and compact-board recovery passed");
 }
 
 main().then(() => 0, (error) => {console.error(error); return 1;}).then(async (code) => {
