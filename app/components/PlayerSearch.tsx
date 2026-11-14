@@ -12,6 +12,12 @@ import { usePlayerInfo } from "@/app/components/playerInfoStore";
 
 type SearchItem = SearchName & { color?: string | null };
 
+const PLAYER_SEARCH_OPTIONS = {
+    keys: ["nick", "twitches"],
+    threshold: 0.2,
+    minMatchCharLength: 2,
+};
+
 // Player pages loaded in full after a hover, kept for as long as the router
 // reuses them.
 const fullyPrefetchedPlayers = new Set<string>();
@@ -126,7 +132,10 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
             });
     };
 
-    useEffect(() => () => clearSearchPrefetches(), []);
+    useEffect(() => () => {
+        clearSearchPrefetches();
+        searchController.current?.abort();
+    }, []);
 
     const handleOnSearch = (query: string) => {
         if (data !== undefined || loadedItems !== null) return;
@@ -144,6 +153,7 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
         })
             .then((response) => response.ok ? response.json() : [])
             .then((results) => {
+                if (controller.signal.aborted || !mounted.current) return;
                 const nextItems: SearchItem[] = results.map((result: any) => ({
                     id: result.id,
                     nick: result.name,
@@ -202,13 +212,7 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
     >
         <SearchAutocomplete
                 items={items}
-                fuseOptions={{
-                    keys: ["nick", "twitches"],
-                    threshold: 0.2,
-                    minMatchCharLength: 2,
-                    includeMatches: true,
-                    includeScore: true
-                }}
+                fuseOptions={PLAYER_SEARCH_OPTIONS}
                 inputDebounce={100}
                 onSearch={handleOnSearch}
                 onFocus={requestPlayerNames}

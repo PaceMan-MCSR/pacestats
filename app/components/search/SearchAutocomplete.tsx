@@ -38,6 +38,7 @@ import {
     MouseEvent,
     ReactNode,
     useEffect,
+    useMemo,
     useRef,
     useState,
 } from "react";
@@ -308,9 +309,13 @@ export default function SearchAutocomplete<T extends Item>({
     maxLength = 0,
     className,
 }: SearchAutocompleteProps<T>) {
-    const options = { ...defaultFuseOptions, ...fuseOptions };
     const [FuseClass, setFuseClass] = useState<FuseConstructor | null>(() => loadedFuse);
-    const fuse = FuseClass ? new FuseClass(items, options) : null;
+    // Building an index walks the entire player list. Reuse it while typing,
+    // highlighting results and opening/closing the menu.
+    const fuse = useMemo(
+        () => FuseClass ? new FuseClass(items, {...defaultFuseOptions, ...fuseOptions}) : null,
+        [FuseClass, items, fuseOptions]
+    );
 
     const requestFuse = () => {
         if (FuseClass) return;
@@ -333,8 +338,7 @@ export default function SearchAutocomplete<T extends Item>({
         fuse
             ? fuse
                 .search(keyword, { limit: maxResults })
-                .map((result) => ({ ...result.item }))
-                .slice(0, maxResults)
+                .map((result) => result.item)
             : [];
 
     const eraseResults = () => {
