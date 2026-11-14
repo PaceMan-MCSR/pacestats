@@ -1,0 +1,9 @@
+.obsSetup .fontSelect {
+    width: 100%;
+    min-height: 38px;
+    padding: 6px 10px;
+    border: 1px solid rgb(10, 10, 10);
+    border-radius: 4px;
+    background-color: rgb(18, 18, 21);
+    color: rgb(230, 230, 230);
+}

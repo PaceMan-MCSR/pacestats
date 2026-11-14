@@ -7,13 +7,10 @@ import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 import SessionNethers from "@/app/obs/sessionNethers/[nick]/SessionNethers";
 import Session from "@/app/obs/session/[nick]/Session";
 import MaterialIcon from "@/app/components/MaterialIcon";
+import FontPicker from "@/app/obs/FontPicker";
 
-// The font and colour pickers load after the page renders. react-select and
-// react-colorful (about 65 KB together) then stay out of the first load.
-const FontPicker = lazyLoad(() => import("@/app/obs/FontPicker"), {
-    ssr: false,
-    loading: () => <div className="font-wrapper" style={{minHeight: 78}}/>,
-});
+// Colour controls load after the page renders. The native font select is
+// small enough to render immediately without a separate code request.
 const ColorPicker = lazyLoad(() => import("@/app/obs/ObsColorPicker").then((module) => module.ColorPicker), {
     ssr: false,
     loading: () => <div style={{width: 200, height: 200}}/>,

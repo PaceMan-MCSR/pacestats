@@ -1,109 +1,50 @@
-'use client'
+'use client';
 
-import {useCallback, useEffect, useState, useSyncExternalStore} from "react";
-import Select, {ActionMeta, GroupBase} from "react-select";
+import {useCallback, useEffect, useRef, useState, useSyncExternalStore} from "react";
 import MaterialIcon from "@/app/components/MaterialIcon";
+import {loadFontFamilies} from "@/app/obs/fontCatalog";
+import "./fontPicker.css";
 
-export default function FontPicker({output}: {output: any}) {
-    const [fonts, setFonts] = useState([
-        {value: "Inter", label: "Inter"},
-        {value: "Minecraft", label: "Minecraft"},
-    ]);
+export default function FontPicker({output}: {output: (font: string) => void}) {
+    const [fonts, setFonts] = useState(["Inter", "Minecraft"]);
     const [selectedFont, setSelectedFont] = useState("Minecraft");
     const [hasPermission, setHasPermission] = useState(true);
+    const mounted = useRef(false);
     const supported = useSyncExternalStore(
         () => () => {},
         () => typeof window !== "undefined" && "queryLocalFonts" in window,
         () => false,
     );
-
     const reloadFonts = useCallback(async () => {
-        if(typeof window === "undefined") {
-            return
-        }
-        if (!supported) {
-            return
-        }
+        if (!supported) return;
         try {
-            // @ts-ignore
-            const fonts = await window.queryLocalFonts();
-            if(fonts.length === 0){
-                setHasPermission(false)
-                return
-            }
-            let fontList: string[] = ["Inter", "Minecraft"];
-            for(let font of fonts) {
-                if(!fontList.includes(font.family)){
-                    fontList.push(font.family)
-                }
-            }
-            let formatted = fontList.map((font: any) => {
-                return {
-                    value: font,
-                    label: font
-                };
-            })
-            setHasPermission(true)
-            setFonts(formatted);
-        } catch (e) {
-            console.log("Font access was denied: " + e)
+            const nextFonts = await loadFontFamilies(() => (window as unknown as {
+                queryLocalFonts: () => Promise<Array<{family: string}>>,
+            }).queryLocalFonts());
+            if (!mounted.current) return;
+            setHasPermission(nextFonts.length > 0);
+            if (nextFonts.length > 0) setFonts(nextFonts);
+        } catch {
+            if (mounted.current) setHasPermission(false);
         }
-    }, [supported])
-
+    }, [supported]);
     useEffect(() => {
+        mounted.current = true;
         const timer = setTimeout(() => void reloadFonts(), 0);
-        return () => clearTimeout(timer);
-    }, [reloadFonts])
+        return () => { mounted.current = false; clearTimeout(timer); };
+    }, [reloadFonts]);
 
-    const selectFont = (option: any, actionMeta: ActionMeta<any>) => {
-        output(option.value);
-        setSelectedFont(option.value);
-    }
-
-    return (<div className="font-wrapper" suppressHydrationWarning>
+    return <div className="font-wrapper">
         <p className="fontExample" style={{fontFamily: selectedFont}}>Font: {selectedFont}</p>
-        <Select placeholder="Select font" maxMenuHeight={225}
-                options={fonts as unknown as GroupBase<string>[]} styles={{
-                    option: (baseStyles: any, state: any) => ({
-                        ...baseStyles,
-                        color: 'rgb(230, 230, 230)',
-                        backgroundColor: state.isFocused ? 'rgb(8, 8, 11)' : 'rgb(18, 18, 21)',
-                    }),
-                    control: (baseStyles: any, state: any) => ({
-                        ...baseStyles,
-                        backgroundColor: 'rgb(18, 18, 21)',
-                        color: 'white',
-                        border: '1px solid rgb(10, 10, 10)',
-                    }),
-                    menu: (baseStyles: any, state: any) => ({
-                        ...baseStyles,
-                        backgroundColor: 'rgb(18, 18, 21)',
-                        border: '1px solid rgb(10, 10, 10)',
-                    }),
-                    singleValue: (baseStyles: any, state: any) => ({
-                        ...baseStyles,
-                        color: 'rgb(230, 230, 230)',
-                    }),
-                    indicatorSeparator: (baseStyles: any, state: any) => ({
-                        ...baseStyles,
-                        backgroundColor: 'rgb(10, 10, 10)',
-                    }),
-                    input: (baseStyles: any, state: any) => ({
-                        ...baseStyles,
-                        color: 'rgb(230, 230, 230)',
-                    })
-                }}
-                theme={(theme: any) => ({
-                    ...theme,
-                    colors: {
-                        ...theme.colors,
-                        primary50: 'rgb(8, 8, 11)',
-                    },
-                })}
-                onChange={selectFont} onFocus={reloadFonts}/>
-        <p style={{display: supported && !hasPermission ? "block" : "none"}} className="fontWarning">
-            Font access was denied. Please enable it by clicking on the <MaterialIcon icon="info" className="info-icon"/> icon next to the address bar.</p>
-        <p style={{display: !supported ? "block" : "none"}} className="fontWarning">
-            Local font access is not supported in this browser, please use Chrome or Edge.</p>
-    </div>)
+        <select className="fontSelect" aria-label="Font" value={selectedFont} onFocus={() => void reloadFonts()}
+            onChange={event => { setSelectedFont(event.target.value); output(event.target.value); }}>
+            {fonts.map(font => <option key={font} value={font}>{font}</option>)}
+        </select>
+        <p hidden={!supported || hasPermission} className="fontWarning">
+            Font access was denied. Please enable it by clicking on the <MaterialIcon icon="info" className="info-icon"/> icon next to the address bar.
+        </p>
+        <p hidden={supported} className="fontWarning">
+            Local font access is not supported in this browser, please use Chrome or Edge.
+        </p>
+    </div>;
 }
