@@ -2,11 +2,10 @@ import {
     getCached,
     getAllNamesByNick,
     getAllNamesByTwitch,
-    getLeaderboards, getPlayerRuns,
-    getTwitchAccounts, getNPH, isTwitchLive, getAALB, getRecentAARuns,
+    getAALB, getRecentAARuns,
 } from "@/app/data";
 import Link from "next/link";
-import {CategoryType, fixDisplayName, getMinAAQty, getMinQty} from "@/app/utils";
+import {CategoryType, fixDisplayName, getMinAAQty} from "@/app/utils";
 import AAPlayerPage from "@/app/player/[nick]/aa/AAPlayerPage";
 
 export async function generateMetadata(props: { params: Promise<{ nick: string }> }) {
@@ -77,11 +76,9 @@ export default async function Page(
     let realNick = fixDisplayName(names.nick)
     const uuid = names.uuid
     // Independent reads: start them together instead of one after another.
-    const [lb, recentRuns, nph, twitches] = await Promise.all([
+    const [lb, recentRuns] = await Promise.all([
         getCached(getAALB, "getAALB", days + " day"),
         getCached(getRecentAARuns, "getRecentAARuns", uuid, 4),
-        getCached(getNPH, "getNPH", uuid, days * 24, days * 24),
-        getCached(getTwitchAccounts, "getTwitchAccounts", uuid) as Promise<{ twitch: string, time: number }[]>,
     ])
     const filters = [
         CategoryType.AVG,
@@ -124,11 +121,5 @@ export default async function Page(
         }
     }
 
-    let t = [];
-    if(twitches !== null) {
-        t = await Promise.all(twitches.map(async (t): Promise<any> => {
-            return {twitch: t.twitch, time: t.time, live: await getCached(isTwitchLive, "isTwitchLive", t.twitch)}
-        }));
-    }
-    return <AAPlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} twitches={t} nph={nph} data={data} days={days} />
+    return <AAPlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} data={data} days={days} />
 }

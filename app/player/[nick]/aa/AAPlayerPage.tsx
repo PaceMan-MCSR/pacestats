@@ -2,21 +2,14 @@
 
 import ResetScroll from "@/app/components/ResetScroll";
 import RangeChange from "@/app/components/RangeChange";
-import {RecentRuns} from "@/app/components/profile/RecentRuns";
 import {Stat} from "@/app/components/profile/Stat";
-import {TwitchEntry} from "@/app/components/profile/TwitchEntry";
-import {NPHStat} from "@/app/components/profile/NPHStat";
-import BastionFort from "@/app/components/BastionFort";
-import {useState} from "react";
 import {AARecentRuns} from "@/app/components/profile/AARecentRuns";
 import PendingLink from "@/app/components/PendingLink";
 import {useDeferredPrefetch} from "@/app/components/useDeferredPrefetch";
-export default function AAPlayerPage({name, uuid, recentRuns, twitches, nph, data, days}: {
+export default function AAPlayerPage({name, uuid, recentRuns, data, days}: {
     name: string,
     uuid: string,
     recentRuns: {},
-    twitches: any[],
-    nph: any,
     data: any,
     days: number
 }) {
