@@ -110,6 +110,7 @@ export default async function Page(
                     </h1>
                     <Suspense fallback={<div>Loading...</div>}>
                         <RecentRuns
+                            key={uuid}
                             uuid={uuid}
                             bf={bastionFort}
                             initialPaginationModel={initialPaginationModel}

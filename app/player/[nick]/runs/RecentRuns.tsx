@@ -162,9 +162,19 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
     const [rows, setRows] = useState<any[]>(seedPage?.rows ?? []);
     const [rowCount, setRowCount] = useState(seedPage?.rowCount ?? 0);
     const [isLoading, setIsLoading] = useState(seedPage === null);
+    const [loadError, setLoadError] = useState(false);
+    const [retryAttempt, setRetryAttempt] = useState(0);
     const [bastionFort, setBastionFort] = useState(bf)
     const pageCache = useRef(new Map<string, RunsPage>());
-    const pendingPages = useRef(new Map<string, Promise<RunsPage>>());
+    const pendingPages = useRef(new Map<string, {promise: Promise<RunsPage>, controller: AbortController}>());
+
+    useEffect(() => {
+        const pending = pendingPages.current;
+        return () => {
+            for (const {controller} of pending.values()) controller.abort();
+            pending.clear();
+        };
+    }, []);
 
     const serializedFilters = JSON.stringify(filters.flatMap((filter) => {
         if (filter.column === 'date') {
@@ -214,7 +224,7 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
         if (cached) return Promise.resolve(cached);
 
         const pending = pendingPages.current.get(key);
-        if (pending) return pending;
+        if (pending && !pending.controller.signal.aborted) return pending.promise;
 
         const params = new URLSearchParams({
             uuid,
@@ -224,7 +234,8 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
             sort: pageSort.column,
             direction: pageSort.direction,
         });
-        const request = fetch(`/stats/api/getPlayerRuns/?${params}`)
+        const controller = new AbortController();
+        const request = fetch(`/stats/api/getPlayerRuns/?${params}`, {signal: controller.signal})
             .then(async (response) => {
                 if (!response.ok) throw new Error(`Run history request failed with ${response.status}`);
                 const result = await response.json();
@@ -241,8 +252,10 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
                 }
                 return loadedPage;
             })
-            .finally(() => pendingPages.current.delete(key));
-        pendingPages.current.set(key, request);
+            .finally(() => {
+                if (pendingPages.current.get(key)?.controller === controller) pendingPages.current.delete(key);
+            });
+        pendingPages.current.set(key, {promise: request, controller});
         return request;
     }, [cachedPage, pageKey, uuid]);
 
@@ -280,12 +293,21 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
     useEffect(() => {
         let active = true;
         const {page, pageSize} = paginationModel;
+        const currentKey = pageKey(page, pageSize, serializedFilters, serializedSort);
+        const nextKey = pageKey(page + 1, pageSize, serializedFilters, serializedSort);
+        // Preserve a page's in-flight prefetch when it becomes the visible
+        // page. Superseded sorts/filters and distant pages no longer consume
+        // bandwidth or retain their response bodies after navigation.
+        for (const [key, {controller}] of pendingPages.current) {
+            if (key !== currentKey && key !== nextKey) controller.abort();
+        }
         loadPage(page, pageSize, serializedFilters, sort)
             .then((loadedPage) => {
                 if (!active) return;
                 setRows(loadedPage.rows);
                 setRowCount(loadedPage.rowCount);
                 setIsLoading(false);
+                setLoadError(false);
 
                 if ((page + 1) * pageSize < loadedPage.rowCount) {
                     void loadPage(page + 1, pageSize, serializedFilters, sort).catch(() => {
@@ -295,14 +317,16 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
             })
             .catch((error) => {
                 if (!active) return;
+                if (error.name === 'AbortError') return;
                 console.error(error);
                 setIsLoading(false);
+                setLoadError(true);
             });
 
         return () => {
             active = false;
         };
-    }, [loadPage, paginationModel, serializedFilters, sort]);
+    }, [loadPage, pageKey, paginationModel, retryAttempt, serializedFilters, serializedSort, sort]);
 
     useEffect(() => {
         const currentParams = new URLSearchParams(window.location.search);
@@ -375,6 +399,12 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
         <div style={{height: "3px"}}>
             {isLoading && rows.length > 0 && <div className="fastRunsProgress" role="progressbar" aria-label="Loading run history"/>}
         </div>
+        {loadError && <div role="alert" className="text-center mb-2">
+            Could not load run history. <button type="button" className="btn btn-dark" onClick={() => {
+                setIsLoading(true);
+                setRetryAttempt(current => current + 1);
+            }}>Retry run history</button>
+        </div>}
         <div className="fastRunsGrid" role="grid" aria-busy={isLoading}>
             <div className="fastRunsGridHeader" role="row">
                 {fastColumns.map((column) => (
