@@ -47,87 +47,120 @@ async function rangeReady(page, days) {
 }
 
 try {
-    const {context, page} = await createContext();
-    await page.goto(url('?days=9999'), {waitUntil: 'domcontentloaded'});
-    await boardReady(page);
+    if (process.env.PERF_COLD_ONLY !== '1') {
+        const {context, page} = await createContext();
+        await page.goto(url('?days=9999'), {waitUntil: 'domcontentloaded'});
+        await boardReady(page);
 
-    // Enter and Space must work without relying on mouse-down events.
-    await page.getByRole('button', {name: '24 hours', exact: true}).focus();
-    await page.keyboard.press('Enter');
-    await rangeReady(page, 1);
-    await page.getByRole('button', {name: '7 days', exact: true}).focus();
-    await page.keyboard.press('Space');
-    await rangeReady(page, 7);
-    console.log('PASS: Enter/Space change ranges, pending clears and one range stays selected');
+        // Enter and Space must work without relying on mouse-down events.
+        await page.getByRole('button', {name: '24 hours', exact: true}).focus();
+        await page.keyboard.press('Enter');
+        await rangeReady(page, 1);
+        await page.getByRole('button', {name: '7 days', exact: true}).focus();
+        await page.keyboard.press('Space');
+        await rangeReady(page, 7);
+        console.log('PASS: Enter/Space change ranges, pending clears and one range stays selected');
 
-    await page.goto(url('?days=9999'), {waitUntil: 'domcontentloaded'});
-    await boardReady(page);
-    const links = page.locator('a.boardLink:visible');
-    assert.ok(await links.count() > 4, 'Lifetime fixtures must contain visible player links');
-    await page.mouse.move(0, 0);
-    const beforeSweep = requests.length;
-    for (let index = 0; index < 5; index++) {
-        const bounds = await links.nth(index).boundingBox();
-        await page.mouse.move(bounds.x + 3, bounds.y + bounds.height / 2);
+        await page.goto(url('?days=9999'), {waitUntil: 'domcontentloaded'});
+        await boardReady(page);
+        const links = page.locator('a.boardLink:visible');
+        assert.ok(await links.count() > 4, 'Lifetime fixtures must contain visible player links');
+        await page.mouse.move(0, 0);
+        const beforeSweep = requests.length;
+        for (let index = 0; index < 5; index++) {
+            const bounds = await links.nth(index).boundingBox();
+            await page.mouse.move(bounds.x + 3, bounds.y + bounds.height / 2);
+        }
+        await page.mouse.move(0, 0);
+        await page.waitForTimeout(180);
+        const sweepPrefetches = requests.slice(beforeSweep).filter(request => request.headers['next-router-prefetch'] === '1');
+        assert.equal(sweepPrefetches.length, 0, 'Pointer sweeps should cancel speculative route work');
+        await links.first().hover();
+        await page.waitForTimeout(450);
+        assert.ok(requests.slice(beforeSweep).some(request => request.headers['next-router-prefetch'] === '1'), 'Deliberate hover should prefetch');
+        await links.first().click();
+        await page.locator('.playerStats .stat').first().waitFor();
+        await page.goBack();
+        await boardReady(page);
+        assert.equal(await page.locator('a.boardLink .playerName').first().evaluate(element => element.style.opacity), '1');
+        console.log('PASS: pointer sweeps cancel prefetch; deliberate hover loads target; Back clears pending state');
+
+        await page.goto(url(`player/${player}/runs/`), {waitUntil: 'domcontentloaded'});
+        await page.locator('.fastRunsGridRow').first().waitFor();
+        const runLinks = await page.locator('.fastRunsGridRow').evaluateAll(rows => rows.slice(0, 2).map(row => row.getAttribute('href')));
+        assert.equal(runLinks.length, 2, 'History fixture must provide two runs');
+        const ids = runLinks.map(link => link.split('/').filter(Boolean).at(-1));
+        const html = await (await context.request.get(new URL(runLinks[0], base.origin).href)).text();
+        assert.match(html, /class="run-card"/, 'Initial run HTML includes the split card');
+        assert.match(html, new RegExp(`class="secretId">${ids[0]}<`));
+        const historicalRequests = requests.length;
+        await page.goto(new URL(runLinks[0], base.origin).href, {waitUntil: 'domcontentloaded'});
+        await page.locator('.run-card .secretId').filter({hasText: ids[0]}).waitFor();
+        await page.waitForTimeout(3_400);
+        assert.equal(requests.slice(historicalRequests).filter(request => request.url.includes('/api/getWorld/') || request.url.includes('/api/ars/liveruns')).length, 0);
+        console.log('PASS: historical run card exists in first HTML and makes no getWorld/live-list request after hydration');
+
+        await page.goto(url(`player/${player}/runs/`), {waitUntil: 'domcontentloaded'});
+        await page.locator('.fastRunsGridRow').first().click();
+        await page.waitForURL(current => current.pathname.endsWith(`/run/${ids[0]}/`));
+        await page.waitForFunction(id => document.querySelector('.run-card .secretId')?.textContent === id, ids[0]);
+        await page.goBack();
+        await page.locator('.fastRunsGridRow').nth(1).click();
+        await page.waitForURL(current => current.pathname.endsWith(`/run/${ids[1]}/`));
+        await page.waitForFunction(id => document.querySelector('.run-card .secretId')?.textContent === id, ids[1]);
+        await page.goBack();
+        await page.goForward();
+        await page.waitForFunction(id => document.querySelector('.run-card .secretId')?.textContent === id, ids[1]);
+        console.log('PASS: separate run routes and browser Back/Forward retain the correct run snapshot');
+
+        const {context: touchContext, page: touchPage} = await createContext({hasTouch: true, isMobile: true, viewport: {width: 390, height: 844}});
+        await touchPage.goto(base.href, {waitUntil: 'domcontentloaded'});
+        await boardReady(touchPage);
+        await touchPage.getByRole('button', {name: 'Lifetime', exact: true}).tap();
+        await rangeReady(touchPage, 9999);
+        console.log('PASS: touch range changes complete and release pending state');
+        await touchContext.close();
+        await page.goto(url(`player/${player}/session/`), {waitUntil: 'domcontentloaded'});
+        for (const category of ['Nether Enters', 'First Portal', 'Stronghold', 'End Enter', 'Finish']) {
+            await page.getByRole('heading', {name: category, exact: true}).waitFor();
+        }
+        await hydratedRange(page);
+        await page.getByRole('heading', {name: 'Nether Enters', exact: true}).click();
+        await page.getByText('24h/3h', {exact: true}).waitFor();
+        console.log('PASS: session profile renders all five session cards and hydrates screenshot interactions');
+        await context.close();
+
+        const {context: overlayContext, page: overlayPage} = await createContext();
+        await overlayPage.addInitScript(() => {
+            window.__intervalDelays = [];
+            const original = window.setInterval;
+            window.setInterval = (callback, delay, ...args) => {
+                window.__intervalDelays.push(delay);
+                return original(callback, delay, ...args);
+            };
+        });
+        await overlayPage.goto(url(`obs/session/${player}/`), {waitUntil: 'domcontentloaded'});
+        await overlayPage.locator('.sessionStats .stat-line').first().waitFor();
+        await overlayPage.waitForTimeout(500);
+        assert.equal(await overlayPage.evaluate(() => window.__intervalDelays.filter(delay => delay === 20).length), 0);
+        await overlayPage.goto(url('obs/'), {waitUntil: 'domcontentloaded'});
+        await overlayPage.waitForFunction(() => {
+            const input = document.querySelector('.obsSetup .nameSearch input');
+            return input && Object.keys(input).some(key => key.startsWith('__reactProps$'));
+        });
+        await overlayPage.getByPlaceholder('Username', {exact: true}).last().fill(player);
+        await overlayPage.locator('[data-test="result"]').filter({hasText: player}).first().click();
+        await overlayPage.waitForFunction(() => {
+            const size = document.querySelector('.sizeHint')?.textContent?.split('x').map(Number);
+            return size?.length === 2 && size.every(value => value > 0);
+        });
+        const previousSize = await overlayPage.locator('.sizeHint').textContent();
+        await overlayPage.setViewportSize({width: 1100, height: 900});
+        await overlayPage.waitForFunction(previous => document.querySelector('.sizeHint')?.textContent !== previous, previousSize);
+        assert.equal(await overlayPage.evaluate(() => window.__intervalDelays.filter(delay => delay === 20).length), 0);
+        console.log('PASS: ordinary overlays install no 20ms poll; preview dimensions update after a real resize');
+        await overlayContext.close();
     }
-    await page.mouse.move(0, 0);
-    await page.waitForTimeout(180);
-    const sweepPrefetches = requests.slice(beforeSweep).filter(request => request.headers['next-router-prefetch'] === '1');
-    assert.equal(sweepPrefetches.length, 0, 'Pointer sweeps should cancel speculative route work');
-    await links.first().hover();
-    await page.waitForTimeout(450);
-    assert.ok(requests.slice(beforeSweep).some(request => request.headers['next-router-prefetch'] === '1'), 'Deliberate hover should prefetch');
-    await links.first().click();
-    await page.locator('.playerStats .stat').first().waitFor();
-    await page.goBack();
-    await boardReady(page);
-    assert.equal(await page.locator('a.boardLink .playerName').first().evaluate(element => element.style.opacity), '1');
-    console.log('PASS: pointer sweeps cancel prefetch; deliberate hover loads target; Back clears pending state');
-
-    await page.goto(url(`player/${player}/runs/`), {waitUntil: 'domcontentloaded'});
-    await page.locator('.fastRunsGridRow').first().waitFor();
-    const runLinks = await page.locator('.fastRunsGridRow').evaluateAll(rows => rows.slice(0, 2).map(row => row.getAttribute('href')));
-    assert.equal(runLinks.length, 2, 'History fixture must provide two runs');
-    const ids = runLinks.map(link => link.split('/').filter(Boolean).at(-1));
-    const html = await (await context.request.get(new URL(runLinks[0], base.origin).href)).text();
-    assert.match(html, /class="run-card"/, 'Initial run HTML includes the split card');
-    assert.match(html, new RegExp(`class="secretId">${ids[0]}<`));
-    const historicalRequests = requests.length;
-    await page.goto(new URL(runLinks[0], base.origin).href, {waitUntil: 'domcontentloaded'});
-    await page.locator('.run-card .secretId').filter({hasText: ids[0]}).waitFor();
-    await page.waitForTimeout(3_400);
-    assert.equal(requests.slice(historicalRequests).filter(request => request.url.includes('/api/getWorld/') || request.url.includes('/api/ars/liveruns')).length, 0);
-    console.log('PASS: historical run card exists in first HTML and makes no getWorld/live-list request after hydration');
-
-    await page.goto(url(`player/${player}/runs/`), {waitUntil: 'domcontentloaded'});
-    await page.locator('.fastRunsGridRow').first().click();
-    await page.waitForURL(current => current.pathname.endsWith(`/run/${ids[0]}/`));
-    await page.waitForFunction(id => document.querySelector('.run-card .secretId')?.textContent === id, ids[0]);
-    await page.goBack();
-    await page.locator('.fastRunsGridRow').nth(1).click();
-    await page.waitForURL(current => current.pathname.endsWith(`/run/${ids[1]}/`));
-    await page.waitForFunction(id => document.querySelector('.run-card .secretId')?.textContent === id, ids[1]);
-    await page.goBack();
-    await page.goForward();
-    await page.waitForFunction(id => document.querySelector('.run-card .secretId')?.textContent === id, ids[1]);
-    console.log('PASS: separate run routes and browser Back/Forward retain the correct run snapshot');
-
-    const {context: touchContext, page: touchPage} = await createContext({hasTouch: true, isMobile: true, viewport: {width: 390, height: 844}});
-    await touchPage.goto(base.href, {waitUntil: 'domcontentloaded'});
-    await boardReady(touchPage);
-    await touchPage.getByRole('button', {name: 'Lifetime', exact: true}).tap();
-    await rangeReady(touchPage, 9999);
-    console.log('PASS: touch range changes complete and release pending state');
-    await touchContext.close();
-    await page.goto(url(`player/${player}/session/`), {waitUntil: 'domcontentloaded'});
-    for (const category of ['Nether Enters', 'First Portal', 'Stronghold', 'End Enter', 'Finish']) {
-        await page.getByRole('heading', {name: category, exact: true}).waitFor();
-    }
-    await hydratedRange(page);
-    await page.getByRole('heading', {name: 'Nether Enters', exact: true}).click();
-    await page.getByText('24h/3h', {exact: true}).waitFor();
-    console.log('PASS: session profile renders all five session cards and hydrates screenshot interactions');
-    await context.close();
 
     if (process.env.PERF_COLD_BASE_URL) {
         const coldBase = new URL(process.env.PERF_COLD_BASE_URL);
@@ -137,11 +170,18 @@ try {
         await coldPage.getByText('Leaderboard data is temporarily unavailable. Please try again shortly.', {exact: true}).waitFor();
         assert.equal(await coldPage.locator('.stats-row table').count(), 0, 'An absent cache must not appear as empty rankings');
         const retry = coldPage.getByRole('button', {name: 'Retry leaderboards', exact: true});
+        await coldPage.waitForFunction(() => {
+            const button = [...document.querySelectorAll('button')].find(element => element.textContent === 'Retry leaderboards');
+            return button && Object.keys(button).some(key => key.startsWith('__reactProps$'));
+        });
+        const retried = coldPage.waitForRequest(request => request.headers().rsc === '1');
         await retry.click();
+        await retried;
         await coldPage.getByRole('button', {name: 'Retry leaderboards', exact: true}).waitFor();
         assert.equal(await retry.isEnabled(), true);
         await coldPage.goto(new URL(`player/${player}/?days=9999`, coldBase).href, {waitUntil: 'domcontentloaded'});
         await coldPage.locator('.playerStats .stat').first().waitFor();
+        await hydratedRange(coldPage);
         await coldPage.getByRole('button', {name: '7 days', exact: true}).focus();
         await coldPage.keyboard.press('Enter');
         await rangeReady(coldPage, 7);
