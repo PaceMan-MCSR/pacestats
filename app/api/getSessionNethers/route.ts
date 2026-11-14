@@ -51,9 +51,8 @@ export const GET = withApiRequest("playerSessionStats", async (request: NextRequ
         }
     }
     const days = Math.ceil(hours / 24)
-    // Most sessions end inside the newest page; read the whole window only
-    // when the walk runs off the end of a full page.
-    let runs = await getCached(getNethersByPeriod, "getNethersByPeriod", names.uuid, days, SESSION_PAGE_ROWS, liveOnly)
+    const initialLimit = hoursBetween >= hours ? 100_000 : SESSION_PAGE_ROWS
+    let runs = await getCached(getNethersByPeriod, "getNethersByPeriod", names.uuid, days, initialLimit, liveOnly)
     if(runs.length === 0){
         return jsonResponse(
             {count: 0, avg: (dp > 0 ? "0:00." + ("0".repeat(dp)) : "0:00"), rnph: 0, uuid: names.uuid},
@@ -62,7 +61,7 @@ export const GET = withApiRequest("playerSessionStats", async (request: NextRequ
     }
 
     let walk = walkNethers(runs, hours, hoursBetween)
-    if(!walk.stopped && runs.length === SESSION_PAGE_ROWS){
+    if(initialLimit === SESSION_PAGE_ROWS && !walk.stopped && runs.length === SESSION_PAGE_ROWS){
         runs = await getCached(getNethersByPeriod, "getNethersByPeriod", names.uuid, days, 9999999, liveOnly)
         walk = walkNethers(runs, hours, hoursBetween)
     }

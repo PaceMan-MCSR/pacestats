@@ -104,16 +104,17 @@ export const GET = withApiRequest("playerSessionStats", async (request: NextRequ
         }
     }
     const days = Math.ceil(hours / 24)
-    // Most sessions end inside the newest page; read the whole window only
-    // when the walk runs off the end of a full page.
-    let runs = await getCached(getSplitRunsByPeriod, "getSplitRunsByPeriod", names.uuid, days, split, SESSION_PAGE_ROWS)
+    // A window-sized gap needs the final bound directly. Other sessions
+    // retain the small prefix, so ordinary current-session reads stay small.
+    const initialLimit = hoursBetween >= hours ? 100_000 : SESSION_PAGE_ROWS
+    let runs = await getCached(getSplitRunsByPeriod, "getSplitRunsByPeriod", names.uuid, days, split, initialLimit)
 
     if(runs.length === 0){
         return jsonResponse({count: 0, avg: "0:00", ms: 0}, {cacheSeconds: 5, staleSeconds: 10});
     }
 
     let walk = walkSplit(runs, split, hours, hoursBetween, maxTime)
-    if(!walk.stopped && runs.length === SESSION_PAGE_ROWS){
+    if(initialLimit === SESSION_PAGE_ROWS && !walk.stopped && runs.length === SESSION_PAGE_ROWS){
         runs = await getCached(getSplitRunsByPeriod, "getSplitRunsByPeriod", names.uuid, days, split)
         walk = walkSplit(runs, split, hours, hoursBetween, maxTime)
     }
