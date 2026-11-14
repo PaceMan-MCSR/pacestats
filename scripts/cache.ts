@@ -13,6 +13,7 @@ import {
     LockUnavailableError,
     publishStagedEntries,
     readDigestLedger,
+    readHashPages,
     replaceManifest,
     scanKeys,
     setHashIfLeaseHeld,
@@ -1161,15 +1162,18 @@ type FullPlayerState = {p?: PacePlayerSummary; n?: NphSummary};
 type FullState = {meta: FullStateMeta; players: Map<string, FullPlayerState>};
 
 async function readFullState(redis: Redis): Promise<FullState | null> {
-    const raw = await redis.hgetall(FULL_STATE_KEY);
-    const metaRaw = raw[FULL_STATE_META_FIELD];
+    // Reject absent/old-format state before downloading player payloads.
+    const metaRaw = await redis.hget(FULL_STATE_KEY, FULL_STATE_META_FIELD);
     if (!metaRaw) return null;
     const meta = JSON.parse(metaRaw) as FullStateMeta;
     if (meta.version !== FULL_STATE_VERSION) return null;
     const players = new Map<string, FullPlayerState>();
-    for (const [uuid, value] of Object.entries(raw)) {
-        if (uuid !== FULL_STATE_META_FIELD) players.set(uuid, JSON.parse(value));
-    }
+    await readHashPages(redis, FULL_STATE_KEY, (entries) => {
+        for (let index = 0; index < entries.length; index += 2) {
+            const uuid = entries[index];
+            if (uuid !== FULL_STATE_META_FIELD) players.set(uuid, JSON.parse(entries[index + 1]));
+        }
+    });
     return {meta, players};
 }
 
