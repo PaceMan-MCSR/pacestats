@@ -1,4 +1,6 @@
 const PREFETCH_INTERVAL_MS = 50;
+const PREFETCH_TTL_MS = 30_000;
+const MAX_PREFETCHED_PATHS = 64;
 
 type PrefetchTask = {
     path: string;
@@ -7,11 +9,25 @@ type PrefetchTask = {
     cancelled: boolean;
 };
 
-const prefetchedPaths = new Set<string>();
+const prefetchedPaths = new Map<string, number>();
 const pendingPaths = new Map<string, PrefetchTask>();
 const queue: PrefetchTask[] = [];
 let queueTimer: ReturnType<typeof setTimeout> | undefined;
 let lastPrefetchAt = 0;
+
+function rememberPrefetch(path: string) {
+    const now = Date.now();
+    for (const [cachedPath, expiresAt] of prefetchedPaths) {
+        if (expiresAt <= now) prefetchedPaths.delete(cachedPath);
+    }
+    prefetchedPaths.delete(path);
+    prefetchedPaths.set(path, now + PREFETCH_TTL_MS);
+    while (prefetchedPaths.size > MAX_PREFETCHED_PATHS) {
+        const oldest = prefetchedPaths.keys().next().value;
+        if (oldest === undefined) break;
+        prefetchedPaths.delete(oldest);
+    }
+}
 
 function runQueue() {
     if (queueTimer !== undefined) return;
@@ -30,7 +46,7 @@ function runQueue() {
 
         if (task && task.subscribers > 0) {
             pendingPaths.delete(task.path);
-            prefetchedPaths.add(task.path);
+            rememberPrefetch(task.path);
             lastPrefetchAt = Date.now();
             try {
                 task.prefetch();
@@ -45,7 +61,7 @@ function runQueue() {
 }
 
 export function schedulePlayerPrefetch(path: string, prefetch: () => void) {
-    if (prefetchedPaths.has(path)) return () => {};
+    if ((prefetchedPaths.get(path) ?? 0) > Date.now()) return () => {};
 
     let task = pendingPaths.get(path);
     if (task) {

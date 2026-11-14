@@ -18,9 +18,10 @@ const PLAYER_SEARCH_OPTIONS = {
     minMatchCharLength: 2,
 };
 
-// Player pages loaded in full after a hover, kept for as long as the router
-// reuses them.
-const fullyPrefetchedPlayers = new Set<string>();
+// Match the router's short reuse window without retaining every searched
+// player for the lifetime of a long-running browser tab.
+const fullyPrefetchedPlayers = new Map<string, number>();
+const MAX_FULL_PREFETCHES = 64;
 
 let playerNamesRequest: Promise<SearchItem[]> | undefined;
 // Shared by every search box on the page and kept across client navigations.
@@ -188,10 +189,23 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
     const handleOnHover = (item: any) => {
         if (setOutput !== undefined) return;
         const path = `/player/${item.nick}`;
-        if (fullyPrefetchedPlayers.has(path)) return;
-        fullyPrefetchedPlayers.add(path);
-        setTimeout(() => fullyPrefetchedPlayers.delete(path), 30_000);
-        router.prefetch(path, {kind: PrefetchKind.FULL});
+        const now = Date.now();
+        if ((fullyPrefetchedPlayers.get(path) ?? 0) > now) return;
+        for (const [cachedPath, expiresAt] of fullyPrefetchedPlayers) {
+            if (expiresAt <= now) fullyPrefetchedPlayers.delete(cachedPath);
+        }
+        const expiresAt = now + 30_000;
+        fullyPrefetchedPlayers.set(path, expiresAt);
+        if (fullyPrefetchedPlayers.size > MAX_FULL_PREFETCHES) {
+            const oldest = fullyPrefetchedPlayers.keys().next().value;
+            if (oldest !== undefined) fullyPrefetchedPlayers.delete(oldest);
+        }
+        router.prefetch(path, {
+            kind: PrefetchKind.FULL,
+            onInvalidate: () => {
+                if (fullyPrefetchedPlayers.get(path) === expiresAt) fullyPrefetchedPlayers.delete(path);
+            },
+        });
     }
 
     const formatResult = (item: any) => <SearchResult item={item} colourUsers={colourUsers}/>;
