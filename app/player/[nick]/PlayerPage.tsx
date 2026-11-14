@@ -13,6 +13,7 @@ import { UserColoursContext, UsersContext } from "@/app/contexts";
 import { defaultNameColor, getDarkerColor, getDisplayName, getNameColor, getUserColours } from "@/app/utils";
 import { colourVars, customClass } from "@/app/components/customColours";
 import { useIntentLink } from "@/app/components/useIntentLink";
+import { useDeferredPrefetch } from "@/app/components/useDeferredPrefetch";
 import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
 
 export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data, days, bf, users}: {
@@ -33,6 +34,7 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
     const colours : any = getUserColours(users, uuid)
     const playerUser = users?.find((user: any) => user.uuid === uuid)
     const moreRunsLink = useIntentLink(`/player/${name}/runs`);
+    const prepareMoreRuns = useDeferredPrefetch(moreRunsLink.linkProps.href);
     const pendingMoreRuns = moreRunsLink.pending;
 
     return (
@@ -79,8 +81,8 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
                                 <div className="recentContainer mb-2">
                                     <RecentRuns runs={recentRuns}/>
                                     <div className="openRuns">
-                                        {/* Prepare this one bounded 25-row destination while visible. */}
-                                        <Link {...moreRunsLink.linkProps} prefetch={true}>
+                                        {/* Give an immediately clicked run priority over speculative history work. */}
+                                        <Link {...moreRunsLink.linkProps} prefetch={prepareMoreRuns || moreRunsLink.linkProps.prefetch}>
                                             <div className={customClass(colours, "ccMoreRuns")} style={{opacity: pendingMoreRuns ? 0.7 : 1, ...colourVars(colours)}}>
                                                 <button className="btn btn-dark">More runs</button>
                                             </div>

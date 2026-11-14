@@ -1,6 +1,5 @@
 'use client'
 
-import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
 import RangeChange from "@/app/components/RangeChange";
 import {RecentRuns} from "@/app/components/profile/RecentRuns";
@@ -10,6 +9,8 @@ import {NPHStat} from "@/app/components/profile/NPHStat";
 import BastionFort from "@/app/components/BastionFort";
 import {useState} from "react";
 import {AARecentRuns} from "@/app/components/profile/AARecentRuns";
+import PendingLink from "@/app/components/PendingLink";
+import {useDeferredPrefetch} from "@/app/components/useDeferredPrefetch";
 export default function AAPlayerPage({name, uuid, recentRuns, twitches, nph, data, days}: {
     name: string,
     uuid: string,
@@ -21,6 +22,8 @@ export default function AAPlayerPage({name, uuid, recentRuns, twitches, nph, dat
 }) {
     const skinUrl = "https://mc-api.io/render/FULL/" + uuid
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
+    const moreRunsHref = `/player/${name}/runs/aa`;
+    const prepareMoreRuns = useDeferredPrefetch(moreRunsHref);
     return (<main className="main playerStats">
         <div className="container">
             <ResetScroll/>
@@ -39,9 +42,9 @@ export default function AAPlayerPage({name, uuid, recentRuns, twitches, nph, dat
                     <div className="recentContainer mb-2">
                         <AARecentRuns runs={recentRuns}/>
                         <div className="openRuns">
-                            <Link href={`/player/${name}/runs/aa`} prefetch={true}>
+                            <PendingLink href={moreRunsHref} prefetch={prepareMoreRuns}>
                                 <button className="btn btn-dark">More runs</button>
-                            </Link>
+                            </PendingLink>
                         </div>
                     </div>
                 </div>
