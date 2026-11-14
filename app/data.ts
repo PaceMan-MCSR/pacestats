@@ -2464,13 +2464,6 @@ const calculateAALeaderboardsFromDatabase = async (interval: string = "30 DAY") 
         }
     }
 
-    const [rows, fields] = await (await getConn()).execute(
-        `SELECT id, nickname, uuid, 
-        nether, bastion, fortress, stronghold, end, elytra, credits, finish
-        FROM aa WHERE insertTime >= NOW() - INTERVAL ? DAY ORDER BY insertTime DESC, id DESC;`,
-        [mysqlIntegerParam(safeDays)]
-    )
-
     const nickMap = new Map<string, string>()
 
     let splitData: {
@@ -2479,50 +2472,30 @@ const calculateAALeaderboardsFromDatabase = async (interval: string = "30 DAY") 
         }
     } = {}
 
-    let uuids: string[] = []
-    // @ts-ignore
-    for (let row of rows) {
-        if (!uuids.includes(row["uuid"])) {
-            uuids.push(row["uuid"])
-        }
-    }
-
-    for (let uuid of uuids) {
-        splitData[uuid] = {}
-        for (const category of categories) {
-            splitData[uuid][category] = []
-        }
-    }
-
-    // @ts-ignore
-    for (let row of rows) {
-        const uuid = row["uuid"]
-        const nether = row["nether"]
-        const end = row["end"]
-        const elytra = row["elytra"]
-        const credits = row["credits"]
-        const finish = row["finish"]
-        if(nether < 120_000 && end === null){
-            continue
-        }
-        if(credits !== null && elytra === null){
-            continue
-        }
-        for (const category of categories) {
-            if (row[category] !== null) {
-                if (!nickMap.has(uuid)) {
-                    nickMap.set(row["uuid"], row["nickname"])
+    // Keep the original total order, including the order in which players
+    // first appear (the final board's stable tie-breaker). Stream compact
+    // column arrays directly into the numeric series: no55k-row object
+    // buffer or quadratic UUID-discovery pass is needed on a cold cache.
+    await streamDbRows(
+        `SELECT nickname, uuid, nether, bastion, fortress, stronghold, end, elytra, credits, finish
+         FROM aa WHERE insertTime >= NOW() - INTERVAL ? DAY ORDER BY insertTime DESC, id DESC;`,
+        [mysqlIntegerParam(safeDays)],
+        (row) => {
+            const [nickname, uuid, nether, , , , end, elytra, credits] = row;
+            if (!splitData[uuid]) {
+                splitData[uuid] = Object.fromEntries(categories.map((category) => [category, []]));
+            }
+            if (nether < 120_000 && end === null) return;
+            if (credits !== null && elytra === null) return;
+            for (let index = 0; index < categories.length; index++) {
+                const value = row[index + 2];
+                if (value !== null) {
+                    if (!nickMap.has(uuid)) nickMap.set(uuid, nickname);
+                    splitData[uuid][categories[index]].push(value);
                 }
-                if(!splitData[uuid]){
-                    splitData[uuid] = {}
-                }
-                if(!splitData[uuid][category]){
-                    splitData[uuid][category] = []
-                }
-                splitData[uuid][category].push(row[category])
             }
         }
-    }
+    );
 
     for (let uuid in splitData) {
         for (const cat of categories) {
