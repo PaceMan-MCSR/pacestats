@@ -4,7 +4,7 @@ import RelativeTimer from "@/app/components/profile/RelativeTimer";
 import {useRouter} from "next/navigation";
 import {useEffect, useRef} from "react";
 import {PrefetchKind} from "next/dist/client/components/router-reducer/router-reducer-types";
-import {formatIfNotNull, numberWithCommas} from "@/app/utils";
+import type {TrackerRow} from './presentation';
 import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 
 function TooltipLine({tooltip, value}: {tooltip: string, value: string}) {
@@ -17,7 +17,7 @@ function TooltipLine({tooltip, value}: {tooltip: string, value: string}) {
     </OverlayTrigger>
 }
 
-export function Nethers({runs}: { runs: {} }) {
+export function Nethers({runs}: { runs: TrackerRow[] }) {
     const router = useRouter();
     const intentTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const hoveredHref = useRef<string | null>(null);
@@ -98,20 +98,13 @@ export function Nethers({runs}: { runs: {} }) {
                     }
                 }}
             >
-            {Object.keys(runs).map((runId) => {
-                // @ts-ignore
-                const run = runs[runId]
-                return <tr key={run.runId} data-run={run.runId} role="link" tabIndex={0}>
+            {runs.map((run) => {
+                return <tr key={run.id} data-run={run.id} role="link" tabIndex={0}>
                     <td>
-                        {run.vodId && (<span className="liveIndicator"/>)}
+                        {run.live && (<span className="liveIndicator"/>)}
                         <RelativeTimer start={run.time} compactBelow="md"/>
                     </td>
-                    <td>{formatIfNotNull(run.nether)}</td>
-                    <td>{formatIfNotNull(run.wallTime)}</td>
-                    <td>{formatIfNotNull(run.playTime)}</td>
-                    <td>{run.enters}</td>
-                    <td>{run.resets ? numberWithCommas(run.resets) : ""}</td>
-                    <td>{run.totalResets ? numberWithCommas(run.totalResets) : ""}</td>
+                    {run.cells.map((cell, index) => <td key={index}>{cell}</td>)}
                 </tr>
             })}
             </tbody>

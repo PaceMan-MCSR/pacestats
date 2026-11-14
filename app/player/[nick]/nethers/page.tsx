@@ -6,6 +6,7 @@ import {
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
 import {Nethers} from "@/app/player/[nick]/nethers/Nethers";
+import {trackerRows} from "./presentation";
 
 export default async function Page(
     props: {
@@ -57,7 +58,7 @@ export default async function Page(
                     <p>This page is currently intended to be used for debugging issues with the tracker,
                         to make sure it is tracking accurately.
                         More stats such as NPH over time may be included here in the future.</p>
-                    <Nethers runs={nethers}/>
+                    <Nethers runs={trackerRows(nethers)}/>
                 </div>
             </div>
         </div>
