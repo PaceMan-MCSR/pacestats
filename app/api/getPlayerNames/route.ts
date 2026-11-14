@@ -2,6 +2,7 @@ import { getAllUsers, getCached } from "@/app/data";
 import {jsonResponse} from "@/app/api/_utils";
 
 type User = {nick: string, twitches?: string[]};
+const namesByUsers = new WeakMap<User[], (string | string[])[]>();
 
 // The search box's player list: names and Twitch handles only. Each entry is
 // a nick, or [nick, ...twitchHandles] for players with linked accounts.
@@ -10,8 +11,12 @@ type User = {nick: string, twitches?: string[]};
 // for the few players it shows.
 export async function GET() {
     const users = await getCached(getAllUsers, "getAllUsers") as User[];
-    const names = users.map((user) =>
-        user.twitches && user.twitches.length > 0 ? [user.nick, ...user.twitches] : user.nick
-    );
+    let names = namesByUsers.get(users);
+    if (!names) {
+        names = users.map((user) =>
+            user.twitches && user.twitches.length > 0 ? [user.nick, ...user.twitches] : user.nick
+        );
+        namesByUsers.set(users, names);
+    }
     return jsonResponse(names, {cacheSeconds: 600, staleSeconds: 1_800});
 }
