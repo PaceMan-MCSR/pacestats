@@ -26,14 +26,14 @@ const lease = {key: 'dry-lease', token: 'dry-token', assertHeld() {}, async veri
 const values = new Map();
 let commands = 0;
 const redis = {
-    async eval(_script, keyCount, ...args) {
+    async eval(script, keyCount, ...args) {
         commands++;
         const keys = args.slice(0, keyCount);
         const argv = args.slice(keyCount);
         assert.equal(keys[0], lease.key); assert.equal(argv[0], lease.token);
         if (kind === 'closeBucket') {
             for (let index = 1; index < keys.length; index++) values.set(keys[index], argv.slice(2 + (index - 1) * 2, 4 + (index - 1) * 2));
-        } else if (keys.length === 2) values.set(keys[1], argv.slice(1));
+        } else if (!script.includes('local offset')) values.set(keys[1], argv.slice(1));
         else {
             let offset = 1;
             for (let index = 1; index < keys.length; index++) {

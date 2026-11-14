@@ -64,15 +64,21 @@ const writeBucketScript = `
     return #KEYS - 1
 `;
 
-const replacePlayerScript = `
+const replacePlayersScript = `
     if redis.call('GET', KEYS[1]) ~= ARGV[1] then
         return redis.error_reply('CACHE_LOCK_LOST')
     end
-    redis.call('DEL', KEYS[2])
-    for index = 2, #ARGV, 2 do
-        redis.call('HSET', KEYS[2], ARGV[index], ARGV[index + 1])
+    local offset = 2
+    for keyIndex = 2, #KEYS do
+        local fieldCount = tonumber(ARGV[offset])
+        offset = offset + 1
+        redis.call('DEL', KEYS[keyIndex])
+        for field = 0, fieldCount - 1, 2 do
+            redis.call('HSET', KEYS[keyIndex], ARGV[offset + field], ARGV[offset + field + 1])
+        end
+        offset = offset + fieldCount
     end
-    return 1
+    return #KEYS - 1
 `;
 
 const deleteKeysScript = `
@@ -173,6 +179,18 @@ async function rebuildPlayers(
         let currentUuid: string | undefined;
         let buckets = new Map<number, BucketAccumulator>();
         const missing = new Set(batch);
+        let replacements: Array<[string, string[]]> = [];
+        let replacementBytes = 0;
+        const maximumReplacementBytes = 256 * 1024;
+        const flushReplacements = async () => {
+            if (replacements.length === 0) return;
+            lease.assertHeld();
+            await redis.eval(replacePlayersScript, replacements.length + 1, lease.key,
+                ...replacements.map(([uuid]) => combinedSummaryKey(uuid)), lease.token,
+                ...replacements.flatMap(([, fields]) => [String(fields.length), ...fields]));
+            replacements = [];
+            replacementBytes = 0;
+        };
         const flushPlayer = async (uuid: string) => {
             const fields: string[] = [];
             let maxId = 0;
@@ -181,10 +199,16 @@ async function rebuildPlayers(
                 if (accumulator.maxId > maxId) maxId = accumulator.maxId;
             }
             if (fields.length > 0) fields.push(COMBINED_MAX_ID_FIELD, String(maxId));
-            lease.assertHeld();
-            await redis.eval(replacePlayerScript, 2, lease.key, combinedSummaryKey(uuid), lease.token, ...fields);
+            // Numeric summary JSON is ASCII. Cap both bytes and player count;
+            // an unusually large player is sent alone, as in the old writer.
+            let bytes = 0;
+            for (const field of fields) bytes += field.length;
+            if (replacementBytes + bytes > maximumReplacementBytes) await flushReplacements();
+            replacements.push([uuid, fields]);
+            replacementBytes += bytes;
             missing.delete(uuid);
             buckets = new Map();
+            if (replacements.length >= 25 || replacementBytes >= maximumReplacementBytes) await flushReplacements();
         };
         await streamRowBatches<any[]>(conn,
             {
@@ -219,6 +243,7 @@ async function rebuildPlayers(
         for (const uuid of missing) {
             await flushPlayer(uuid);
         }
+        await flushReplacements();
     }
     lease.assertHeld();
     return rowCount;
