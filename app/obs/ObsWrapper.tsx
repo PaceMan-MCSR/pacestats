@@ -1,13 +1,16 @@
 'use client'
 import ResetScroll from "@/app/components/ResetScroll";
 import PlayerSearch from "@/app/components/PlayerSearch";
-import {ChangeEvent, useMemo, useState} from "react";
+import {ChangeEvent, memo, useMemo, useState} from "react";
 import lazyLoad from "next/dynamic";
 import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 import SessionNethers from "@/app/obs/sessionNethers/[nick]/SessionNethers";
 import Session from "@/app/obs/session/[nick]/Session";
 import MaterialIcon from "@/app/components/MaterialIcon";
 import FontPicker from "@/app/obs/FontPicker";
+
+const SessionPreview = memo(Session);
+const NethersPreview = memo(SessionNethers);
 
 // Colour controls load after the page renders. The native font select is
 // small enough to render immediately without a separate code request.
@@ -43,6 +46,18 @@ export default function ObsWrapper() {
 
     const [wallScene, setWallScene] = useState("Walling")
     const [playingScene, setPlayingScene] = useState("Playing")
+
+    // Draft hours, copy feedback, scene names and preview measurements do not
+    // change either overlay. Keep their SWR/socket/render trees untouched.
+    const nethersSettings = useMemo(() => ({
+        hours: bufferedHours, hoursBetween: bufferedHoursBetween, color,
+        demo: true, font, nph, liveOnly: false,
+        decimals: avgDp, nphDp, nphRight,
+    }), [bufferedHours, bufferedHoursBetween, color, font, nph, avgDp, nphDp, nphRight]);
+    const sessionSettings = useMemo(() => ({
+        hours: bufferedHours, hoursBetween: bufferedHoursBetween, color,
+        demo: true, showAvg: false, dynamic, font,
+    }), [bufferedHours, bufferedHoursBetween, color, dynamic, font]);
 
     const url = `https://mc-api.io/render/FACE/${search}/JAVA?size=8`
 
@@ -162,10 +177,7 @@ export default function ObsWrapper() {
                             <br/>
                         </div>
                         <div>
-                            <SessionNethers name={search} settings={{
-                                hours: bufferedHours, hoursBetween: bufferedHoursBetween, color: color,
-                                demo: true, font: font, nph: nph, liveOnly: false,
-                                decimals: avgDp, nphDp: nphDp, nphRight: nphRight}}/>
+                            <NethersPreview name={search} settings={nethersSettings}/>
                         </div>
                     </div>
                     <div className="col-1 col-sm-6 d-md-none col-lg-1 col-xl-1"/>
@@ -192,7 +204,7 @@ export default function ObsWrapper() {
                         </OverlayTrigger>
                         <p className="sizeHint">{sessionWidth}x{sessionHeight}</p>
                         <div>
-                            <Session setWidth={setSessionWidth} setHeight={setSessionHeight} name={search} settings={{hours: bufferedHours, hoursBetween: bufferedHoursBetween, color: color, demo: true, showAvg: false, dynamic: dynamic, font: font}}/>
+                            <SessionPreview setWidth={setSessionWidth} setHeight={setSessionHeight} name={search} settings={sessionSettings}/>
                         </div>
                     </div>
                 </div>
