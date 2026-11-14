@@ -2688,10 +2688,14 @@ export const getNPH = async (uuid: string, hours: number, hoursBetween: number, 
         ORDER BY nethers.insertTime DESC, nethers.id DESC LIMIT ?;`,
         [...windowValues, mysqlIntegerParam(limit)]
     ))[0];
-    let results = await readRows(SESSION_PAGE_ROWS);
+    // A gap at least as wide as the requested window normally cannot end
+    // the session early. Read the final cap once rather than decoding1,000
+    // rows, then immediately reading those same rows again in a larger page.
+    const initialLimit = safeHoursBetween >= safeHours ? MAX_SESSION_ROWS + 1 : SESSION_PAGE_ROWS;
+    let results = await readRows(initialLimit);
     let windowRows = results.length;
-    let session = walkNphSession(results, safeHoursBetween);
-    if (results.length === SESSION_PAGE_ROWS) {
+    let session = walkNphSession(results.length > MAX_SESSION_ROWS ? results.slice(0, MAX_SESSION_ROWS) : results, safeHoursBetween);
+    if (initialLimit === SESSION_PAGE_ROWS && results.length === SESSION_PAGE_ROWS) {
         if (session.stopped) {
             // Only whether the window exceeds MAX_SESSION_ROWS matters. The
             // live rows are a subset of all the player's nether rows, which
@@ -2941,18 +2945,19 @@ const walkSessionStats = (boundedRuns: any[], safeHours: number, safeHoursBetwee
 export const getSessionStats = async (uuid: string, hours: number, hoursBetween: number) => {
     const safeHours = boundedInteger(hours, 24, 1, MAX_LOOKBACK_DAYS * 24);
     const safeHoursBetween = boundedInteger(hoursBetween, 6, 0, MAX_LOOKBACK_DAYS * 24);
-    // Most sessions end inside the newest page; read the whole window only
-    // when the walk runs off the end of a full page.
+    // A window-sized gap needs the final cap directly; other sessions keep
+    // the short-prefix walk so ordinary current-session reads stay small.
+    const initialLimit = safeHoursBetween >= safeHours ? MAX_SESSION_ROWS + 1 : SESSION_PAGE_ROWS;
     let runs = await getCached(
         readSessionSplitRows,
         "readSessionSplitRows",
         uuid,
         safeHours,
-        SESSION_PAGE_ROWS
+        initialLimit
     )
     let windowRows = runs.length
-    let walk = walkSessionStats(runs, safeHours, safeHoursBetween)
-    if (runs.length === SESSION_PAGE_ROWS) {
+    let walk = walkSessionStats(runs.length > MAX_SESSION_ROWS ? runs.slice(0, MAX_SESSION_ROWS) : runs, safeHours, safeHoursBetween)
+    if (initialLimit === SESSION_PAGE_ROWS && runs.length === SESSION_PAGE_ROWS) {
         if (walk.stopped) {
             windowRows = await countWindowRows(
                 "FROM pace WHERE uuid=? AND insertTime >= NOW() - INTERVAL ? HOUR",

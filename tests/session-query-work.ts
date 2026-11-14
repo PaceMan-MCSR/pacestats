@@ -39,6 +39,8 @@ async function main() {
     if (!process.env.PERF_SOURCE_ROOT) {
         assert.ok(transfers.filter((row) => row.kind === "splits").every((row) => row.columns === 10));
         assert.ok(transfers.filter((row) => row.kind === "nph").every((row) => row.columns === 7));
+        assert.equal(transfers.length, 2, "An unbroken long window must read each source once");
+        assert.ok(transfers.every((row) => row.rows === 10_001), "Keep one sentinel row outside the aggregate cap");
     }
     if (process.env.PERF_COMPARE_SOURCE_ROOT) {
         const baseline = await load(process.env.PERF_COMPARE_SOURCE_ROOT);
