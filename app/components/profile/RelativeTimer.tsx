@@ -1,6 +1,6 @@
 'use client';
 
-import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {memo, useCallback, useEffect, useRef, useState} from 'react';
 import {formatExactTime, fromNow} from "@/app/components/profile/relativeTime";
 import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 import {subscribeRelativeClock} from "@/app/components/profile/relativeTimeClock";
@@ -86,15 +86,11 @@ function RelativeTimer({start, small = false, compactBelow}: {
 
     useInterval(updateTimer, refreshDelay);
 
-    const exactTime = useMemo(
-        () => formatExactTime(start),
-        [start]
-    );
-    const tooltip = useMemo(() => (
+    const tooltip = () => (
         <Tooltip className="timeTooltip">
-            <p>{exactTime}</p>
+            <p>{formatExactTime(start)}</p>
         </Tooltip>
-    ), [exactTime]);
+    );
 
     return <OverlayTrigger overlay={tooltip} delay={{ show: 0, hide: 50 }}>
         <span>

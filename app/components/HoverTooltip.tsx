@@ -23,7 +23,7 @@ const EDGE_GAP = 4;
 const ARROW_GAP = 6;
 
 export function OverlayTrigger({overlay, delay, children}: {
-    overlay: ReactElement<TooltipProps>,
+    overlay: ReactElement<TooltipProps> | (() => ReactElement<TooltipProps>),
     delay?: number | {show: number, hide: number},
     children: ReactElement<any>,
 }) {
@@ -102,13 +102,15 @@ export function OverlayTrigger({overlay, delay, children}: {
 
     // Whole class names, so scripts/trim-bootstrap.mjs finds them in this file.
     const sideClass = position?.below ? "bs-tooltip-bottom" : "bs-tooltip-top";
+    // Expensive text (such as localized timestamps) is only needed while visible.
+    const content = open ? (typeof overlay === 'function' ? overlay() : overlay) : null;
     return <>
         {trigger}
         {open && createPortal(
             <div
                 ref={tip}
                 role="tooltip"
-                className={`tooltip ${sideClass} show ${overlay.props.className ?? ""}`}
+                className={`tooltip ${sideClass} show ${content?.props.className ?? ""}`}
                 style={{
                     position: "fixed",
                     left: position?.left ?? 0,
@@ -122,7 +124,7 @@ export function OverlayTrigger({overlay, delay, children}: {
                     className="tooltip-arrow"
                     style={{position: "absolute", left: position?.arrowLeft ?? 0, transform: "translateX(-50%)"}}
                 />
-                <div className="tooltip-inner">{overlay.props.children}</div>
+                <div className="tooltip-inner">{content?.props.children}</div>
             </div>,
             document.body
         )}
