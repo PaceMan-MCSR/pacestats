@@ -11,10 +11,10 @@ const player = process.env.PERF_PLAYER ?? 'NoFearr1337';
 const errors = [];
 const requests = [];
 
-async function createContext(options = {}) {
+async function createContext(options = {}, serverBase = base) {
     const context = await browser.newContext({viewport: {width: 1365, height: 900}, ...options});
     await context.route('**/*', route => {
-        if (new URL(route.request().url()).origin === base.origin) return route.continue();
+        if (new URL(route.request().url()).origin === serverBase.origin) return route.continue();
         if (route.request().resourceType() === 'image') return route.fulfill({contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg"/>'});
         return route.abort();
     });
@@ -120,6 +120,27 @@ try {
     console.log('PASS: touch range changes complete and release pending state');
     await touchContext.close();
     await context.close();
+
+    if (process.env.PERF_COLD_BASE_URL) {
+        const coldBase = new URL(process.env.PERF_COLD_BASE_URL);
+        if (!['127.0.0.1', 'localhost', '[::1]'].includes(coldBase.hostname)) throw new Error('Local Docker cold URL required');
+        const {context: coldContext, page: coldPage} = await createContext({}, coldBase);
+        await coldPage.goto(coldBase.href, {waitUntil: 'domcontentloaded'});
+        await coldPage.getByText('Leaderboard data is temporarily unavailable. Please try again shortly.', {exact: true}).waitFor();
+        assert.equal(await coldPage.locator('.stats-row table').count(), 0, 'An absent cache must not appear as empty rankings');
+        const retry = coldPage.getByRole('button', {name: 'Retry leaderboards', exact: true});
+        await retry.click();
+        await coldPage.getByRole('button', {name: 'Retry leaderboards', exact: true}).waitFor();
+        assert.equal(await retry.isEnabled(), true);
+        await coldPage.goto(new URL(`player/${player}/?days=9999`, coldBase).href, {waitUntil: 'domcontentloaded'});
+        await coldPage.locator('.playerStats .stat').first().waitFor();
+        await coldPage.getByRole('button', {name: '7 days', exact: true}).focus();
+        await coldPage.keyboard.press('Enter');
+        await rangeReady(coldPage, 7);
+        await coldPage.locator('.playerStats .stat').first().waitFor();
+        console.log('PASS: absent Redis boards show a usable retry state; cold profile SQL fallback renders and changes ranges');
+        await coldContext.close();
+    }
     assert.deepEqual(errors, [], 'No browser runtime or hydration errors');
 } finally {
     await browser.close();

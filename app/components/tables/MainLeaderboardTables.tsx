@@ -178,7 +178,10 @@ function FastestBoard({descriptor, data, colours}: {
             <tbody>{entries.map((entry, index) => <tr key={`${entry.uuid}-${entry.runId}`}>
                 <td className="col-1"><p>{index + 1}</p></td>
                 <td className="col-10"><PlayerLink entry={entry} colours={colours} lowPriority={index >= 3}/></td>
-                <td className="col-1"><Link href={`/run/${entry.runId}/`} prefetch={false} style={{marginLeft: 5, textDecoration: "none"}}><p>{formatTime(entry.value)}</p></Link></td>
+                <td className="col-1">{entry.runId != null
+                    ? <Link href={`/run/${entry.runId}/`} prefetch={false} style={{marginLeft: 5, textDecoration: "none"}}><p>{formatTime(entry.value)}</p></Link>
+                    : <p>{formatTime(entry.value)}</p>}
+                </td>
             </tr>)}</tbody>
         </table>
     </div>;
