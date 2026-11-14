@@ -125,6 +125,19 @@ try {
         const historicalRequests = requests.length;
         await page.goto(new URL(runLinks[0], base.origin).href, {waitUntil: 'domcontentloaded'});
         await page.locator('.run-card .secretId').filter({hasText: ids[0]}).waitFor();
+        const icons = await page.locator('.run-card img.icon').evaluateAll(elements => elements.map(element => ({
+            src: element.getAttribute('src'), width: element.width, height: element.height,
+            decoding: element.decoding, priority: element.fetchPriority,
+        })));
+        assert.ok(icons.length > 0);
+        for (const icon of icons) {
+            assert.match(icon.src, /^\/stats\/[^/]+\.webp$/);
+            assert.equal(icon.width, 40);
+            assert.equal(icon.height, 40);
+            assert.equal(icon.decoding, 'async');
+            assert.equal(icon.priority, 'low');
+        }
+        assert.match(await page.locator('.run-card img.cardHead').getAttribute('src'), /^https:\/\/mc-api\.io\/render\/FACE\//);
         await page.waitForTimeout(3_400);
         assert.equal(requests.slice(historicalRequests).filter(request => request.url.includes('/api/getWorld/') || request.url.includes('/api/ars/liveruns')).length, 0);
         console.log('PASS: historical run card exists in first HTML and makes no getWorld/live-list request after hydration');
