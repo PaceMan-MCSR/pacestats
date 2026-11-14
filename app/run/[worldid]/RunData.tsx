@@ -1,115 +1,62 @@
-'use client'
+'use client';
 
-import useSWR from 'swr'
-import {useEffect, useState} from "react";
-import {useRunStore} from "@/app/run/[worldid]/RunStore";
-import {getEventTime, getLastSplit} from "@/app/utils";
+import useSWR from 'swr';
+import {useEffect, useRef} from "react";
+import {useRunStoreApi} from "@/app/run/[worldid]/RunStore";
+import type {WorldSnapshot} from "@/app/run/[worldid]/RunStore";
+import {getLastSplit} from "@/app/utils";
 
-const fetcher = (url: string) => fetch(url).then(r => r.json())
+const fetcher = async (url: string): Promise<WorldSnapshot> => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Unable to refresh run (${response.status})`);
+    return response.json();
+};
 
-export default function RunData({params}: {
-    params: { worldid: string }
+export default function RunData({params, initialWorld}: {
+    params: {worldid: string},
+    initialWorld: WorldSnapshot,
 }) {
-    const [isRunLive, setIsRunLive] = useState(false)
-
-    const getWorldInterval = () => {
-        return 9999999999
-    }
-
-    const getArsInterval = () => {
-        return isRunLive ? 3000 : 9999999999
-    }
-
-    const worldId = params.worldid
-    const { data } = useSWR(`/stats/api/getWorld/?worldId=${worldId}`,
-        fetcher, { refreshInterval: getWorldInterval }
-    )
-
-    const { data: ars } = useSWR(`https://paceman.gg/api/ars/liveruns`,
-        fetcher, { refreshInterval: getArsInterval }
-    )
+    const store = useRunStoreApi();
+    const deathTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    // Historical runs are complete snapshots. They need neither a second
+    // getWorld request after hydration nor the entire external live-run list.
+    // Live/unknown snapshots refresh only this run through the compact API.
+    const shouldRefresh = Boolean(initialWorld?.isLive || initialWorld?.liveStatusUnknown);
+    const {data} = useSWR<WorldSnapshot>(
+        shouldRefresh ? `/stats/api/getWorld/?worldId=${encodeURIComponent(params.worldid)}` : null,
+        fetcher,
+        {
+            fallbackData: initialWorld,
+            revalidateOnMount: false,
+            refreshInterval: (snapshot) => snapshot?.isLive || snapshot?.liveStatusUnknown ? 3_000 : 0,
+            revalidateOnFocus: shouldRefresh,
+            revalidateOnReconnect: shouldRefresh,
+        }
+    );
 
     useEffect(() => {
-        if(!isRunLive || useRunStore.getState().data === undefined) {
-            if(data === null){
-                useRunStore.setState({
-                    data: null,
-                })
-            } else {
-                useRunStore.setState({
-                    data: data?.data,
-                    isLive: data?.isLive
-                })
-                console.log("Setting live status from worldId: " + (!!data?.isLive))
-            }
+        if (data === undefined) return;
+        if (data === null) {
+            store.setState({data: null, isLive: false, dying: false, isLoading: false});
+            return;
         }
-        if(data === null){
-            useRunStore.setState({
-                isLoading: false
-            })
-        }
-        if(data){
-            window.history.replaceState(null, "", `/stats/run/${data.data.id}/`)
-        }
-    }, [data, isRunLive])
-
-    useEffect(() => {
-        if(!ars || !data || !data.data) return
-        let run = ars.find((run: any) => data.data.worldId === run.worldId)
-        if(run){
-            const newData = {
-                ...data.data,
-                nether: getEventTime(run, "rsg.enter_nether", false),
-                bastion: getEventTime(run, "rsg.enter_bastion", false),
-                fortress: getEventTime(run, "rsg.enter_fortress", false),
-                first_portal: getEventTime(run, "rsg.first_portal", false),
-                stronghold: getEventTime(run, "rsg.enter_stronghold", false),
-                end: getEventTime(run, "rsg.enter_end", false),
-                finish: getEventTime(run, "rsg.finish", false),
-
-                netherRta: getEventTime(run, "rsg.enter_nether", true),
-                bastionRta: getEventTime(run, "rsg.enter_bastion", true),
-                fortressRta: getEventTime(run, "rsg.enter_fortress", true),
-                first_portalRta: getEventTime(run, "rsg.first_portal", true),
-                strongholdRta: getEventTime(run, "rsg.enter_stronghold", true),
-                endRta: getEventTime(run, "rsg.enter_end", true),
-                finishRta: getEventTime(run, "rsg.finish", true),
-            }
-
-            useRunStore.setState({
-                data: newData
-            })
-
-            const last = getLastSplit(newData, false)
-            document.title = `${last.full} by ${newData.nickname}`;
-        }
-    }, [ars, data])
-
-    useEffect(() => {
-        if(!data){
-            return
-        }
-        let live = (ars && !!ars.find((run: any) => data.data.worldId === run.worldId && !run.isCheated && !run.isHidden))
-        if(isRunLive && !live){
-            console.log("Scheduling death")
-            setTimeout(() => {
-                setIsRunLive(live)
-                useRunStore.setState({
-                    isLive: live
-                })
-                console.log("Death happened at", Date.now())
-            }, 5000)
-            useRunStore.setState({
-                dying: true
-            })
+        window.history.replaceState(null, "", `/stats/run/${data.data.id}/`);
+        if (data.liveStatusUnknown) return; // Keep the last confirmed live state during an upstream outage.
+        clearTimeout(deathTimer.current);
+        const wasLive = store.getState().isLive;
+        if (wasLive && !data.isLive) {
+            store.setState({dying: true});
+            deathTimer.current = setTimeout(() => {
+                store.setState({data: data.data, isLive: false, dying: false, isLoading: false});
+            }, 5_000);
         } else {
-            queueMicrotask(() => setIsRunLive(Boolean(live)))
-            useRunStore.setState({
-                isLoading: false,
-                isLive: live
-            })
+            store.setState({data: data.data, isLive: Boolean(data.isLive), dying: false, isLoading: false});
         }
-    }, [ars, data, isRunLive])
+        if (data.isLive) {
+            document.title = `${getLastSplit(data.data, false).full} by ${data.data.nickname}`;
+        }
+        return () => clearTimeout(deathTimer.current);
+    }, [data, store]);
 
     return null;
 }

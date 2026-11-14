@@ -1,7 +1,9 @@
 'use client'
 
-import {TwitchChat, TwitchPlayer, TwitchPlayerInstance} from "react-twitch-embed";
-import {useRunStore} from "./RunStore";
+import {TwitchChat, TwitchPlayer} from "react-twitch-embed";
+import type {TwitchPlayerInstance} from "react-twitch-embed";
+import {useRunStore, useRunStoreApi} from "./RunStore";
+import type {WorldSnapshot} from "./RunStore";
 import ResetScroll from "@/app/components/ResetScroll";
 import "../../styles/run.css"
 import RunData from "@/app/run/[worldid]/RunData";
@@ -10,48 +12,48 @@ import RunCard from "@/app/run/[worldid]/RunCard";
 import RunButtons from "@/app/run/[worldid]/RunButtons";
 import RunHeader from "@/app/run/[worldid]/RunHeader";
 
-export default function RunPage({params}: {
-    params: { worldid: string }
+export default function RunPage({params, initialWorld}: {
+    params: { worldid: string },
+    initialWorld: WorldSnapshot,
 }) {
-    let isLive = useRunStore(state => state.isLive);
-    const [isLoading, setIsLoading] = useState(true)
+    const store = useRunStoreApi();
+    const isLive = useRunStore(state => state.isLive);
+    const isLoading = useRunStore(state => state.isLoading);
+    const data = useRunStore(state => state.data);
     const [vodFailed, setVodFailed] = useState(false)
     const [hasBeenLive, setHasBeenLive] = useState(false)
 
-    useEffect(() => useRunStore.subscribe(
-        state => {setIsLoading(state.isLoading)}
-    ), [])
-
     const handleVod = (e: TwitchPlayerInstance) => {
-        useRunStore.setState({
+        store.setState({
             vodEmbed: e
         })
     };
 
     useEffect(() => {
-        if(!isLoading){
-            setTimeout(() => {
-                const state = useRunStore.getState()
+        if(!isLoading && data?.vodId){
+            const timer = setTimeout(() => {
+                const state = store.getState()
                 if(!state.isLive && state.data && state.data.vodId && !state.vodEmbed){
                     console.log("Loading VOD failed after 10 seconds")
                     setVodFailed(true)
                 }
             }, 10000)
+            return () => clearTimeout(timer);
         }
-    }, [isLoading])
+    }, [isLoading, data?.vodId, store])
 
     const handleLive = (e: TwitchPlayerInstance) => {
-        useRunStore.setState({
+        store.setState({
             liveEmbed: e
         })
         setHasBeenLive(true)
     };
 
-    if(isLoading || useRunStore.getState().data === undefined){
+    if(isLoading || data === undefined){
         return (<main className="main world">
                 <div className="container">
                     <ResetScroll/>
-                    <RunData params={params}/>
+                    <RunData params={params} initialWorld={initialWorld}/>
                     <div className="row justify-content-center">
                         <div className="col-lg-8 col-xl-7">
                             <h1 className="header mb-4">
@@ -64,11 +66,11 @@ export default function RunPage({params}: {
         )
     }
 
-    if(useRunStore.getState().data === null){
+    if(data === null){
         return (<main className="main world">
                 <div className="container">
                     <ResetScroll/>
-                    <RunData params={params}/>
+                    <RunData params={params} initialWorld={initialWorld}/>
                     <div className="row justify-content-center">
                         <div className="col-12">
                             <h1 className="header mb-4">
@@ -86,13 +88,11 @@ export default function RunPage({params}: {
         )
     }
 
-    const data = useRunStore.getState().data
-
     return (
         <main className="main world">
             <div className="container">
                 <ResetScroll />
-                <RunData params={params}/>
+                <RunData params={params} initialWorld={initialWorld}/>
                 <div className="row">
                     <div className="col-12 twitchWrapper">
                         {!vodFailed && !isLive && data.vodId && (

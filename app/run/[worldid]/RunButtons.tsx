@@ -6,6 +6,7 @@ import {formatTime} from "@/app/utils";
 
 export default function RunButtons() {
     const [clipboard, setClipboard] = useState("")
+    const data = useRunStore(state => state.data);
 
     const setClipboardUrl = (url: string) => {
         navigator.clipboard.writeText(url);
@@ -13,12 +14,10 @@ export default function RunButtons() {
     }
 
     const getUrl = () => {
-        return `${window.location.origin}/stats/run/${useRunStore.getState().data.id}/`
+        return `${window.location.origin}/stats/run/${data.id}/`
     }
 
     const getSplits = () => {
-        const data = useRunStore.getState().data
-
         const splits = {
             nether: "Nether",
             bastion: "Bastion",
@@ -44,13 +43,14 @@ export default function RunButtons() {
     }
 
     const copyUrl = () => {
-        setClipboardUrl(getUrl())
+        navigator.clipboard.writeText(getUrl());
+        setClipboard("url");
     }
 
     return (
         <div className="runButtons">
             <button onClick={copySplits} className="btn btn-primary copy-splits">{getSplits() === clipboard ? "Copied!" : "Copy Splits"}</button>
-            <button onClick={copyUrl} className="btn btn-primary copy-url">{getUrl() === clipboard ? "Copied!" : "Copy Link"}</button>
+            <button onClick={copyUrl} className="btn btn-primary copy-url">{clipboard === "url" ? "Copied!" : "Copy Link"}</button>
         </div>
     )
 }

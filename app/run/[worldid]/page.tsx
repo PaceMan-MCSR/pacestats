@@ -1,11 +1,16 @@
 import RunPage from "@/app/run/[worldid]/RunPage";
-import {getCached, getWorld} from "@/app/data";
+import {getCached, getWorldLiveData} from "@/app/data";
 import {formatTime} from "@/app/utils";
+import {cache} from "react";
+import {RunStoreProvider} from "@/app/run/[worldid]/RunStore";
+
+// Metadata and the page use the same request, including on a cold cache.
+const loadWorld = cache((worldId: string) => getCached(getWorldLiveData, "getWorldLiveData", worldId));
 
 export async function generateMetadata(props: { params: Promise<{ worldid: string }> }) {
     const params = await props.params;
     const worldId = params.worldid
-    const run = await getCached(getWorld, "getWorld", worldId)
+    const run = await loadWorld(worldId)
     if(run === null) {
         return {
             title: 'Pace Stats',
@@ -68,5 +73,8 @@ export default async function Page(
     }
 ) {
     const params = await props.params;
-    return <RunPage params={params} />
+    const initialWorld = await loadWorld(params.worldid);
+    return <RunStoreProvider key={params.worldid} initialWorld={initialWorld}>
+        <RunPage params={params} initialWorld={initialWorld}/>
+    </RunStoreProvider>;
 }

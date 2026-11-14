@@ -7,10 +7,10 @@ export default function RunHeader() {
     const data = useRunStore(state => state.data)
     const dying = useRunStore(state => state.dying)
 
-    const state = useRunStore.getState()
+    const isLive = useRunStore(state => state.isLive);
     return <div className="runHeader">
         <h1 className="header">{getLastSplit(data).full}</h1>
-        {state.isLive && !dying && (
+        {isLive && !dying && (
             <div className="row justify-content-center">
                 <div className="col-12 last-updated">
                     <p className="live-text">
@@ -19,7 +19,7 @@ export default function RunHeader() {
                 </div>
             </div>
         )}
-        {(dying || !state.isLive) && (
+        {(dying || !isLive) && (
             <div className="row justify-content-center">
                 <div className="col-12 last-updated">
                     <p className="reset-text">

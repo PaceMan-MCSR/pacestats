@@ -4,6 +4,7 @@ import {formatTime, getLastSplit} from "@/app/utils";
 import { mcFont } from "@/app/styles/fonts";
 import {useRunStore} from "@/app/run/[worldid]/RunStore";
 import Image from "next/image";
+import PendingLink from "@/app/components/PendingLink";
 
 function CardLine({data, split}: { data: any, split: string }) {
     const embed = useRunStore(state => state.vodEmbed)
@@ -38,7 +39,7 @@ export default function RunCard() {
     const end = Math.floor(data.vodOffset + (data[last.split+ "Rta"] / 1000) + 2)
 
     const seek = (time: number) => {
-        const embed = useRunStore.getState().vodEmbed
+        const embed = vodEmbed
         if(embed !== undefined) {
             embed.seek(time)
         }
@@ -58,10 +59,10 @@ export default function RunCard() {
                         <div className="endButton" onClick={() => {seek(end)}}/>
                     </div>
                 )}
-                <a href={`/stats/player/${data.nickname}/`} className="nameWrapper">
+                <PendingLink href={`/player/${data.nickname}/`} className="nameWrapper">
                     <Image priority={true} className="cardHead" width={40} height={40} src={headUrl} alt={data.nickname}/>
                     <p style={mcFont.style} className="playerName">{data.nickname}</p>
-                </a>
+                </PendingLink>
                 <p style={mcFont.style} className="runDate">{new Date((data.realUpdate || data.insertTime) * 1000).toLocaleDateString("en-US")}</p>
                 <p style={mcFont.style} className="secretId">{data.id}</p>
             </div>
