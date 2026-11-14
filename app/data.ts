@@ -830,6 +830,7 @@ const ttls = {
     getAllPlayerRuns: 30,
     getAllPlayerRunsOptimized: 10,
     getAllPlayerRunsByPeriod: 20,
+    getSplitRunsByPeriod: 20,
     getAllPlayerRunsByHours: 20,
     readSessionSplitRows: 20,
     getRecentTimestamps: 10,
@@ -2174,6 +2175,26 @@ export const getAllPlayerRunsByPeriod = async (uuid: string, days: number, limit
     )
     return rows
 }
+
+const singleSplitColumns = {
+    nether: "nether", bastion: "bastion", fortress: "fortress, obtainRod",
+    first_structure: "bastion, fortress, obtainRod", second_structure: "id, bastion, fortress, obtainRod",
+    first_portal: "first_portal", stronghold: "stronghold", end: "`end`", finish: "finish",
+};
+
+/** A single-split aggregate must not decode every field of the public run shape. */
+export const getSplitRunsByPeriod = async (uuid: string, days: number, split: string, limit = MAX_STATS_ROWS_PER_PLAYER) => {
+    if (!Object.hasOwn(singleSplitColumns, split)) throw new Error("Unsupported split");
+    const columns = singleSplitColumns[split as keyof typeof singleSplitColumns];
+    const [rows] = await executeDb<any[]>(
+        `SELECT ${columns}, UNIX_TIMESTAMP(insertTime) AS time
+         FROM pace WHERE uuid=? AND insertTime >= NOW() - INTERVAL ? DAY
+         ORDER BY insertTime DESC, id DESC LIMIT ?;`,
+        [uuid, mysqlIntegerParam(boundedInteger(days, 30, 1, MAX_LOOKBACK_DAYS)),
+            mysqlIntegerParam(boundedInteger(limit, MAX_STATS_ROWS_PER_PLAYER, 1, MAX_STATS_ROWS_PER_PLAYER))]
+    );
+    return rows;
+};
 
 export const getNethersByPeriod = async (uuid: string, days: number, limit : number = 9999999, liveOnly: boolean = false) => {
     const safeDays = boundedInteger(days, 30, 1, MAX_LOOKBACK_DAYS);

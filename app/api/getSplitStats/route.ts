@@ -4,7 +4,7 @@ import {
     getCached,
     getAllNamesByNick,
     getAllNamesByTwitch,
-    getAllPlayerRunsByPeriod, calculateAvg,
+    getSplitRunsByPeriod, calculateAvg,
     SESSION_PAGE_ROWS,
 } from "@/app/data";
 import {formatTime, getFirstStructure, getSecondStructure} from "@/app/utils";
@@ -106,7 +106,7 @@ export const GET = withApiRequest("playerSessionStats", async (request: NextRequ
     const days = Math.ceil(hours / 24)
     // Most sessions end inside the newest page; read the whole window only
     // when the walk runs off the end of a full page.
-    let runs = await getCached(getAllPlayerRunsByPeriod, "getAllPlayerRunsByPeriod", names.uuid, days, SESSION_PAGE_ROWS)
+    let runs = await getCached(getSplitRunsByPeriod, "getSplitRunsByPeriod", names.uuid, days, split, SESSION_PAGE_ROWS)
 
     if(runs.length === 0){
         return jsonResponse({count: 0, avg: "0:00", ms: 0}, {cacheSeconds: 5, staleSeconds: 10});
@@ -114,7 +114,7 @@ export const GET = withApiRequest("playerSessionStats", async (request: NextRequ
 
     let walk = walkSplit(runs, split, hours, hoursBetween, maxTime)
     if(!walk.stopped && runs.length === SESSION_PAGE_ROWS){
-        runs = await getCached(getAllPlayerRunsByPeriod, "getAllPlayerRunsByPeriod", names.uuid, days)
+        runs = await getCached(getSplitRunsByPeriod, "getSplitRunsByPeriod", names.uuid, days, split)
         walk = walkSplit(runs, split, hours, hoursBetween, maxTime)
     }
     const r = walk.r
