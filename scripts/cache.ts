@@ -609,14 +609,10 @@ async function calculateAaLeaderboards(rows: AaRow[], pacer?: CachePacer): Promi
     return leaderboards;
 }
 
-function calculatePlayerStats(users: CachedUser[], leaderboards: Leaderboards, days: number): Array<[string, unknown]> {
+function* calculatePlayerStats(users: CachedUser[], leaderboards: Leaderboards, days: number): Generator<[string, unknown]> {
+    const userIds = new Set(users.map((user) => user.id));
     const dataByUuid = new Map<string, Record<string, Record<number, { ranking: number; value: number }>>>();
-    for (const user of users) {
-        dataByUuid.set(
-            user.id,
-            Object.fromEntries(paceCategories.map((category) => [category, {}])) as Record<string, Record<number, { ranking: number; value: number }>>,
-        );
-    }
+    const emptyStats = () => Object.fromEntries(paceCategories.map((category) => [category, {}])) as Record<string, Record<number, { ranking: number; value: number }>>;
 
     for (const filter of filters) {
         for (const category of paceCategories) {
@@ -626,7 +622,11 @@ function calculatePlayerStats(users: CachedUser[], leaderboards: Leaderboards, d
             let eligibleRank = 0;
             for (const entry of leaderboards[filter][category]) {
                 if (entry.qty === 0) continue;
-                const player = dataByUuid.get(entry.uuid);
+                let player = dataByUuid.get(entry.uuid);
+                if (!player && userIds.has(entry.uuid)) {
+                    player = emptyStats();
+                    dataByUuid.set(entry.uuid, player);
+                }
                 if (entry.qty < minQty) {
                     if (player) player[category][filter] = { ranking: -1, value: entry.value };
                 } else {
@@ -637,7 +637,14 @@ function calculatePlayerStats(users: CachedUser[], leaderboards: Leaderboards, d
         }
     }
 
-    return [...dataByUuid].map(([uuid, data]) => [`playerStats:${uuid}:${days}day`, data]);
+    // Inactive users all encode the same empty categories. Share their value
+    // and release each active result as the bounded staging writer consumes it.
+    const empty = emptyStats();
+    for (const uuid of userIds) {
+        const data = dataByUuid.get(uuid) ?? empty;
+        dataByUuid.delete(uuid);
+        yield [`playerStats:${uuid}:${days}day`, data];
+    }
 }
 
 type NphAccumulator = {
