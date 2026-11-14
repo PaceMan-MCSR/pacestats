@@ -234,21 +234,23 @@ async function findStalePlayers(
     const closedEnd = bucketStart(closedThrough + 1);
     const stale = new Set<string>();
     const [changedRows] = await conn.execute(
-        `SELECT uuid, id, UNIX_TIMESTAMP(insertTime) AS instant
+        `SELECT uuid,
+            MAX(UNIX_TIMESTAMP(insertTime) < ?) AS hasClosedRow,
+            MIN(IF(UNIX_TIMESTAMP(insertTime) < ?, NULL, id)) AS lowestOpenId
          FROM pace
-         WHERE lastUpdated >= FROM_UNIXTIME(?) AND UNIX_TIMESTAMP(lastUpdated) >= ?;`,
-        [Math.max(0, checkedFrom - COMBINED_ZONE_SLACK_SECONDS), checkedFrom],
+         WHERE lastUpdated >= FROM_UNIXTIME(?) AND UNIX_TIMESTAMP(lastUpdated) >= ?
+            AND uuid IS NOT NULL
+         GROUP BY uuid;`,
+        [closedEnd, closedEnd, Math.max(0, checkedFrom - COMBINED_ZONE_SLACK_SECONDS), checkedFrom],
     ) as any;
     // A changed row newer than the buckets is still covered if its id is: it
     // may have been moved there from a summarised bucket.
     const lowestOpenId = new Map<string, number>();
     for (const row of changedRows) {
         if (row.uuid === null) continue;
-        if (row.instant !== null && Number(row.instant) < closedEnd) {
+        if (Number(row.hasClosedRow) === 1) {
             stale.add(row.uuid);
-        } else {
-            lowestOpenId.set(row.uuid, Math.min(lowestOpenId.get(row.uuid) ?? Infinity, Number(row.id)));
-        }
+        } else lowestOpenId.set(row.uuid, Number(row.lowestOpenId));
     }
     // Large watermark overlaps can touch every player. Keep Redis command and
     // reply buffers bounded instead of queuing one pipeline for the whole set.

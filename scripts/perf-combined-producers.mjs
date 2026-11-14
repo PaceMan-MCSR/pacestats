@@ -15,6 +15,13 @@ assert.ok(['closeBucket', 'rebuildPlayers', 'findStalePlayers'].includes(kind));
 const {producer, dispose} = await loadProducerModule(sourcePath, [kind], process.cwd(), {hasMain: false});
 const connection = await mysql.createConnection({host: process.env.DB_HOST, user: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD, database: process.env.DB_NAME});
+let sqlRows = 0;
+const execute = connection.execute.bind(connection);
+connection.execute = async (...args) => {
+    const result = await execute(...args);
+    sqlRows += result[0].length;
+    return result;
+};
 const lease = {key: 'dry-lease', token: 'dry-token', assertHeld() {}, async verifyHeld() {}};
 const values = new Map();
 let commands = 0;
@@ -58,7 +65,7 @@ try {
         rows = stale.size;
     }
     const used = process.cpuUsage(cpu);
-    const result = {sourcePath, kind, rows, keys: values.size, commands,
+    const result = {sourcePath, kind, rows, sqlRows, keys: values.size, commands,
         hash: createHash('sha256').update(JSON.stringify([...values].sort(([a], [b]) => a.localeCompare(b)))).digest('hex'),
         durationMs: Math.round(performance.now() - start), cpuMs: Math.round((used.user + used.system) / 1000),
         peakRssMiB: process.resourceUsage().maxRSS / 1024};
