@@ -103,12 +103,7 @@ export default function AARecentRuns({uuid, initialPage}: { uuid: string, initia
                 if(run.twitch === null){
                     return <tr key={run.id}>
                         <td>
-                            <span className="d-sm-none">
-                                <RelativeTimer start={Number(run.lastUpdated) / 1000} small={true}/>
-                            </span>
-                            <span className="d-none d-sm-block">
-                                <RelativeTimer start={Number(run.lastUpdated) / 1000} small={false}/>
-                            </span>
+                            <RelativeTimer start={Number(run.lastUpdated) / 1000} compactBelow="sm"/>
                         </td>
                         <td>{formatIfNotNull(run.nether)}</td>
                         <td>{formatIfNotNull(run.bastion)}</td>
@@ -123,12 +118,7 @@ export default function AARecentRuns({uuid, initialPage}: { uuid: string, initia
                     return <tr key={run.id}>
                         <td>
                             <span className="liveIndicator"/>
-                            <span className="d-sm-none">
-                                <RelativeTimer start={Number(run.lastUpdated) / 1000} small={true}/>
-                            </span>
-                            <span className="d-none d-sm-inline">
-                                <RelativeTimer start={Number(run.lastUpdated) / 1000} small={false}/>
-                            </span>
+                            <RelativeTimer start={Number(run.lastUpdated) / 1000} compactBelow="sm"/>
                         </td>
                         <td>{formatIfNotNull(run.nether)}</td>
                         <td>{formatIfNotNull(run.bastion)}</td>

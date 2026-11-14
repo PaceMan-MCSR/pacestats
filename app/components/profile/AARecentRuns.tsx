@@ -55,12 +55,7 @@ export function AARecentRuns({runs}: { runs: {} }) {
                 if(run.twitch === null){
                     return <tr key={index}>
                         <td>
-                            <span className="d-sm-none">
-                                <RelativeTimer start={run.lastUpdated / 1000} small={true}/>
-                            </span>
-                            <span className="d-none d-sm-block">
-                                <RelativeTimer start={run.lastUpdated / 1000} small={false}/>
-                            </span>
+                            <RelativeTimer start={run.lastUpdated / 1000} compactBelow="sm"/>
                         </td>
                         <td>{formatIfNotNull(run.nether)}</td>
                         <td>{formatIfNotNull(run.bastion)}</td>
@@ -75,12 +70,7 @@ export function AARecentRuns({runs}: { runs: {} }) {
                     return <tr key={index}>
                         <td>
                             <span className="liveIndicator"/>
-                            <span className="d-sm-none">
-                                <RelativeTimer start={run.lastUpdated / 1000} small={true}/>
-                            </span>
-                            <span className="d-none d-sm-inline">
-                                <RelativeTimer start={run.lastUpdated / 1000} small={false}/>
-                            </span>
+                            <RelativeTimer start={run.lastUpdated / 1000} compactBelow="sm"/>
                         </td>
                         <td>{formatIfNotNull(run.nether)}</td>
                         <td>{formatIfNotNull(run.bastion)}</td>

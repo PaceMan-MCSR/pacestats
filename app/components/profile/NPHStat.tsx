@@ -2,7 +2,7 @@
 
 import { formatTime, numberWithCommas } from "@/app/utils";
 import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
-import Link from "next/link";
+import PendingLink from "@/app/components/PendingLink";
 import { useContext, useState } from "react";
 import { UserColoursContext } from "@/app/contexts";
 import { colourVars, customClass } from "@/app/components/customColours";
@@ -53,9 +53,9 @@ export function NPHStat({nick, headUrl, days, data}: {
         )}
         {!focus && (
             <div className={customClass(colours, "ccOpenHistory", "openHistory")}>
-                <Link href={`/player/${nick}/nethers`}>
+                <PendingLink href={`/player/${nick}/nethers`} onClick={(event) => event.stopPropagation()}>
                     <button className="btn btn-dark">Debug</button>
-                </Link>
+                </PendingLink>
             </div>
         )}
         {focus && (

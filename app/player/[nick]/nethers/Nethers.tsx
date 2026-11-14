@@ -1,7 +1,7 @@
 'use client'
 
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
-import {useRouter} from "next/navigation";
+import RunRow from "@/app/components/profile/RunRow";
 import {formatIfNotNull, numberWithCommas} from "@/app/utils";
 import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 
@@ -16,7 +16,6 @@ function TooltipLine({tooltip, value}: {tooltip: string, value: string}) {
 }
 
 export function Nethers({runs}: { runs: {} }) {
-    const router = useRouter()
     return <div className="recentNethers">
         <div style={{textAlign: "center"}}>
             <h6>Hover headers for more info</h6>
@@ -40,15 +39,10 @@ export function Nethers({runs}: { runs: {} }) {
             {Object.keys(runs).map((runId, index) => {
                 // @ts-ignore
                 const run = runs[runId]
-                return <tr key={index} onClick={() => {router.push(`/run/${run.runId}`)}}>
+                return <RunRow key={run.runId} href={`/run/${run.runId}`}>
                     <td>
                         {run.vodId && (<span className="liveIndicator"/>)}
-                        <span className="d-md-none">
-                            <RelativeTimer start={run.time} small={true}/>
-                        </span>
-                        <span className="d-none d-md-inline">
-                            <RelativeTimer start={run.time} small={false}/>
-                        </span>
+                        <RelativeTimer start={run.time} compactBelow="md"/>
                     </td>
                     <td>{formatIfNotNull(run.nether)}</td>
                     <td>{formatIfNotNull(run.wallTime)}</td>
@@ -56,7 +50,7 @@ export function Nethers({runs}: { runs: {} }) {
                     <td>{run.enters}</td>
                     <td>{run.resets ? numberWithCommas(run.resets) : ""}</td>
                     <td>{run.totalResets ? numberWithCommas(run.totalResets) : ""}</td>
-                </tr>
+                </RunRow>
             })}
             </tbody>
         </table>

@@ -3,6 +3,7 @@
 import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {formatExactTime, fromNow} from "@/app/components/profile/relativeTime";
 import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
+import {subscribeRelativeClock} from "@/app/components/profile/relativeTimeClock";
 
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
@@ -31,45 +32,42 @@ function useInterval(callback: () => void, delay: number | null) {
 
     // Set up the interval.
     useEffect(() => {
-        function tick() {
-            savedCallback.current();
-        }
         if (delay !== null) {
-            const id = setInterval(tick, delay);
-            return () => clearInterval(id);
+            return subscribeRelativeClock(() => savedCallback.current(), delay);
         }
     }, [delay]);
 }
 
-function RelativeTimer({start, small = false}: { start: number, small?: boolean }) {
+const compactText = (text: string) => text
+    .replace(/^(\d+) seconds? ago$/, "$1s")
+    .replace("a minute ago", "1m")
+    .replace(" mins ago", "m")
+    .replace("an hour ago", "1h")
+    .replace(" hours ago", "h")
+    .replace("a day ago", "1d")
+    .replace(" days ago", "d")
+    .replace("a month ago", "1mo")
+    .replace(" months ago", "mo");
+
+function RelativeTimer({start, small = false, compactBelow}: {
+    start: number,
+    small?: boolean,
+    compactBelow?: 'sm' | 'md',
+}) {
     const getDiff = useCallback(() => {
-        const diffSeconds = Math.round((Date.now() / 1000) - start);
+        const diffSeconds = Math.max(0, Math.round((Date.now() / 1000) - start));
         if(diffSeconds < 60){
-            if(small){
-                return diffSeconds.toFixed(0) + "s"
-            }
             const maybePlural = diffSeconds === 1 ? "" : "s";
             return diffSeconds.toFixed(0) + " second" + maybePlural + " ago"
         } else {
-            if(small){
-                return fromNow(start)
-                    .replace("a minute ago", "1m")
-                    .replace(" minutes ago", "m")
-                    .replace("an hour ago", "1h")
-                    .replace(" hours ago", "h")
-                    .replace("a day ago", "1d")
-                    .replace(" days ago", "d")
-                    .replace("a month ago", "1mo")
-                    .replace(" months ago", "mo")
-            }
             return fromNow(start)
                 .replace("minutes", "mins")
                 .replace("seconds", "secs")
         }
-    }, [small, start]);
+    }, [start]);
 
-    const [diff, setDiff] = useState(getDiff());
-    const previousInput = useRef({start, small});
+    const [diff, setDiff] = useState(getDiff);
+    const previousInput = useRef(start);
 
     const updateTimer = useCallback(() => {
         const nextDiff = getDiff();
@@ -77,11 +75,11 @@ function RelativeTimer({start, small = false}: { start: number, small?: boolean 
     }, [getDiff]);
 
     useEffect(() => {
-        if (previousInput.current.start !== start || previousInput.current.small !== small) {
-            previousInput.current = {start, small};
+        if (previousInput.current !== start) {
+            previousInput.current = start;
             updateTimer();
         }
-    }, [small, start, updateTimer]);
+    }, [start, updateTimer]);
 
     const ageSeconds = ageInSeconds(start);
     const refreshDelay = /\byears?\b/.test(diff) ? null : refreshDelayForAge(ageSeconds);
@@ -99,7 +97,12 @@ function RelativeTimer({start, small = false}: { start: number, small?: boolean 
     ), [exactTime]);
 
     return <OverlayTrigger overlay={tooltip} delay={{ show: 0, hide: 50 }}>
-        <span>{diff}</span>
+        <span>
+            {compactBelow ? <>
+                <span className={compactBelow === 'sm' ? 'd-sm-none' : 'd-md-none'} suppressHydrationWarning>{compactText(diff)}</span>
+                <span className={compactBelow === 'sm' ? 'd-none d-sm-inline' : 'd-none d-md-inline'} suppressHydrationWarning>{diff}</span>
+            </> : <span suppressHydrationWarning>{small ? compactText(diff) : diff}</span>}
+        </span>
     </OverlayTrigger>
 }
 

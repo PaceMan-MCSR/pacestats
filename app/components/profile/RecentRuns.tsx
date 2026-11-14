@@ -2,13 +2,12 @@
 
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
 import { formatIfNotNull } from "@/app/utils";
-import {useRouter} from "next/navigation";
+import RunRow from "@/app/components/profile/RunRow";
 import { useContext } from "react";
 import { UserColoursContext } from "@/app/contexts";
 import { colourVars, customClass } from "@/app/components/customColours";
 
 export function RecentRuns({runs}: { runs: {} }) {
-    const router = useRouter()
     const colours = useContext(UserColoursContext)
     return <div className="recentRuns">
         <h4 className="runsHeader" style={colours.isCustom ? {
@@ -65,14 +64,9 @@ export function RecentRuns({runs}: { runs: {} }) {
                     // @ts-ignore
                     const run = runs[runId]
                     if(run.twitch === null){
-                        return <tr key={index} onClick={() => {router.push(`/run/${run.id}`)}}>
+                        return <RunRow key={run.id} href={`/run/${run.id}`}>
                             <td>
-                                <span className="d-sm-none">
-                                    <RelativeTimer start={run.lastUpdated / 1000} small={true}/>
-                                </span>
-                                <span className="d-none d-sm-block">
-                                    <RelativeTimer start={run.lastUpdated / 1000} small={false}/>
-                                </span>
+                                <RelativeTimer start={run.lastUpdated / 1000} compactBelow="sm"/>
                             </td>
                             <td>{formatIfNotNull(run.nether)}</td>
                             <td>{formatIfNotNull(run.bastion)}</td>
@@ -81,17 +75,12 @@ export function RecentRuns({runs}: { runs: {} }) {
                             <td>{formatIfNotNull(run.stronghold)}</td>
                             <td>{formatIfNotNull(run.end)}</td>
                             <td>{formatIfNotNull(run.finish)}</td>
-                        </tr>
+                        </RunRow>
                     } else {
-                        return <tr key={index} onClick={() => {router.push(`/run/${run.id}`)}}>
+                        return <RunRow key={run.id} href={`/run/${run.id}`}>
                             <td>
                                 <span className="liveIndicator"/>
-                                <span className="d-sm-none">
-                                    <RelativeTimer start={run.lastUpdated / 1000} small={true}/>
-                                </span>
-                                <span className="d-none d-sm-inline">
-                                    <RelativeTimer start={run.lastUpdated / 1000} small={false}/>
-                                </span>
+                                <RelativeTimer start={run.lastUpdated / 1000} compactBelow="sm"/>
                             </td>
                             <td>{formatIfNotNull(run.nether)}</td>
                             <td>{formatIfNotNull(run.bastion)}</td>
@@ -100,7 +89,7 @@ export function RecentRuns({runs}: { runs: {} }) {
                             <td>{formatIfNotNull(run.stronghold)}</td>
                             <td>{formatIfNotNull(run.end)}</td>
                             <td>{formatIfNotNull(run.finish)}</td>
-                        </tr>
+                        </RunRow>
                     }
                 })}
                 </tbody>
