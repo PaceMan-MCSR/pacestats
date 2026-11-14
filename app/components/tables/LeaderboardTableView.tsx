@@ -2,7 +2,7 @@
 
 import {useEffect, useRef, useTransition} from "react";
 import type {MouseEvent, ReactNode} from "react";
-import {useRouter} from "next/navigation";
+import {useRouter, useSearchParams} from "next/navigation";
 import {PrefetchKind} from "next/dist/client/components/router-reducer/router-reducer-types";
 import type {BoardModel, LeaderboardModel} from "@/app/components/tables/leaderboardModel";
 import {OverlayTrigger, Tooltip} from "@/app/components/HoverTooltip";
@@ -110,7 +110,8 @@ function BoardHeader({board}: {board: BoardModel}) {
     </OverlayTrigger>;
 }
 
-export default function LeaderboardTableView({players, boards, showQty, aa = false}: LeaderboardModel & {showQty: boolean}) {
+export default function LeaderboardTableView({players, boards, aa = false}: LeaderboardModel & {showQty: boolean}) {
+    const showQty = useSearchParams().get("showQty") === "true";
     return <BoardNavigation>{boards.map(board => {
         const sample = board.kind === "average" || board.kind === "conversion";
         return <div key={board.id} className="tableWrapper col-sm-12 col-md-6 col-xl-4 col-xxl-3">

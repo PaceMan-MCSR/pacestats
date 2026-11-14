@@ -1,13 +1,12 @@
 'use client';
 
-import {useRouter, useSearchParams} from "next/navigation";
+import {useSearchParams} from "next/navigation";
 
 export default function ToggleQty({showSample: controlledShowSample, setShowSample}: {
     showSample?: boolean,
     setShowSample?: (value: boolean) => void,
 } = {}) {
     const searchParams = useSearchParams()
-    const router = useRouter()
     const paramString = searchParams.toString()
     const showSample = controlledShowSample ?? searchParams.get("showQty") === "true"
     return <button
@@ -21,7 +20,11 @@ export default function ToggleQty({showSample: controlledShowSample, setShowSamp
                     params.set("showQty", "true")
                 }
                 setShowSample?.(!showSample)
-                router.push("?" + params.toString(), {scroll: false})
+                // Every selected table already has the sample counts. Next
+                // integrates native history updates with useSearchParams,
+                // including Back/Forward, without another server render.
+                const query = params.toString()
+                window.history.pushState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`)
             }}
         >{showSample ? "Hide" : "Show"} Sample Sizes
     </button>
