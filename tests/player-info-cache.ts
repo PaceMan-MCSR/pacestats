@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import {PlayerInfoCache} from "../app/components/playerInfoCache";
+
+const info = {id: "uuid", displayName: "Name", color: "abcdef", bgColor: null};
+const cache = new PlayerInfoCache(3);
+let a = 0, b = 0;
+const releaseA = cache.subscribe("a", () => a++);
+const releaseB = cache.subscribe("b", () => b++);
+cache.set("a", info);
+assert.deepEqual([a, b], [1, 0], "Identity updates do not wake unrelated subscribers");
+cache.set("a", {...info});
+assert.equal(a, 1, "Equivalent server seeds do not trigger redundant renders");
+cache.set("b", null);
+assert.deepEqual([a, b], [1, 1]);
+for (let index = 0; index < 1_000; index++) cache.set(`inactive-${index}`, info);
+assert.equal(cache.size, 3, "Long browsing/search histories retain a bounded number of inactive identities");
+assert.equal(cache.get("a"), info, "Mounted identities remain available instead of entering a fetch/eviction loop");
+assert.equal(cache.get("b"), null);
+releaseA(); releaseB();
+cache.set("new-1", info); cache.set("new-2", info);
+assert.equal(cache.get("a"), undefined, "Unsubscribed identities become evictable");
+assert.equal(cache.get("b"), undefined);
+cache.set("a", {...info, color: "123456"});
+assert.equal(a, 1, "Unmounted listeners are released");
+console.log("PASS: player identity cache bounds inactive history, pins mounted keys, skips equal seeds and notifies only matching subscribers");
