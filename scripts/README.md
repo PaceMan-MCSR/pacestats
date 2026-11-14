@@ -14,6 +14,23 @@ publishing generation and health metadata for operations.
 - `npm run cache:benchmark:incremental` marks the busiest player dirty and times its cache-only history rebuild.
 - `npm run ws:start` starts the WebSocket invalidation service.
 
+For read-only producer profiling inside Docker, run:
+
+```sh
+docker exec -e PERF_LOCAL_DOCKER=1 pacestats-dev sh -c 'cd /app && node --import tsx scripts/perf-producers.mjs pace'
+docker exec -e PERF_LOCAL_DOCKER=1 pacestats-dev sh -c 'cd /app && node --import tsx scripts/perf-producers.mjs nph'
+docker exec -e PERF_LOCAL_DOCKER=1 -e RECENT_PACING_DELAY_MS=0 pacestats-dev sh -c 'cd /app && node --import tsx scripts/perf-producers.mjs histories'
+docker exec pacestats-dev sh -c 'cd /app && node --import tsx tests/cache-producer-metadata.mjs'
+```
+
+The profiler reads actual MySQL rows and hashes producer output in place of
+Redis writes. It records process CPU, peak RSS, garbage collections and result
+hashes under `test-artifacts/performance/round2/`; `PERF_OUTPUT` overrides the
+destination. Use `PERF_SOURCE_FILE` to compare a frozen producer source and a
+fresh process per sample. The temporary module exposes private helpers after
+removing the job entry point, and is removed after profiling. Source scans
+still load the local database, so keep them separate from browser timing runs.
+
 Run the normal aggregate job before the first full aggregate job because the
 full job uses the existing `users` list to enumerate player-stat keys.
 

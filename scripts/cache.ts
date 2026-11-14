@@ -258,50 +258,57 @@ function partitionRowsByDays<T extends { insertTime: Date }>(
     return partitions;
 }
 
-type PaceMinimum = {time: number; id: number; insertTime: Date};
+type PaceMinimum = {time: number; id: number; insertTimeMs: number};
 type PacePlayerAccumulator = {
     firstId: number;
     name: string;
+    latestNameId: number | undefined;
+    latestNameInsertTimeMs: number;
     splits: Record<string, number[]>;
     minima: Record<string, PaceMinimum | undefined>;
 };
 
+function recordPaceMinimum(
+    player: PacePlayerAccumulator,
+    row: PaceRow,
+    category: string,
+    time: number | null,
+    insertTimeMs: number,
+): void {
+    if (time === null) return;
+    const existing = player.minima[category];
+    if (!existing || time < existing.time || (time === existing.time && (
+        insertTimeMs > existing.insertTimeMs
+        || (insertTimeMs === existing.insertTimeMs && row.id > existing.id)
+    ))) player.minima[category] = {time, id: row.id, insertTimeMs};
+}
+
 function accumulatePaceRow(players: Map<string, PacePlayerAccumulator>, row: PaceRow): void {
+    const insertTimeMs = row.insertTime.getTime();
     let player = players.get(row.uuid);
     if (!player) {
         player = {
             firstId: row.id,
             name: row.nickname,
+            latestNameId: undefined,
+            latestNameInsertTimeMs: 0,
             splits: Object.fromEntries(paceCategories.map((category) => [category, []])) as Record<string, number[]>,
             minima: {},
         };
         players.set(row.uuid, player);
     }
     if (row.id < player.firstId) player.firstId = row.id;
-    const latestName = player.minima.__latestName;
-    if (!latestName || row.insertTime > latestName.insertTime || (
-        row.insertTime.getTime() === latestName.insertTime.getTime() && row.id > latestName.id
+    if (player.latestNameId === undefined || insertTimeMs > player.latestNameInsertTimeMs || (
+        insertTimeMs === player.latestNameInsertTimeMs && row.id > player.latestNameId
     )) {
         player.name = row.nickname;
-        player.minima.__latestName = {time: 0, id: row.id, insertTime: row.insertTime};
+        player.latestNameId = row.id;
+        player.latestNameInsertTimeMs = insertTimeMs;
     }
-
-    const recordMinimum = (category: string, time: number | null) => {
-        if (time === null) return;
-        const existing = player!.minima[category];
-        if (
-            !existing
-            || time < existing.time
-            || (time === existing.time && (
-                row.insertTime > existing.insertTime
-                || (row.insertTime.getTime() === existing.insertTime.getTime() && row.id > existing.id)
-            ))
-        ) player!.minima[category] = {time, id: row.id, insertTime: row.insertTime};
-    };
 
     const firstStructure = getFirstStructure(row.bastion, row.fortress);
     const secondStructure = getSecondStructure(row.bastion, row.fortress);
-    recordMinimum("first_structure", firstStructure);
+    recordPaceMinimum(player, row, "first_structure", firstStructure, insertTimeMs);
     if (firstStructure !== null) {
         player.splits.first_structure.push(
             firstStructure === row.fortress && row.obtainRod !== null && row.obtainRod < row.fortress
@@ -312,12 +319,12 @@ function accumulatePaceRow(players: Map<string, PacePlayerAccumulator>, row: Pac
     if (secondStructure !== null) {
         if (row.id < 187307) {
             player.splits.second_structure.push(secondStructure);
-            recordMinimum("second_structure", secondStructure);
+            recordPaceMinimum(player, row, "second_structure", secondStructure, insertTimeMs);
         } else if (
             !(secondStructure === row.bastion && (row.obtainRod === null || row.obtainRod > secondStructure))
             && !(secondStructure === row.fortress && row.fortress - row.bastion! < 50_000)
         ) {
-            recordMinimum("second_structure", secondStructure);
+            recordPaceMinimum(player, row, "second_structure", secondStructure, insertTimeMs);
             player.splits.second_structure.push(
                 secondStructure === row.fortress && row.obtainRod !== null && row.obtainRod < row.fortress
                     ? row.obtainRod
@@ -335,10 +342,10 @@ function accumulatePaceRow(players: Map<string, PacePlayerAccumulator>, row: Pac
         const value = row[category];
         if (value !== null) {
             player.splits[category].push(value);
-            recordMinimum(category, value);
+            recordPaceMinimum(player, row, category, value, insertTimeMs);
         }
     }
-    recordMinimum("fortress", row.fortress);
+    recordPaceMinimum(player, row, "fortress", row.fortress, insertTimeMs);
 }
 
 /**
@@ -370,12 +377,11 @@ function summarizePacePlayer(player: PacePlayerAccumulator): PacePlayerSummary {
         const minimum = player.minima[category];
         if (minimum) minima[category] = [minimum.time, minimum.id];
     }
-    const latestName = player.minima.__latestName!;
     return {
         firstId: player.firstId,
         name: player.name,
-        latestNameId: latestName.id,
-        latestNameInsertTimeMs: latestName.insertTime.getTime(),
+        latestNameId: player.latestNameId!,
+        latestNameInsertTimeMs: player.latestNameInsertTimeMs,
         stats,
         minima,
     };
