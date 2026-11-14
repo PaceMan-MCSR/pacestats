@@ -1,5 +1,5 @@
 import {NextRequest, NextResponse} from "next/server";
-import {jsonResponse} from "@/app/api/_utils";
+import {booleanParam, integerParam, jsonResponse, stringParam, withApiRequest} from "@/app/api/_utils";
 import {getAllNamesByNick, getAllNamesByTwitch, getCached, getRecentTimestamps, getUUID} from "@/app/data";
 import {getLastSplit} from "@/app/utils";
 
@@ -10,11 +10,11 @@ function getSplitTimestamp(start: number, splitOffset: number | null){
     return Math.round((start + (splitOffset / 1000)) * 1e3) / 1e3;
 }
 
-export async function GET(request: NextRequest) {
-    let name = request.nextUrl.searchParams.get("name")
-    let limit = Math.min(50, parseInt(request.nextUrl.searchParams.get("limit") || "20"))
+export const GET = withApiRequest("getRecentTimestamps", async (request: NextRequest) => {
+    const name = stringParam(request.nextUrl.searchParams, "name", {required: true, maxLength: 64});
+    const limit = integerParam(request.nextUrl.searchParams, "limit", {defaultValue: 20, min: 1, max: 50});
+    const onlyFortress = booleanParam(request.nextUrl.searchParams, "onlyFort");
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", name)
-    let onlyFortress = request.nextUrl.searchParams.get("onlyFort") === "true"
     if(names === null){
         names = await getCached(getAllNamesByTwitch, "getAllNamesByTwitch", name)
         if(names === null){
@@ -57,4 +57,4 @@ export async function GET(request: NextRequest) {
         response.push(formattedRun)
     }
     return jsonResponse(response, {cacheSeconds: 5, staleSeconds: 10});
-}
+});

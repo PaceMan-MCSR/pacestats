@@ -1,17 +1,15 @@
 import {NextRequest} from "next/server";
 import {fetchLeaderboardCategoryFromRedis, getCached} from "@/app/data";
 import {CategoryType, getMinQty} from "@/app/utils";
-import {jsonResponse, validationErrorResponse} from "@/app/api/_utils";
+import {integerParam, jsonResponse, stringParam, withApiRequest} from "@/app/api/_utils";
 
-export async function GET(request: NextRequest) {
-    try {
-    let days = parseInt(request.nextUrl.searchParams.get("days") || "30")
-    if (isNaN(days)) {
-        days = 30
-    }
-    let category = request.nextUrl.searchParams.get("category") || "nether"
-    let type = request.nextUrl.searchParams.get("type") || "qty"
-    let limit = Math.min(999999, parseInt(request.nextUrl.searchParams.get("limit") || "10"))
+export const GET = withApiRequest("getLeaderboard", async (request: NextRequest) => {
+    let days = integerParam(request.nextUrl.searchParams, "days", {defaultValue: 30, min: 1, max: 9_999});
+    const category = stringParam(request.nextUrl.searchParams, "category", {defaultValue: "nether", allowed: [
+        "nether", "bastion", "fortress", "first_structure", "second_structure", "first_portal", "second_portal", "stronghold", "end", "finish",
+    ]});
+    const type = stringParam(request.nextUrl.searchParams, "type", {defaultValue: "qty", allowed: ["qty", "average", "fastest", "conversion"]});
+    const limit = integerParam(request.nextUrl.searchParams, "limit", {defaultValue: 10, min: 1, max: 999_999});
     // average/fastest/conversion
     // don't let users specify custom ranges at this stage, to avoid lb cache misses
     if (days !== 1 && days !== 7 && days !== 30 && days !== 9999) {
@@ -38,9 +36,4 @@ export async function GET(request: NextRequest) {
         minimumQty
     );
     return jsonResponse(specific, {cacheSeconds: 60, staleSeconds: 120});
-    } catch (error) {
-        const response = validationErrorResponse(error);
-        if (response) return response;
-        throw error;
-    }
-}
+}, {concurrent: 4});

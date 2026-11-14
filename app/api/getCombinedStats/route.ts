@@ -6,7 +6,7 @@ import {
 } from "@/app/data";
 import type {CombinedSplitAggregate} from "@/app/data";
 import {formatTime} from "@/app/utils";
-import {integerParam, jsonResponse, validationErrorResponse} from "@/app/api/_utils";
+import {integerParam, jsonResponse, listParam, validationErrorResponse, withApiRequest} from "@/app/api/_utils";
 
 const categories = [
     "nether",
@@ -20,17 +20,11 @@ const categories = [
     "finish",
 ] as const;
 
-const namesParam = (request: NextRequest) =>
-    (request.nextUrl.searchParams.get("names") ?? "")
-        .split(",")
-        .map((name) => name.trim())
-        .filter(Boolean);
-
-export async function GET(request: NextRequest) {
+export const GET = withApiRequest("combinedStats", async (request: NextRequest) => {
     try {
-        const names = namesParam(request);
-        const hours = integerParam(request.nextUrl.searchParams, "hours", {defaultValue: 24, min: 1});
-        const hoursBetween = integerParam(request.nextUrl.searchParams, "hoursBetween", {defaultValue: 6, min: 1});
+        const names = listParam(request.nextUrl.searchParams, "names", 20, 64);
+        const hours = Math.min(9_999 * 24, integerParam(request.nextUrl.searchParams, "hours", {defaultValue: 24, min: 1, max: 9_999_999}));
+        const hoursBetween = integerParam(request.nextUrl.searchParams, "hoursBetween", {defaultValue: 6, min: 1, max: 9_999_999});
         const start = integerParam(request.nextUrl.searchParams, "start", {
             defaultValue: 0,
             min: 0,
@@ -74,4 +68,4 @@ export async function GET(request: NextRequest) {
         if (invalid) return invalid;
         throw error;
     }
-}
+}, {limit: 30, concurrent: 2});

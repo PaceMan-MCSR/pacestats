@@ -1,5 +1,5 @@
 import {NextRequest, NextResponse} from "next/server";
-import {jsonResponse} from "@/app/api/_utils";
+import {integerParam, jsonResponse, stringParam, withApiRequest} from "@/app/api/_utils";
 import {
     getCached,
     getAllNamesByNick,
@@ -88,12 +88,14 @@ function walkSplit(runs: any[], split: string, hours: number, hoursBetween: numb
     return {r, stopped}
 }
 
-export async function GET(request: NextRequest) {
-    let name = request.nextUrl.searchParams.get("name")
-    let hours = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hours") || "24"))
-    let hoursBetween = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hoursBetween") || "6"))
-    let split = request.nextUrl.searchParams.get("split") || "nether"
-    let maxTime = Math.min(99999999, parseInt(request.nextUrl.searchParams.get("maxTime") || "99999999"))
+export const GET = withApiRequest("playerSessionStats", async (request: NextRequest) => {
+    const name = stringParam(request.nextUrl.searchParams, "name", {required: true, maxLength: 64});
+    const hours = integerParam(request.nextUrl.searchParams, "hours", {defaultValue: 24, min: 1, max: 9_999_999});
+    const hoursBetween = integerParam(request.nextUrl.searchParams, "hoursBetween", {defaultValue: 6, min: 0, max: 9_999_999});
+    const split = stringParam(request.nextUrl.searchParams, "split", {defaultValue: "nether", allowed: [
+        "nether", "bastion", "fortress", "first_structure", "second_structure", "first_portal", "stronghold", "end", "finish",
+    ]});
+    const maxTime = integerParam(request.nextUrl.searchParams, "maxTime", {defaultValue: 99_999_999, min: 1, max: 99_999_999});
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", name)
     if(names === null){
         names = await getCached(getAllNamesByTwitch, "getAllNamesByTwitch", name)
@@ -105,23 +107,6 @@ export async function GET(request: NextRequest) {
     // Most sessions end inside the newest page; read the whole window only
     // when the walk runs off the end of a full page.
     let runs = await getCached(getAllPlayerRunsByPeriod, "getAllPlayerRunsByPeriod", names.uuid, days, SESSION_PAGE_ROWS)
-
-    const categories = [
-        "nether",
-        "bastion",
-        "fortress",
-        "first_structure",
-        "second_structure",
-        "first_portal",
-        "stronghold",
-        "end",
-        "finish"
-    ]
-
-    if(!categories.includes(split)){
-        return NextResponse.json({error: "Unknown split"}, { status: 404 });
-    }
-
 
     if(runs.length === 0){
         return jsonResponse({count: 0, avg: "0:00", ms: 0}, {cacheSeconds: 5, staleSeconds: 10});
@@ -140,4 +125,4 @@ export async function GET(request: NextRequest) {
     const avg = calculateAvg(r)
 
     return jsonResponse({count: r.length, avg: formatTime(avg), ms: avg}, {cacheSeconds: 5, staleSeconds: 10});
-}
+}, {limit: 120, concurrent: 4});

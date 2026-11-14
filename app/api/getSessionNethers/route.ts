@@ -8,7 +8,7 @@ import {
     SESSION_PAGE_ROWS,
 } from "@/app/data";
 import {formatDecimals} from "@/app/utils";
-import {jsonResponse} from "@/app/api/_utils";
+import {booleanParam, integerParam, jsonResponse, stringParam, withApiRequest} from "@/app/api/_utils";
 
 /** Collects nether times newest first until a long gap or the window edge. */
 function walkNethers(runs: any[], hours: number, hoursBetween: number) {
@@ -37,12 +37,12 @@ function walkNethers(runs: any[], hours: number, hoursBetween: number) {
     return {count, times, stopped}
 }
 
-export async function GET(request: NextRequest) {
-    let name = request.nextUrl.searchParams.get("name")
-    let hours = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hours") || "24"))
-    let hoursBetween = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hoursBetween") || "6"))
-    let liveOnly = request.nextUrl.searchParams.get("liveOnly") === "true"
-    let dp = Math.min(3, parseInt(request.nextUrl.searchParams.get("dp") || "0"))
+export const GET = withApiRequest("playerSessionStats", async (request: NextRequest) => {
+    const name = stringParam(request.nextUrl.searchParams, "name", {required: true, maxLength: 64});
+    const hours = integerParam(request.nextUrl.searchParams, "hours", {defaultValue: 24, min: 1, max: 9_999_999});
+    const hoursBetween = integerParam(request.nextUrl.searchParams, "hoursBetween", {defaultValue: 6, min: 0, max: 9_999_999});
+    const liveOnly = booleanParam(request.nextUrl.searchParams, "liveOnly");
+    const dp = integerParam(request.nextUrl.searchParams, "dp", {defaultValue: 0, min: 0, max: 3});
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", name)
     if(names === null){
         names = await getCached(getAllNamesByTwitch, "getAllNamesByTwitch", name)
@@ -80,4 +80,4 @@ export async function GET(request: NextRequest) {
         {count: count, avg: formatDecimals(avg, dp), rnph: nph.rnph, uuid: names.uuid},
         {cacheSeconds: 5, staleSeconds: 10}
     );
-}
+}, {limit: 120, concurrent: 4});

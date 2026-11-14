@@ -168,12 +168,40 @@ interface RateLimitBucket {
 
 type ApiRuntime = typeof globalThis & {
     __paceStatsRateLimits?: Map<string, RateLimitBucket>;
+    __paceStatsActiveRequests?: Map<string, number>;
 };
 
 const apiRuntime = globalThis as ApiRuntime;
 const rateLimits = apiRuntime.__paceStatsRateLimits ?? new Map<string, RateLimitBucket>();
 apiRuntime.__paceStatsRateLimits = rateLimits;
 const MAX_RATE_LIMIT_BUCKETS = 10_000;
+const activeRequests = apiRuntime.__paceStatsActiveRequests ?? new Map<string, number>();
+apiRuntime.__paceStatsActiveRequests = activeRequests;
+
+/** Bound cold work before a route checks out DB connections or allocates rows. */
+export const withApiRequest = (
+    namespace: string,
+    handler: (request: NextRequest) => Promise<Response>,
+    options: {limit?: number; concurrent?: number} = {}
+) => async (request: NextRequest): Promise<Response> => {
+    const limited = rateLimit(request, {namespace, limit: options.limit ?? 120, windowMs: 60_000});
+    if (limited) return limited;
+    const active = activeRequests.get(namespace) ?? 0;
+    if (options.concurrent !== undefined && active >= options.concurrent) {
+        return NextResponse.json({error: "This endpoint is busy. Please retry shortly."},
+            {status: 429, headers: {"Cache-Control": "private, no-store", "Retry-After": "1"}});
+    }
+    activeRequests.set(namespace, active + 1);
+    try {
+        return await handler(request);
+    } catch (error) {
+        const response = validationErrorResponse(error);
+        if (response) return response;
+        throw error;
+    } finally {
+        activeRequests.set(namespace, Math.max(0, (activeRequests.get(namespace) ?? 1) - 1));
+    }
+};
 
 const clientAddress = (request: NextRequest) => {
     // This assumes the deployment proxy replaces, rather than appends untrusted,

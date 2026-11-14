@@ -1,5 +1,5 @@
 import {NextRequest, NextResponse} from "next/server";
-import {jsonResponse} from "@/app/api/_utils";
+import {integerParam, jsonResponse, stringParam, withApiRequest} from "@/app/api/_utils";
 import {
     getCached,
     getAllNamesByNick,
@@ -7,11 +7,11 @@ import {
     getAllPlayerRunsByPeriod,
 } from "@/app/data";
 
-export async function GET(request: NextRequest) {
-    let name = request.nextUrl.searchParams.get("name")
-    let hours = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hours") || "9999999"))
-    let hoursBetween = Math.min(9999999, parseInt(request.nextUrl.searchParams.get("hoursBetween") || "9999999"))
-    let limit = parseInt(request.nextUrl.searchParams.get("limit") || "10")
+export const GET = withApiRequest("getRecentRuns", async (request: NextRequest) => {
+    const name = stringParam(request.nextUrl.searchParams, "name", {required: true, maxLength: 64});
+    const hours = integerParam(request.nextUrl.searchParams, "hours", {defaultValue: 9_999_999, min: 1, max: 9_999_999});
+    const hoursBetween = integerParam(request.nextUrl.searchParams, "hoursBetween", {defaultValue: 9_999_999, min: 1, max: 9_999_999});
+    const limit = integerParam(request.nextUrl.searchParams, "limit", {defaultValue: 10, min: 1, max: 1_000});
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", name)
     if(names === null){
         names = await getCached(getAllNamesByTwitch, "getAllNamesByTwitch", name)
@@ -40,4 +40,4 @@ export async function GET(request: NextRequest) {
 
 
     return jsonResponse(response, {cacheSeconds: 5, staleSeconds: 10});
-}
+});
