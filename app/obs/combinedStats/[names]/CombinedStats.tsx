@@ -1,7 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
-import {useEffect, useRef} from "react";
+import {useOverlaySize} from '@/app/components/useOverlaySize';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 const refresh = 30
@@ -53,21 +53,7 @@ export default function CombinedStats({names, settings, setWidth, setHeight}: {
         fetcher, { refreshInterval: settings.demo ? 999999999 : refresh * 1000 }
     )
 
-    const ref = useRef(null)
-
-    useEffect(() => {
-        const timer = setInterval(() => {
-            if(ref.current && setWidth && setHeight){
-                // @ts-ignore
-                setWidth(ref.current.clientWidth - 20)
-                // @ts-ignore
-                setHeight(ref.current.clientHeight)
-            }
-        }, 20)
-        return () => {
-            clearInterval(timer)
-        }
-    }, [])
+    const ref = useOverlaySize(setWidth, setHeight);
 
     if(data && data.error) {
         return <main className={"main sessionStats" + (settings.demo ? " demoBrowser" : "")}>
