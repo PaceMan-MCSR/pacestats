@@ -197,3 +197,175 @@ that process's Linux CPU ticks and samples RSS every 10ms. It checks useful 200
 responses, retryable 429 overload responses and subsequent recovery. It does not
 claim a CPU utilization ceiling or measure total Docker/database memory. Keep it
 separate from timed browser runs.
+
+## Fourth-round checks
+
+This round compares baseline `b726785` with the fourth-round source. Keep
+evidence under `/app/test-artifacts/performance/round4/`. The isolated production
+servers use ports **5091** (baseline), **5092** (candidate), and **5093** (candidate
+with empty Redis database 15). Build the snapshots with the same webpack command
+and dependencies described above; the baseline source is
+`/tmp/pacestats-round4-baseline` and the candidate snapshot is
+`/tmp/pacestats-round4-final`.
+
+Both measured revisions must preload the same local upstream fixture. It returns
+an empty live-run snapshot and immediate unavailable responses for other external
+fetches, while retaining localhost requests. This removes third-party timing from
+server rendering as well as from the browser. Use this preload only for the
+isolated Docker benchmark servers. For example, start each command in its own
+Docker shell/process after its build has completed:
+
+```sh
+cd /tmp/pacestats-round4-baseline
+node --import /app/tests/local-upstreams.mjs node_modules/next/dist/bin/next start -p 5091
+
+cd /tmp/pacestats-round4-final
+node --import /app/tests/local-upstreams.mjs node_modules/next/dist/bin/next start -p 5092
+
+cd /tmp/pacestats-round4-final
+REDIS_URL=redis://127.0.0.1:6379/15 node --import /app/tests/local-upstreams.mjs node_modules/next/dist/bin/next start -p 5093
+```
+
+Check Redis 15 is empty before the cold server starts. Do not clear the primary
+Redis database. Backend fixtures below use Redis 14 and must run sequentially;
+they check their fixture keys are absent and remove only keys they created.
+`combined-replacements.mjs` uses namespaced keys in Redis 13, checks its starting
+`DBSIZE`, and verifies the same size after deleting its owned keys. Do not run
+these fixtures, publishing jobs, source profilers or builds during browser timing.
+Pause cron and restart it after all comparisons have finished.
+
+All following commands run **inside Docker**, from `/app`. From the host, open a
+shell with `docker exec -it pacestats-dev bash`. The backend checks cover bounded
+Redis projections/recovery, session overflow and query work, short-page counts,
+cache keys/hits, compact identity failures, name projections and API limits:
+
+```sh
+node --expose-gc --import tsx tests/aa-board-prefixes.ts
+node --import tsx tests/leaderboard-recovery-batches.ts
+node --import tsx tests/session-overflow-probes.ts
+node --import tsx tests/split-window-projection.ts
+PERF_BASELINE_ORIGIN=http://127.0.0.1:5091 node --import tsx tests/legacy-session-query-work.ts
+node --import tsx tests/short-page-counts.ts
+node --expose-gc --import tsx tests/cache-hit-path.ts
+node --import tsx tests/compact-user-failure-coalescing.ts
+node --expose-gc --import tsx tests/player-names-projection.ts
+node --import tsx tests/live-lookup-api-bounds.ts
+```
+
+Frontend fixtures exercise compact table models, lazy exact timestamps, shared
+search indexes, color updates, abandoned AA requests and unrelated OBS state:
+
+```sh
+node --import tsx tests/tracker-presentation.ts
+node --import tsx tests/recent-run-presentation.ts
+node tests/lazy-timestamps.mjs
+node --import tsx tests/search-index.ts
+node --import tsx tests/frame-value.ts
+node tests/frontend-workloads.mjs
+PERF_SOURCE_ROOT=/tmp/pacestats-round4-baseline node tests/lazy-timestamps.mjs
+PERF_SOURCE_ROOT=/tmp/pacestats-round4-baseline node tests/frontend-workloads.mjs
+```
+
+The React workload uses development profiling and local stubs; its render counts
+and payload-size fixtures are structural checks, not production page timings.
+Check the actual production render and navigation separately. Profile parity
+compares table text, cell order, links, images and live indicators for pace,
+tracker and AA pages, then exercises AA range changes and history pagination:
+
+```sh
+PERF_BASELINE_URL=http://127.0.0.1:5091/stats/ PERF_BASE_URL=http://127.0.0.1:5092/stats/ node tests/profile-presentation-parity.mjs
+PERF_BASELINE_URL=http://127.0.0.1:5091/stats/ PERF_BASE_URL=http://127.0.0.1:5092/stats/ node tests/aa-leaderboard-parity.mjs
+PERF_BASE_URL=http://127.0.0.1:5092/stats/ node tests/frontend-navigation.mjs
+```
+
+Producer checks cover board byte parity, hash cursor/error handling, metadata
+validation, bounded Redis batches, exact combined summaries and streamed player
+stats. The UUID-order test injects a read-only MySQL CTE with case-insensitive,
+space-padding collation; it verifies that distinct case/trailing-space strings
+retain every bucket across SQL batch boundaries. It creates no SQL fixtures:
+
+```sh
+node --import tsx tests/cache-top-boards.mjs
+node --import tsx tests/hash-pages.mjs
+node --import tsx tests/full-state-pages.mjs
+node --import tsx tests/combined-candidates.mjs
+node --import tsx tests/combined-bucket.mjs
+PERF_LOCAL_DOCKER=1 node --import tsx tests/combined-replacements.mjs
+PERF_LOCAL_DOCKER=1 node --import tsx tests/combined-rebuild-order.mjs
+node --import tsx tests/player-stats-staging.mjs
+node --import tsx tests/cache-producer-metadata.mjs
+node --import tsx scripts/verify-cache-stream.ts
+```
+
+The combined producer profiler uses real SQL and mocked Redis, so it never
+publishes. Run it separately from all other measurements. For the imported dump,
+bucket 691 and explicit `PERF_CHECKED_FROM=1790812800` (2026-10-01 00:00:00 UTC)
+produce the retained 112,919-to-1,218 SQL-result-row comparison. The helper's
+default watermark, `1794278400`, is a different overlap and does not reproduce
+those counts:
+
+```sh
+PERF_LOCAL_DOCKER=1 PERF_SOURCE_FILE=/tmp/pacestats-round4-baseline/scripts/combined-summaries.ts PERF_OUTPUT=/app/test-artifacts/performance/round4/bucket-before.json node --import tsx scripts/perf-combined-producers.mjs closeBucket
+PERF_LOCAL_DOCKER=1 PERF_OUTPUT=/app/test-artifacts/performance/round4/bucket-after.json node --import tsx scripts/perf-combined-producers.mjs closeBucket
+PERF_LOCAL_DOCKER=1 PERF_CHECKED_FROM=1790812800 PERF_SOURCE_FILE=/tmp/pacestats-round4-baseline/scripts/combined-summaries.ts PERF_OUTPUT=/app/test-artifacts/performance/round4/stale-before.json node --import tsx scripts/perf-combined-producers.mjs findStalePlayers
+PERF_LOCAL_DOCKER=1 PERF_CHECKED_FROM=1790812800 PERF_OUTPUT=/app/test-artifacts/performance/round4/stale-after.json node --import tsx scripts/perf-combined-producers.mjs findStalePlayers
+PERF_LOCAL_DOCKER=1 PERF_SOURCE_FILE=/tmp/pacestats-round4-baseline/scripts/combined-summaries.ts PERF_OUTPUT=/app/test-artifacts/performance/round4/rebuild-before.json node --import tsx scripts/perf-combined-producers.mjs rebuildPlayers
+PERF_LOCAL_DOCKER=1 PERF_OUTPUT=/app/test-artifacts/performance/round4/rebuild-after.json node --import tsx scripts/perf-combined-producers.mjs rebuildPlayers
+```
+
+`PERF_BUCKET` selects a different closed bucket. The rebuild probe selects the
+50 busiest players and can read many rows. Its `fieldHash` canonicalizes unordered
+Redis hash fields while preserving each field's serialized bytes; compare that
+digest after ordering changes. The separate `hash` also captures producer argument
+order, which is not a Redis hash ordering guarantee. Explain-plan artifacts
+`bucket-explain.json` and `rebuild-explain.json` record the UUID sort tradeoff;
+bounded one-player accumulation does not establish a latency improvement. The
+optional `PERF_BENCHMARK=1` modes in the board/hash/player-stats fixtures are
+synthetic scaling workloads, not complete site-job measurements.
+
+WebSocket fixtures verify coalescing deadlines/reload priority, weighted dispatch
+yields, heartbeat bounds, reconnect cleanup and actual local delivery. The real
+server fixture starts a private port and Redis Pub/Sub channel and shuts them down:
+
+```sh
+node tests/websocket-coalescing.mjs
+node tests/websocket-heartbeats.mjs
+node tests/websocket-delivery.mjs
+PERF_BENCHMARK=1 PERF_VARIANT=legacy node --expose-gc tests/websocket-coalescing.mjs
+PERF_BENCHMARK=1 PERF_VARIANT=current node --expose-gc tests/websocket-coalescing.mjs
+```
+
+After any coordinated local publishing verification, restart both measured Next
+processes against the same generated data. Keep the upstream preload on both.
+Collect three complete browser samples per revision, alternating order; these
+commands retain the harness's 300ms network latency and 4x CPU slowdown:
+
+```sh
+for sample in 1 2 3; do
+    if [ "$sample" = 2 ]; then variants="final baseline"; else variants="baseline final"; fi
+    for variant in $variants; do
+        if [ "$variant" = baseline ]; then port=5091; else port=5092; fi
+        PERF_BASE_URL=http://127.0.0.1:$port/stats/ PERF_OUTPUT=/app/test-artifacts/performance/round4/$variant-browser-$sample.json node scripts/perf-browser.mjs
+    done
+done
+PERF_SAMPLES_DIR=/app/test-artifacts/performance/round4 node scripts/perf-summary.mjs
+PERF_BASELINE_URL=http://127.0.0.1:5091/stats/ PERF_BASE_URL=http://127.0.0.1:5092/stats/ PERF_OUTPUT=/app/test-artifacts/performance/round4/aa-browser.json node scripts/perf-aa.mjs
+PERF_BASELINE_URL=http://127.0.0.1:5091/stats/ PERF_BASE_URL=http://127.0.0.1:5092/stats/ PERF_OUTPUT=/app/test-artifacts/performance/round4/profile-pages.json node scripts/perf-profile-pages.mjs
+PERF_BASE_URL=http://127.0.0.1:5092/stats/ PERF_OUTPUT=/app/test-artifacts/performance/round4/warm-http.json node scripts/perf-http.mjs
+PERF_BASE_URL=http://127.0.0.1:5093/stats/ PERF_EMPTY_REDIS=1 PERF_OUTPUT=/app/test-artifacts/performance/round4/cold-http.json node scripts/perf-http.mjs
+```
+
+`perf-profile-pages.mjs` separately compares cold-browser AA profile, tracker and
+OBS setup loads. Each route gets three fresh browser contexts per revision,
+alternating order, with 300ms network latency and 4x CPU slowdown. Readiness
+requires hydrated tables or OBS search/URL controls. Its results include page
+bytes, long tasks and LCP, with final-sample screenshots; this does not clear
+server, Redis or MySQL caches.
+
+Publishing changes primary local Redis and must use the normal job wrapper and
+leases in a separate coordinated phase. The corrected round-four lifetime
+publication evidence is `stats-publish-parity.json` (8,422 generated values).
+`producer-publish-parity.json` supplies populated history/combined checks; its
+zero-key lifetime scan is not lifetime parity evidence. Neither publication
+artifact replaces the read-only SQL fixture checks above. Finish with Docker
+`npm run typecheck` and `npm run lint`, and preserve all failure/cleanup evidence.
