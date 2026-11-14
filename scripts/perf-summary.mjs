@@ -13,6 +13,7 @@ async function samples(prefix) {
         assert.equal(run.cpuSlowdown, 4);
         assert.equal(run.results.length, 15, 'Partial browser sample');
         assert.deepEqual(run.errors, []);
+        assert.ok(Number.isFinite(run.results[13].interactiveMs), 'Run content and hydration must be measured separately');
     }
     return runs;
 }
@@ -35,6 +36,16 @@ const results = baseline[0].results.map((row, index) => {
         changePercent: Math.round((afterMs / beforeMs - 1) * 1000) / 10,
         baselineRequests: median(baseline.map(run => run.results[index].localRequests)),
         finalRequests: median(final.map(run => run.results[index].localRequests)),
+        ...(index === 0 ? {
+            baselineLcpMs: median(baseline.map(run => run.results[index].lcpMs)),
+            finalLcpMs: median(final.map(run => run.results[index].lcpMs)),
+            baselineDocumentBytes: median(baseline.map(run => run.results[index].documentBytes)),
+            finalDocumentBytes: median(final.map(run => run.results[index].documentBytes)),
+        } : {}),
+        ...(index === 13 ? {
+            baselineInteractiveMs: median(baseline.map(run => run.results[index].interactiveMs)),
+            finalInteractiveMs: median(final.map(run => run.results[index].interactiveMs)),
+        } : {}),
     };
 });
 const summary = {generatedAt: new Date().toISOString(), baselineSamples: baseline.length, finalSamples: final.length, results};

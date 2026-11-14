@@ -66,11 +66,16 @@ relevant tools. An old dump can have an empty 24-hour window; that is valid.
   physical phone.
 - Each browser run starts with a new context. HTTP caching is disabled by
   Playwright request routing; Next's in-memory navigation reuse still works.
-  Third-party avatar images are stubbed, and external browser APIs/telemetry
-  are blocked, keeping tests local and repeatable.
+  Third-party avatar images, including requests through Next's image proxy,
+  are stubbed, and external browser APIs/telemetry are blocked, keeping
+  tests local and repeatable.
 - Page readiness requires content and hydrated controls. Range readiness
   waits for the committed URL and pending state to finish. No arbitrary
-  sleep is added to reported page readiness.
+  sleep is added to reported page readiness. Run details report content
+  visibility as `readyMs` and hydration separately as `interactiveMs`;
+  subsequent navigation waits for hydration to avoid carrying unfinished
+  page startup into another page's timing. Tracker history is opened through
+  the profile's Debug link, matching the actual client navigation flow.
 - `decodedBytes` and `scriptBytes` are uncompressed completed same-origin
   resource bytes during the measured action. The local Next server runs
   without the production nginx compression/cache layer. These figures are
@@ -104,3 +109,10 @@ read, including reset statistics, identity, and Twitch accounts. Unavailable
 global rankings use `-1` and are omitted from the UI.
 The SQL history grid returns only its requested page rather than decoding
 an entire lifetime history in application memory.
+
+The production build inlines initial CSS through Next's `inlineCss` option.
+This removes the initial blocking stylesheet round trip. CSS is also included
+in the initial Flight serialization, adding about 99 KB of raw HTML (about
+10 KB with Brotli); the normal external CSS was about 51 KB raw. RSC navigation
+payloads retain stylesheet references and do not acquire the CSS body. Recheck
+this tradeoff after a Next upgrade because the option is experimental.

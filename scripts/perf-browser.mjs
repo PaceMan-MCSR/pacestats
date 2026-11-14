@@ -18,7 +18,12 @@ const browser = await chromium.launch({headless: true, args: ['--no-sandbox']});
 const context = await browser.newContext({viewport: {width: 1365, height: 900}});
 // Keep third-party availability out of comparisons, and never contact production APIs.
 await context.route('**/*', async route => {
-    if (new URL(route.request().url()).origin === base.origin) return route.continue();
+    const requestUrl = new URL(route.request().url());
+    const proxiedImage = requestUrl.pathname.includes('/_next/image') ? requestUrl.searchParams.get('url') : null;
+    if (proxiedImage && /^https?:\/\//.test(proxiedImage)) {
+        return route.fulfill({contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>'});
+    }
+    if (requestUrl.origin === base.origin) return route.continue();
     if (route.request().resourceType() === 'image') {
         return route.fulfill({contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>'});
     }
@@ -52,7 +57,7 @@ page.on('response', response => {
 });
 const results = [];
 const number = value => Math.round(value * 10) / 10;
-async function measure(name, action, ready) {
+async function measure(name, action, ready, interactive) {
     const before = await page.evaluate(() => performance.timeOrigin);
     const tasksBefore = await page.evaluate(() => window.__perfTasks?.length ?? 0);
     const resourcesBefore = await page.evaluate(() => performance.getEntriesByType('resource').length);
@@ -65,10 +70,12 @@ async function measure(name, action, ready) {
     const observation = await page.evaluate(({tasksBefore, resourcesBefore, before}) => {
         const resources = performance.getEntriesByType('resource');
         const freshDocument = performance.timeOrigin !== before;
+        const navigation = performance.getEntriesByType('navigation')[0];
         const tasks = (window.__perfTasks ?? []).slice(freshDocument ? 0 : tasksBefore);
         const entries = resources.slice(freshDocument ? 0 : resourcesBefore).filter(item => new URL(item.name).origin === location.origin);
         return {
-            documentBytes: freshDocument ? performance.getEntriesByType('navigation')[0]?.decodedBodySize ?? 0 : 0,
+            documentBytes: freshDocument ? navigation?.decodedBodySize ?? 0 : 0,
+            documentTtfbMs: freshDocument && navigation ? navigation.responseStart - navigation.requestStart : null,
             longTaskMs: tasks.reduce((sum, task) => sum + task.duration, 0),
             maxLongTaskMs: Math.max(0, ...tasks.map(task => task.duration)),
             localRequests: entries.length,
@@ -80,6 +87,10 @@ async function measure(name, action, ready) {
     const metrics = (await client.send('Performance.getMetrics')).metrics;
     const heap = metrics.find(metric => metric.name === 'JSHeapUsedSize')?.value ?? 0;
     const result = {name, readyMs: number(readyMs), ...observation, browserHeapMiB: number(heap / 1048576)};
+    if (interactive) {
+        await interactive();
+        result.interactiveMs = number(performance.now() - started);
+    }
     results.push(result);
     console.log(JSON.stringify(result));
 }
@@ -137,8 +148,18 @@ try {
         await page.waitForURL(/\/run\//);
         await page.locator('.run-card').first().waitFor({timeout: 60_000});
         await page.getByText('Loading...', {exact: true}).waitFor({state: 'detached'});
+    }, async () => {
+        // Seeded run content can paint before hydration. Record both, and
+        // finish hydration before beginning an unrelated next navigation.
+        await page.waitForFunction(() => {
+            const card = document.querySelector('.run-card');
+            return card && Object.keys(card).some(key => key.startsWith('__reactProps$'));
+        });
     });
-    await measure('profile: tracker history', () => page.goto(url(`player/${player}/nethers/`), {waitUntil: 'domcontentloaded'}), async () => {
+    await page.goBack();
+    await profileReady();
+    await measure('profile: tracker history', () => page.getByRole('button', {name: 'Debug', exact: true}).click(), async () => {
+        await page.waitForURL(/\/nethers\//);
         await page.locator('.recentNethers tbody tr').first().waitFor({timeout: 60_000});
         await page.waitForFunction(() => {
             const row = document.querySelector('.recentNethers tbody tr');
