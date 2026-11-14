@@ -53,7 +53,8 @@ export function NPHStat({nick, headUrl, days, data}: {
         )}
         {!focus && (
             <div className={customClass(colours, "ccOpenHistory", "openHistory")}>
-                <PendingLink href={`/player/${nick}/nethers`} onClick={(event) => event.stopPropagation()}>
+                {/* This single bounded history route can prepare while the profile is visible. */}
+                <PendingLink href={`/player/${nick}/nethers`} prefetch={true} onClick={(event) => event.stopPropagation()}>
                     <button className="btn btn-dark">Debug</button>
                 </PendingLink>
             </div>
