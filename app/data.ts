@@ -1633,12 +1633,18 @@ const readTwitchAccounts = async (uuid: string): Promise<any[]> => {
     const accounts: any[] = [];
     let previous: string | null = null;
     for (let lookup = 0; lookup <= TWITCH_ACCOUNT_LOOKUPS; lookup++) {
-        // Each statement also says whether another name follows, so a player
-        // with one account costs one statement.
+        // Each statement reads one name, its newest entry and whether a later
+        // name exists (the player's last name sorts after it), so a player
+        // with one account costs one statement. Only forms that both MySQL
+        // and MariaDB answer from the ends of index ranges are used: a
+        // correlated MAX() or a correlated "twitch > name" probe makes
+        // MariaDB read every entry of the account.
         const [rows]: [any[], unknown] = await (await getConn()).execute<any[]>(
             `SELECT next.twitch,
-                (SELECT UNIX_TIMESTAMP(MAX(insertTime)) FROM pace WHERE uuid=? AND twitch=next.twitch) AS time,
-                (SELECT 1 FROM pace WHERE uuid=? AND twitch > next.twitch LIMIT 1) AS more
+                (SELECT UNIX_TIMESTAMP(insertTime) FROM pace
+                 WHERE uuid=? AND twitch=next.twitch ORDER BY insertTime DESC LIMIT 1) AS time,
+                (SELECT twitch FROM pace
+                 WHERE uuid=? AND twitch IS NOT NULL ORDER BY twitch DESC LIMIT 1) > next.twitch AS more
              FROM (
                  SELECT twitch FROM pace
                  WHERE uuid=? AND twitch IS NOT NULL${previous === null ? "" : " AND twitch > ?"}
@@ -1647,7 +1653,7 @@ const readTwitchAccounts = async (uuid: string): Promise<any[]> => {
             previous === null ? [uuid, uuid, uuid] : [uuid, uuid, uuid, previous]
         );
         if (rows.length > 0) accounts.push({twitch: rows[0].twitch, time: rows[0].time});
-        if (rows.length === 0 || rows[0].more === null) {
+        if (rows.length === 0 || !Number(rows[0].more)) {
             // Newest first; the sort is stable, so ties keep the grouped order.
             return accounts
                 .sort((left, right) => (right.time ?? -Infinity) - (left.time ?? -Infinity))
