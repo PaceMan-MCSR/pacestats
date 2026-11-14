@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {loadProducerModule} from '../scripts/producer-module.mjs';
 
-const {producer, dispose} = await loadProducerModule(resolve('scripts/cache.ts'), ['accumulatePaceRow', 'summarizePacePlayer']);
+const {producer, dispose} = await loadProducerModule(resolve('scripts/cache.ts'), [
+    'accumulatePaceRow', 'summarizePacePlayer', 'createPacePlayer', 'accumulatePacePlayerRow',
+    'accumulateNphRow', 'summarizeNph', 'createNphPlayer', 'accumulateNphPlayerRow',
+]);
 try {
     const row = (id, time, overrides = {}) => ({id, nickname: `name${id}`, uuid: 'player',
         nether: 120000, bastion: null, fortress: null, first_portal: null, second_portal: null,
@@ -21,6 +24,9 @@ try {
         return producer.summarizePacePlayer(players.get('player'));
     };
     const expected = summarize(rows);
+    const direct = producer.createPacePlayer(rows[0]);
+    for (const run of rows) producer.accumulatePacePlayerRow(direct, run);
+    assert.deepEqual(producer.summarizePacePlayer(direct), expected, 'ordered and map-backed paths must agree');
     assert.equal(expected.firstId, 187305);
     assert.equal(expected.name, 'name187309');
     assert.equal(expected.latestNameId, 187309);
@@ -47,7 +53,28 @@ try {
     const invalid = summarize([row(1, NaN), row(2, 2000)]);
     assert.equal(invalid.latestNameId, 1);
     assert.ok(Number.isNaN(invalid.latestNameInsertTimeMs));
-    console.log('Producer metadata: row-order independence, timestamp/id ties, historic split rules, rod correction, zero and invalid dates passed.');
+
+    const nphRows = [
+        {id: 1, time: 300, nether: 100, resets: 0, totalResets: 5, enters: 1},
+        {id: 3, time: 200, nether: 200, resets: -1, totalResets: 9, enters: 2},
+        {id: 2, time: 300, nether: 150, resets: 2, totalResets: 8, enters: 3},
+        {id: 4, time: 300, nether: 50, resets: 3, totalResets: 10, enters: 4},
+    ].map((run) => ({...run, uuid: 'player', wallTime: 1000, playTime: 2000}));
+    const verifyNph = (source) => {
+        const grouped = new Map();
+        const player = producer.createNphPlayer(source[0]);
+        for (const run of source) {
+            producer.accumulateNphRow(grouped, run);
+            producer.accumulateNphPlayerRow(player, run);
+        }
+        const summary = producer.summarizeNph(player);
+        assert.deepEqual(summary, producer.summarizeNph(grouped.get('player')));
+        assert.deepEqual(summary, {wallTime: 4000, playTime: 8000, firstTime: 300, lastTime: 200,
+            latestId: 4, resets: 5, enters: 10, totalResets: 10, count: 4, avg: 125});
+    };
+    verifyNph(nphRows);
+    verifyNph([...nphRows].reverse());
+    console.log('Producer metadata: ordered/map path parity, row-order independence, timestamp/id ties, historic splits, rod correction, dates and NPH totals passed.');
 } finally {
     await dispose();
 }

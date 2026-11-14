@@ -283,20 +283,28 @@ function recordPaceMinimum(
     ))) player.minima[category] = {time, id: row.id, insertTimeMs};
 }
 
+function createPacePlayer(row: PaceRow): PacePlayerAccumulator {
+    return {
+        firstId: row.id,
+        name: row.nickname,
+        latestNameId: undefined,
+        latestNameInsertTimeMs: 0,
+        splits: Object.fromEntries(paceCategories.map((category) => [category, []])) as Record<string, number[]>,
+        minima: {},
+    };
+}
+
 function accumulatePaceRow(players: Map<string, PacePlayerAccumulator>, row: PaceRow): void {
-    const insertTimeMs = row.insertTime.getTime();
     let player = players.get(row.uuid);
     if (!player) {
-        player = {
-            firstId: row.id,
-            name: row.nickname,
-            latestNameId: undefined,
-            latestNameInsertTimeMs: 0,
-            splits: Object.fromEntries(paceCategories.map((category) => [category, []])) as Record<string, number[]>,
-            minima: {},
-        };
+        player = createPacePlayer(row);
         players.set(row.uuid, player);
     }
+    accumulatePacePlayerRow(player, row);
+}
+
+function accumulatePacePlayerRow(player: PacePlayerAccumulator, row: PaceRow): void {
+    const insertTimeMs = row.insertTime.getTime();
     if (row.id < player.firstId) player.firstId = row.id;
     if (player.latestNameId === undefined || insertTimeMs > player.latestNameInsertTimeMs || (
         insertTimeMs === player.latestNameInsertTimeMs && row.id > player.latestNameId
@@ -609,22 +617,30 @@ type NphAccumulator = {
     times: number[];
 };
 
+function createNphPlayer(row: NetherPaceRow): NphAccumulator {
+    return {
+        wallTime: 0,
+        playTime: 0,
+        firstTime: row.time,
+        lastTime: row.time,
+        latestId: row.id,
+        resets: 0,
+        enters: 0,
+        totalResets: row.totalResets,
+        times: [],
+    };
+}
+
 function accumulateNphRow(grouped: Map<string, NphAccumulator>, row: NetherPaceRow): void {
     let player = grouped.get(row.uuid);
     if (!player) {
-        player = {
-            wallTime: 0,
-            playTime: 0,
-            firstTime: row.time,
-            lastTime: row.time,
-            latestId: row.id,
-            resets: 0,
-            enters: 0,
-            totalResets: row.totalResets,
-            times: [],
-        };
+        player = createNphPlayer(row);
         grouped.set(row.uuid, player);
     }
+    accumulateNphPlayerRow(player, row);
+}
+
+function accumulateNphPlayerRow(player: NphAccumulator, row: NetherPaceRow): void {
     player.times.push(row.nether);
     player.playTime += row.playTime;
     player.wallTime += row.wallTime;
@@ -947,12 +963,11 @@ async function readPaceSummaries(
         }
     };
     if (uuids === null) {
-        const players = new Map<string, PacePlayerAccumulator>();
         let currentUuid: string | undefined;
+        let currentPlayer: PacePlayerAccumulator | undefined;
         const flushPlayer = () => {
-            if (currentUuid === undefined) return;
-            summaries.set(currentUuid, summarizePacePlayer(players.get(currentUuid)!));
-            players.clear();
+            if (currentPlayer === undefined) return;
+            summaries.set(currentUuid!, summarizePacePlayer(currentPlayer));
         };
         await lease.verifyHeld();
         // The uuid index includes the primary key, so rows of a player
@@ -967,9 +982,12 @@ async function readPaceSummaries(
             await lease.verifyHeld();
             for (let index = 0; index < rows.length; index++) {
                 const row = rows[index];
-                if (currentUuid !== undefined && currentUuid !== row.uuid) flushPlayer();
-                currentUuid = row.uuid;
-                accumulatePaceRow(players, row);
+                if (currentPlayer === undefined || currentUuid !== row.uuid) {
+                    flushPlayer();
+                    currentUuid = row.uuid;
+                    currentPlayer = createPacePlayer(row);
+                }
+                accumulatePacePlayerRow(currentPlayer, row);
                 rowCount++;
                 if ((index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
             }
@@ -1031,12 +1049,11 @@ async function readNphSummaries(
         }
     };
     if (uuids === null) {
-        const grouped = new Map<string, NphAccumulator>();
         let currentUuid: string | undefined;
+        let currentPlayer: NphAccumulator | undefined;
         const flushPlayer = () => {
-            if (currentUuid === undefined) return;
-            summaries.set(currentUuid, summarizeNph(grouped.get(currentUuid)!));
-            grouped.clear();
+            if (currentPlayer === undefined) return;
+            summaries.set(currentUuid!, summarizeNph(currentPlayer));
         };
         await lease.verifyHeld();
         // Equivalent production indexes may have another name. Prefer a
@@ -1061,9 +1078,12 @@ async function readNphSummaries(
             await lease.verifyHeld();
             for (let index = 0; index < rows.length; index++) {
                 const row = rows[index];
-                if (currentUuid !== undefined && currentUuid !== row.uuid) flushPlayer();
-                currentUuid = row.uuid;
-                accumulateNphRow(grouped, row);
+                if (currentPlayer === undefined || currentUuid !== row.uuid) {
+                    flushPlayer();
+                    currentUuid = row.uuid;
+                    currentPlayer = createNphPlayer(row);
+                }
+                accumulateNphPlayerRow(currentPlayer, row);
                 rowCount++;
                 if ((index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
             }
