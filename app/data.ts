@@ -3423,13 +3423,15 @@ export const getHighestId = async () => {
 }
 
 function filterNullValues(obj: any) {
-    return Object.entries(obj).reduce((acc, [key, value]) => {
-        if (value !== null) {
-            // @ts-ignore
-            acc[key] = value;
-        }
-        return acc;
-    }, {});
+    const compact: Record<string, unknown> = {};
+    // The10k-row export used to allocate an entries array and a[key,value]
+    // pair for every column, plus a reduce closure for every row.
+    for (const key in obj) {
+        if (!Object.hasOwn(obj, key)) continue;
+        const value = obj[key];
+        if (value !== null) compact[key] = value;
+    }
+    return compact;
 }
 
 function filterNullValuesInArray(arrayOfObjects: any) {
