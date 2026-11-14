@@ -234,10 +234,15 @@ function topLeaderboards(leaderboards: Leaderboards, categories: readonly string
     for (const filter of filters) {
         for (const category of categories) {
             const board = leaderboards[filter][category];
-            const eligible = filter === CategoryType.AVG || filter === CategoryType.CONVERSION
-                ? board.filter((entry) => entry.qty >= getMinQty(category, days))
-                : board;
-            top[filter][category] = eligible.slice(0, 10);
+            if (filter === CategoryType.AVG || filter === CategoryType.CONVERSION) {
+                const minimum = getMinQty(category, days);
+                const selected: Entry[] = [];
+                for (const entry of board) {
+                    if (entry.qty >= minimum) selected.push(entry);
+                    if (selected.length === 10) break;
+                }
+                top[filter][category] = selected;
+            } else top[filter][category] = board.slice(0, 10);
         }
     }
     return top;
@@ -458,13 +463,10 @@ function finalizePaceSummaries(players: Map<string, PacePlayerSummary>, days: nu
         fastest[category] = fastest[category].slice(0, 100);
         // Keep the front page on the same compact top-leaderboard read used by
         // its other views while retaining the run ID needed for clickable times.
-        const detailsByUuid = new Map(
-            leaderboards[CategoryType.FASTEST][category].map((entry) => [entry.uuid, entry]),
-        );
-        top[CategoryType.FASTEST][category] = fastest[category].slice(0, 10).map((entry) => ({
-            ...detailsByUuid.get(entry.uuid)!,
-            ...entry,
-        }));
+        top[CategoryType.FASTEST][category] = fastest[category].slice(0, 10).map((entry) => {
+            const [qty, avg] = players.get(entry.uuid)!.stats[category];
+            return {uuid: entry.uuid, name: entry.name, value: entry.value, qty, avg, runId: entry.runId};
+        });
     }
     return {full: leaderboards, top, fastest};
 }
