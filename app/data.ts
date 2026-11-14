@@ -3,6 +3,7 @@ import {
     formatTime,
     getEventTime,
     getFirstStructure,
+    getMinQty,
     getMinAAQty,
     getSecondStructure,
     roundNumber
@@ -322,6 +323,16 @@ const leaderboardCategoryNames = [
 const leaderboardCategories = new Set<string>(leaderboardCategoryNames);
 const leaderboardPeriods = new Set([1, 7, 30, 9_999]);
 
+/** Aggregate jobs publish whole boards; a request must never rebuild 3M rows. */
+export class CacheNotReadyError extends Error {
+    readonly code = "CACHE_NOT_READY";
+
+    constructor() {
+        super("Leaderboards are being prepared. Please try again shortly.");
+        this.name = "CacheNotReadyError";
+    }
+}
+
 const parseRedisJsonArray = (value: unknown): any[] => {
     if (!value) return [];
     const parsed = JSON.parse(String(value));
@@ -351,14 +362,26 @@ export async function fetchLeaderboardCategoryFromRedis(
     const safeLimit = boundedInteger(limit, 10, 1, 999_999);
     const safeMinimumQty = boundedInteger(minimumQty, 0, 0, Number.MAX_SAFE_INTEGER);
     const basePath = `$.${filter}.${category}`;
-    // RedisJSON currently cannot reliably apply an array slice after a JSONPath
-    // filter. Fetch the already-small eligible set and trim it in-process.
-    const path = filter === CategoryType.AVG || filter === CategoryType.CONVERSION
-        ? `${basePath}[?(@.qty>=${safeMinimumQty})]`
-        : `${basePath}[0:${safeLimit}]`;
-    const jsonString = await redis.call("JSON.GET", `leaderboards:${safeDays}day`, path);
-    if (!jsonString) throw new Error(`Leaderboards for ${safeDays} days not found in Redis.`);
-    return parseRedisJsonArray(jsonString).slice(0, safeLimit);
+    const needsMinimum = safeMinimumQty > 0 && (filter === CategoryType.AVG || filter === CategoryType.CONVERSION);
+    const selected: any[] = [];
+    let offset = 0;
+    let batchSize = needsMinimum ? Math.min(256, Math.max(32, safeLimit * 2)) : safeLimit;
+    while (selected.length < safeLimit) {
+        // A filtered RedisJSON path returns every eligible entry, even when
+        // the caller needs ten. Walk small sorted prefixes instead and stop
+        // as soon as the requested number qualifies. Each entry is read once.
+        const jsonString = await redis.call("JSON.GET", `leaderboards:${safeDays}day`, `${basePath}[${offset}:${offset + batchSize}]`);
+        if (!jsonString) throw new CacheNotReadyError();
+        const rows = parseRedisJsonArray(jsonString);
+        for (const row of rows) {
+            if (!needsMinimum || row.qty >= safeMinimumQty) selected.push(row);
+            if (selected.length === safeLimit) break;
+        }
+        if (!needsMinimum || rows.length < batchSize) break;
+        offset += rows.length;
+        batchSize = Math.min(1_024, batchSize * 2);
+    }
+    return selected;
 }
 
 export async function fetchFastestLeaderboardsFromRedis(days = 30, limit = 100) {
@@ -390,17 +413,48 @@ export async function fetchFastestLeaderboardCategoryFromRedis(
         `fastestLeaderboards:${safeDays}day`,
         `$.${category}[0:${safeLimit}]`
     );
-    if (!jsonString) throw new Error(`Fastest leaderboards for ${safeDays} days not found in Redis.`);
+    if (!jsonString) throw new CacheNotReadyError();
     return parseRedisJsonArray(jsonString).slice(0, safeLimit);
 }
 
-export async function fetchPlayerStatsFromRedis(uuid: string, days = 30) {
-    const jsonString = await redis.call('JSON.GET', `playerStats:${uuid}:${days}day`, '$');
-    if (!jsonString) {
-        throw new Error(`Player data for ${days} days not found in Redis.`)
+type PlayerStatsRecord = Record<string, Record<number, {ranking: number; value: number}>>;
+
+const emptyPlayerStats = (): PlayerStatsRecord => Object.fromEntries(
+    leaderboardCategoryNames.map((category) => [category, {}])
+);
+
+const readPlayerStats = async (uuid: string, days: number): Promise<PlayerStatsRecord> => {
+    try {
+        const jsonString = await redis.call('JSON.GET', `playerStats:${uuid}:${days}day`, '$');
+        if (jsonString) return JSON.parse(String(jsonString))[0];
+        // A compact profile can expire independently of its source board.
+        // Recover only this player's entries, never parse the multi-MB root.
+        const paths = leaderboardCategoryNames.flatMap((category) =>
+            [CategoryType.COUNT, CategoryType.AVG, CategoryType.FASTEST, CategoryType.CONVERSION].map((filter) => ({
+                category, filter, path: `$.${filter}.${category}[?(@.uuid==${JSON.stringify(uuid)})]`,
+            }))
+        );
+        const source = await redis.call("JSON.GET", `leaderboards:${days}day`, ...paths.map(({path}) => path));
+        if (source) {
+            const branches = JSON.parse(String(source));
+            const result = emptyPlayerStats();
+            for (const {path, category, filter} of paths) {
+                const entry = branches[path]?.[0];
+                // The entry's position is unavailable without reading every
+                // other player. -1 means the UI omits an unavailable rank.
+                if (entry) result[category][filter] = {ranking: -1, value: entry.value};
+            }
+            return result;
+        }
+    } catch (error) {
+        console.error("Unable to read player statistics from Redis; falling back to MySQL:", error);
     }
-    const parsedData = JSON.parse(jsonString as string);
-    return parsedData[0];
+    return calculatePlayerStatsFromDatabase(uuid, days);
+};
+
+export async function fetchPlayerStatsFromRedis(uuid: string, days = 30) {
+    const safeDays = leaderboardPeriods.has(days) ? days : 30;
+    return getCached(readPlayerStats, "fetchPlayerStatsFromRedis", uuid, safeDays);
 }
 
 export async function fetchTwitchesFromRedis(uuid: string) {
@@ -607,12 +661,30 @@ export async function fetchNphFromRedis(uuid: string, days: number) {
 
 async function fetchTopLeaderboardsFromRedis(days = 30) {
     const jsonString = await redis.call('JSON.GET', `topLeaderboards:${days}day`, '$');
-    if (!jsonString) {
-        console.error(`Error: Top Lb not found in Redis.`);
-        throw new Error(`Top leaderboards for ${days} days not found in Redis.`)
+    if (jsonString) return JSON.parse(String(jsonString))[0];
+    // Recover an expired compact board from its authoritative generated root.
+    // The fallback reads bounded sorted prefixes, not all players or SQL rows.
+    if (!await redis.exists(`leaderboards:${days}day`)) throw new CacheNotReadyError();
+    const result: Record<number, Record<string, any[]>> = {};
+    for (const filter of [CategoryType.COUNT, CategoryType.AVG, CategoryType.FASTEST, CategoryType.CONVERSION]) {
+        result[filter] = {};
+        for (const category of leaderboardCategoryNames) {
+            result[filter][category] = await getCached(
+                fetchLeaderboardCategoryFromRedis, "fetchLeaderboardCategoryFromRedis",
+                days, category, filter, 10, getMinQty(category, days)
+            );
+        }
     }
-    const parsedData = JSON.parse(jsonString as string);
-    return parsedData[0];
+    // Fastest times link to a run. Merge those IDs when the companion
+    // document exists; an independently missing companion keeps safe stats.
+    if (await redis.exists(`fastestLeaderboards:${days}day`)) {
+        const fastest = await fetchFastestLeaderboardsFromRedis(days, 10);
+        for (const category of leaderboardCategoryNames) {
+            const details = new Map(result[CategoryType.FASTEST][category].map((entry) => [entry.uuid, entry]));
+            result[CategoryType.FASTEST][category] = fastest[category].map((entry: any) => ({...details.get(entry.uuid), ...entry}));
+        }
+    }
+    return result;
 }
 
 /**
@@ -758,6 +830,7 @@ const ttls = {
     getHighestId: 60,
     getRunsPaginated: 60,
     fetchAllUsersFromRedis: 60,
+    fetchPlayerStatsFromRedis: 10,
     fetchAllPlayerRunsFromRedis: 5,
     fetchFastestLeaderboardsFromRedis: 60,
     fetchFastestLeaderboardCategoryFromRedis: 60 * 30,
@@ -1005,6 +1078,52 @@ class TimeSeries {
         return this.values.subarray(0, this.length);
     }
 }
+
+/** A cold profile reads one player's window and retains only compact numbers. */
+const calculatePlayerStatsFromDatabase = async (uuid: string, days: number): Promise<PlayerStatsRecord> => {
+    const series = Object.fromEntries(leaderboardCategoryNames.map((category) => [category, new TimeSeries()]));
+    await streamDbRows(
+        `SELECT id, nether, bastion, fortress, first_portal, second_portal, stronghold, \`end\`, finish, obtainRod
+         FROM pace WHERE uuid=? AND insertTime >= NOW() - INTERVAL ? DAY;`,
+        [uuid, mysqlIntegerParam(days)],
+        (row) => {
+            const [id, nether, bastion, fortress, firstPortal, secondPortal, stronghold, end, finish, rod] = row;
+            const first = getFirstStructure(bastion, fortress);
+            const second = getSecondStructure(bastion, fortress);
+            if (first !== null) series.first_structure.push(first === fortress && rod !== null && rod < fortress ? rod : first);
+            if (second !== null && (id < 187307 || (
+                !(second === bastion && (rod === null || rod > second))
+                && !(second === fortress && fortress - bastion < 50_000)
+            ))) series.second_structure.push(second === fortress && rod !== null && rod < fortress ? rod : second);
+            if (fortress !== null) series.fortress.push(rod !== null && rod < fortress ? rod : fortress);
+            if (nether !== null) series.nether.push(nether);
+            if (bastion !== null) series.bastion.push(bastion);
+            if (firstPortal !== null) series.first_portal.push(firstPortal);
+            if (secondPortal !== null) series.second_portal.push(secondPortal);
+            if (stronghold !== null) series.stronghold.push(stronghold);
+            if (end !== null) series.end.push(end);
+            if (finish !== null) series.finish.push(finish);
+        }
+    );
+    const stats = new Map(leaderboardCategoryNames.map((category) => [category, trimmedStats(series[category].view())]));
+    const result = emptyPlayerStats();
+    for (const category of leaderboardCategoryNames) {
+        const current = stats.get(category)!;
+        if (current.count === 0) continue;
+        result[category] = {
+            [CategoryType.COUNT]: {ranking: -1, value: current.count},
+            [CategoryType.AVG]: {ranking: -1, value: current.avg},
+            [CategoryType.FASTEST]: {ranking: -1, value: Math.max(1, current.min)},
+        };
+        const previous = getPreviousSplit(category);
+        if (previous !== null) {
+            const previousCount = stats.get(previous)?.count ?? 0;
+            result[category][CategoryType.CONVERSION] = {ranking: -1,
+                value: previousCount === 0 ? 1 : current.count / previousCount * 100};
+        }
+    }
+    return result;
+};
 
 /**
  * These averages used to come from SQL AVG() over an INT column, which

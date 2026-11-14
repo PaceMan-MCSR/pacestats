@@ -126,6 +126,12 @@ export const mapWithConcurrency = async <T, R>(
 };
 
 export const validationErrorResponse = (error: unknown) => {
+    if (error && typeof error === "object" && "code" in error && error.code === "CACHE_NOT_READY") {
+        return NextResponse.json(
+            {error: "Leaderboards are being prepared. Please try again shortly.", code: "CACHE_NOT_READY"},
+            {status: 503, headers: {"Cache-Control": "private, no-store", "Retry-After": "30"}}
+        );
+    }
     if (!(error instanceof ApiInputError)) return null;
     return NextResponse.json(
         {error: error.message},

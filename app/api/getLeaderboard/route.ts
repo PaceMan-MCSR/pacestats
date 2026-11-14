@@ -1,9 +1,10 @@
 import {NextRequest} from "next/server";
 import {fetchLeaderboardCategoryFromRedis, getCached} from "@/app/data";
 import {CategoryType, getMinQty} from "@/app/utils";
-import {jsonResponse} from "@/app/api/_utils";
+import {jsonResponse, validationErrorResponse} from "@/app/api/_utils";
 
 export async function GET(request: NextRequest) {
+    try {
     let days = parseInt(request.nextUrl.searchParams.get("days") || "30")
     if (isNaN(days)) {
         days = 30
@@ -37,4 +38,9 @@ export async function GET(request: NextRequest) {
         minimumQty
     );
     return jsonResponse(specific, {cacheSeconds: 60, staleSeconds: 120});
+    } catch (error) {
+        const response = validationErrorResponse(error);
+        if (response) return response;
+        throw error;
+    }
 }
