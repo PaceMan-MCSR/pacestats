@@ -19,6 +19,7 @@ import {
     setStringIfLeaseHeld,
     stageChangedJsonEntries,
     stageJsonEntries,
+    streamRowBatches,
     writeDigestLedger,
     type RedisLease,
     type StagedKey,
@@ -914,7 +915,7 @@ function applyCachedNames(
 }
 
 /**
- * Read pace rows newest-id-last and reduce them to per-player summaries:
+ * Read pace rows in per-player id order and reduce them to summaries:
  * every row up to `maximumId` and `asOf`, or, with `uuids`, only those
  * players' rows (the same filter, so a recomputed summary equals the one a
  * full scan would produce).
@@ -941,25 +942,34 @@ async function readPaceSummaries(
     };
     if (uuids === null) {
         const players = new Map<string, PacePlayerAccumulator>();
-        let lastId = 0;
-        while (true) {
+        let currentUuid: string | undefined;
+        const flushPlayer = () => {
+            if (currentUuid === undefined) return;
+            summaries.set(currentUuid, summarizePacePlayer(players.get(currentUuid)!));
+            players.clear();
+        };
+        await lease.verifyHeld();
+        // The uuid index includes the primary key, so rows of a player
+        // arrive together without a filesort. Only that player's split
+        // arrays stay live, rather than every split in the whole table.
+        await streamRowBatches<PaceRow>(conn, {
+            sql: `SELECT ${columns}
+                 FROM pace FORCE INDEX (uuid)
+                 WHERE id <= ? AND insertTime <= ?
+                 ORDER BY uuid ASC, id ASC;`,
+        }, [maximumId, asOf], sqlBatchSize, async (rows) => {
             await lease.verifyHeld();
-            const [rawRows] = await conn.execute(
-                `SELECT ${columns}
-                 FROM pace
-                 WHERE id > ? AND id <= ? AND insertTime <= ?
-                 ORDER BY id ASC
-                 LIMIT ${sqlBatchSize};`,
-                [lastId, maximumId, asOf],
-            );
-            const rows = rawRows as PaceRow[];
-            if (rows.length === 0) break;
-            await consume(rows, players);
-            lastId = rows[rows.length - 1].id;
-            if (rows.length < sqlBatchSize) break;
+            for (let index = 0; index < rows.length; index++) {
+                const row = rows[index];
+                if (currentUuid !== undefined && currentUuid !== row.uuid) flushPlayer();
+                currentUuid = row.uuid;
+                accumulatePaceRow(players, row);
+                rowCount++;
+                if ((index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
+            }
             await pacingPause(pacer);
-        }
-        for (const [uuid, player] of players) summaries.set(uuid, summarizePacePlayer(player));
+        });
+        flushPlayer();
         return {summaries, rowCount};
     }
     for (let offset = 0; offset < uuids.length; offset += FULL_UUID_BATCH_SIZE) {
@@ -1469,9 +1479,9 @@ async function main(): Promise<void> {
         }
         lock.assertHeld();
 
-        // Normal runs buffer only the bounded 30-day sources. Full runs keyset-page
-        // in player order and flush each player into the global output, bounding raw
-        // source memory without holding a long MVCC transaction open.
+        // Normal runs buffer the bounded 30-day sources. A full pace scan
+        // streams in player order, releasing each player's raw splits once
+        // summarised; the other full sources use bounded SQL pages.
         if (full) {
             const [[maximumPaceRow]] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM pace") as any;
             const [[maximumNetherRow]] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM nethers") as any;

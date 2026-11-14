@@ -1,7 +1,57 @@
 import { createHash, randomUUID } from "node:crypto";
 import type Redis from "ioredis";
+import type { Connection as MySqlConnection, QueryOptions } from "mysql2";
+import type { Connection } from "mysql2/promise";
 
 const publishCommandRegistered = new WeakSet<object>();
+
+/** Read a query in bounded batches, pausing MySQL while a batch is processed. */
+export async function streamRowBatches<T>(
+    conn: Connection,
+    options: QueryOptions,
+    values: unknown[],
+    batchSize: number,
+    consume: (rows: T[]) => Promise<void>,
+): Promise<void> {
+    const core = (conn as unknown as {connection: MySqlConnection}).connection;
+    await new Promise<void>((resolve, reject) => {
+        const stream = core.query({...options, values}).stream({highWaterMark: batchSize});
+        let rows: T[] = [];
+        let pending: Promise<void> | undefined;
+        let failed = false;
+        const fail = (error: unknown) => {
+            if (failed) return;
+            failed = true;
+            // A failed consumer cannot safely reuse a partially read query.
+            core.destroy();
+            reject(error);
+        };
+        const flush = (final: boolean) => {
+            const batch = rows;
+            rows = [];
+            pending = Promise.resolve().then(() => consume(batch));
+            pending.then(() => {
+                if (failed) return;
+                if (final) resolve();
+                else stream.resume();
+            }, fail);
+        };
+        stream.on("data", (row: T) => {
+            rows.push(row);
+            if (rows.length >= batchSize) {
+                stream.pause();
+                flush(false);
+            }
+        });
+        stream.on("error", fail);
+        stream.on("end", () => {
+            if (failed) return;
+            if (rows.length > 0) flush(true);
+            else if (pending) pending.then(resolve, fail);
+            else resolve();
+        });
+    });
+}
 
 export interface StagedKey {
     target: string;
