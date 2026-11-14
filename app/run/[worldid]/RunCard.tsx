@@ -1,9 +1,10 @@
 'use client'
 
+/* eslint-disable @next/next/no-img-element -- Tiny WebP icons need no re-encoding; avatars load directly without a server proxy. */
+
 import {formatTime, getLastSplit} from "@/app/utils";
 import { mcFont } from "@/app/styles/fonts";
 import {useRunStore} from "@/app/run/[worldid]/RunStore";
-import Image from "next/image";
 import PendingLink from "@/app/components/PendingLink";
 
 function CardLine({data, split}: { data: any, split: string }) {
@@ -14,12 +15,12 @@ function CardLine({data, split}: { data: any, split: string }) {
     const splitOffset = Math.floor(data.vodOffset + (data[split + "Rta"] / 1000) + 2)
     if(data.vodId === null || embed === undefined) {
         return <div className="card-line">
-            <Image priority={true} className="icon" width={40} height={40} src={"/stats/" + split + ".webp"} alt={split}/>
+            <img className="icon" width={40} height={40} decoding="async" fetchPriority="low" src={"/stats/" + split + ".webp"} alt={split}/>
             <p style={mcFont.style} className="split-name">{formatTime(data[split])}</p>
         </div>
     } else {
         return <div className="card-line">
-            <Image priority={true} className="icon" width={40} height={40} src={"/stats/" + split + ".webp"} alt={split}/>
+            <img className="icon" width={40} height={40} decoding="async" fetchPriority="low" src={"/stats/" + split + ".webp"} alt={split}/>
             <p style={mcFont.style} className="split-name has-vod" onClick={() => {
                 embed.seek(splitOffset)
             }}>{formatTime(data[split])}</p>
@@ -60,7 +61,7 @@ export default function RunCard() {
                     </div>
                 )}
                 <PendingLink href={`/player/${data.nickname}/`} className="nameWrapper">
-                    <Image priority={true} className="cardHead" width={40} height={40} src={headUrl} alt={data.nickname}/>
+                    <img className="cardHead" width={40} height={40} decoding="async" src={headUrl} alt={data.nickname}/>
                     <p style={mcFont.style} className="playerName">{data.nickname}</p>
                 </PendingLink>
                 <p style={mcFont.style} className="runDate">{new Date((data.realUpdate || data.insertTime) * 1000).toLocaleDateString("en-US")}</p>
