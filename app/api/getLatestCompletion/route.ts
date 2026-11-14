@@ -5,10 +5,10 @@ import {
     getAllNamesByTwitch,
     jude,
 } from "@/app/data";
-import {jsonResponse} from "@/app/api/_utils";
+import {jsonResponse, stringParam, withApiRequest} from "@/app/api/_utils";
 
-export async function GET(request: NextRequest) {
-    let name = request.nextUrl.searchParams.get("name")
+export const GET = withApiRequest("getLatestCompletion", async (request: NextRequest) => {
+    const name = stringParam(request.nextUrl.searchParams, "name", {required: true, maxLength: 64});
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", name)
     if(names === null){
         names = await getCached(getAllNamesByTwitch, "getAllNamesByTwitch", name)
@@ -18,4 +18,4 @@ export async function GET(request: NextRequest) {
     }
     const runs = await getCached(jude, "jude", names.uuid)
     return jsonResponse(runs, {cacheSeconds: 30, staleSeconds: 60});
-}
+}, {limit: 240, concurrent: 16});

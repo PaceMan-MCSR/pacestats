@@ -5,11 +5,11 @@ import {
     getAllNamesByTwitch,
     getLatestRun,
 } from "@/app/data";
-import {jsonResponse} from "@/app/api/_utils";
+import {booleanParam, jsonResponse, stringParam, withApiRequest} from "@/app/api/_utils";
 
-export async function GET(request: NextRequest) {
-    const name = request.nextUrl.searchParams.get("name")
-    const forceName = request.nextUrl.searchParams.get("forceName") || "false"
+export const GET = withApiRequest("getLatestRun", async (request: NextRequest) => {
+    const name = stringParam(request.nextUrl.searchParams, "name", {required: true, maxLength: 64});
+    const forceName = booleanParam(request.nextUrl.searchParams, "forceName");
     let uuid = null;
     let names = await getCached(getAllNamesByNick, "getAllNamesByNick", name)
     if(names === null && forceName){
@@ -31,4 +31,4 @@ export async function GET(request: NextRequest) {
     }
 
     return jsonResponse(runs[0], {cacheSeconds: 5, staleSeconds: 10});
-}
+}, {limit: 240, concurrent: 16});

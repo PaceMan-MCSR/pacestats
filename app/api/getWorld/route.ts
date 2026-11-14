@@ -1,9 +1,9 @@
 import {NextRequest} from "next/server";
 import {getCached, getWorldLiveData} from "@/app/data";
-import {jsonResponse} from "@/app/api/_utils";
+import {jsonResponse, stringParam, withApiRequest} from "@/app/api/_utils";
 
-export async function GET(request: NextRequest) {
-    let worldId = request.nextUrl.searchParams.get("worldId")
+export const GET = withApiRequest("getWorld", async (request: NextRequest) => {
+    const worldId = stringParam(request.nextUrl.searchParams, "worldId", {required: true, maxLength: 64});
     let data = await getCached(getWorldLiveData, "getWorldLiveData", worldId)
     return jsonResponse(data, {cacheSeconds: 5, staleSeconds: 10});
-}
+}, {limit: 240, concurrent: 16});
