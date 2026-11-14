@@ -212,9 +212,27 @@ export function contentDigest(serialized: string): string {
     return createHash("sha1").update(serialized).digest("base64");
 }
 
+/** Consume a hash page at a time without building a second whole-hash object. */
+export async function readHashPages(
+    redis: Redis,
+    key: string,
+    consume: (entries: string[]) => void,
+    count = 500,
+): Promise<void> {
+    let cursor = "0";
+    do {
+        const [next, entries] = await redis.hscan(key, cursor, "COUNT", count);
+        consume(entries);
+        cursor = next;
+    } while (cursor !== "0");
+}
+
 export async function readDigestLedger(redis: Redis, key: string): Promise<DigestLedger> {
-    const stored = await redis.hgetall(key);
-    return {key, previous: new Map(Object.entries(stored)), changed: new Map()};
+    const previous = new Map<string, string>();
+    await readHashPages(redis, key, (entries) => {
+        for (let index = 0; index < entries.length; index += 2) previous.set(entries[index], entries[index + 1]);
+    });
+    return {key, previous, changed: new Map()};
 }
 
 /**
