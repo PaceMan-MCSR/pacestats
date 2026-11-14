@@ -4,12 +4,12 @@ import {useRunStore} from "@/app/run/[worldid]/RunStore";
 import {getLastSplit} from "@/app/utils";
 
 export default function RunHeader() {
-    const data = useRunStore(state => state.data)
+    const title = useRunStore(state => state.data ? getLastSplit(state.data).full : '');
     const dying = useRunStore(state => state.dying)
 
     const isLive = useRunStore(state => state.isLive);
     return <div className="runHeader">
-        <h1 className="header">{getLastSplit(data).full}</h1>
+        <h1 className="header">{title}</h1>
         {isLive && !dying && (
             <div className="row justify-content-center">
                 <div className="col-12 last-updated">

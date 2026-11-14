@@ -6,32 +6,51 @@ import {formatTime, getLastSplit} from "@/app/utils";
 import { mcFont } from "@/app/styles/fonts";
 import {useRunStore} from "@/app/run/[worldid]/RunStore";
 import PendingLink from "@/app/components/PendingLink";
+import {useShallow} from 'zustand/react/shallow';
+import {memo} from 'react';
+import type {TwitchPlayerInstance} from 'react-twitch-embed';
 
-function CardLine({data, split}: { data: any, split: string }) {
-    const embed = useRunStore(state => state.vodEmbed)
-    if(data[split] == null){
+const CardLine = memo(function CardLine({value, rta, vodOffset, hasVod, embed, split}: {
+    value: number | null, rta: number | null, vodOffset: number, hasVod: boolean,
+    embed: TwitchPlayerInstance | undefined, split: string,
+}) {
+    if(value == null){
         return null
     }
-    const splitOffset = Math.floor(data.vodOffset + (data[split + "Rta"] / 1000) + 2)
-    if(data.vodId === null || embed === undefined) {
+    const splitOffset = Math.floor(vodOffset + (Number(rta) / 1000) + 2)
+    if(!hasVod || embed === undefined) {
         return <div className="card-line">
             <img className="icon" width={40} height={40} decoding="async" fetchPriority="low" src={"/stats/" + split + ".webp"} alt={split}/>
-            <p style={mcFont.style} className="split-name">{formatTime(data[split])}</p>
+            <p style={mcFont.style} className="split-name">{formatTime(value)}</p>
         </div>
     } else {
         return <div className="card-line">
             <img className="icon" width={40} height={40} decoding="async" fetchPriority="low" src={"/stats/" + split + ".webp"} alt={split}/>
             <p style={mcFont.style} className="split-name has-vod" onClick={() => {
                 embed.seek(splitOffset)
-            }}>{formatTime(data[split])}</p>
+            }}>{formatTime(value)}</p>
         </div>
     }
-}
+});
 
 export default function RunCard() {
-    const data = useRunStore(state => state.data)
+    const data = useRunStore(useShallow(state => state.data == null ? state.data : {
+        id: state.data.id, uuid: state.data.uuid, nickname: state.data.nickname,
+        realUpdate: state.data.realUpdate, insertTime: state.data.insertTime,
+        vodId: state.data.vodId, vodOffset: state.data.vodOffset,
+        nether: state.data.nether, netherRta: state.data.netherRta,
+        bastion: state.data.bastion, bastionRta: state.data.bastionRta,
+        fortress: state.data.fortress, fortressRta: state.data.fortressRta,
+        first_portal: state.data.first_portal, first_portalRta: state.data.first_portalRta,
+        stronghold: state.data.stronghold, strongholdRta: state.data.strongholdRta,
+        end: state.data.end, endRta: state.data.endRta,
+        finish: state.data.finish, finishRta: state.data.finishRta,
+    }));
     const vodEmbed = useRunStore(state => state.vodEmbed)
 
+    if (!data) return null;
+    const line = (split: string) => <CardLine key={split} split={split} value={data[split]}
+        rta={data[split + 'Rta']} vodOffset={data.vodOffset} hasVod={data.vodId !== null} embed={vodEmbed}/>;
 
     const last = getLastSplit(data, false)
     const headUrl = `https://mc-api.io/render/FACE/${data.uuid}?size=8`
@@ -68,15 +87,15 @@ export default function RunCard() {
                 <p style={mcFont.style} className="secretId">{data.id}</p>
             </div>
             <div className="card-line-wrapper">
-                <CardLine data={data} split="nether" />
-                {data.bastion != null && data.bastion < data.fortress && <CardLine data={data} split="bastion" />}
-                {data.fortress != null && data.fortress < data.bastion && <CardLine data={data} split="fortress" />}
-                {data.bastion != null && data.bastion >= data.fortress && <CardLine data={data} split="bastion" />}
-                {data.fortress != null && data.fortress >= data.bastion && <CardLine data={data} split="fortress" />}
-                <CardLine data={data} split="first_portal" />
-                <CardLine data={data} split="stronghold" />
-                <CardLine data={data} split="end" />
-                <CardLine data={data} split="finish" />
+                {line('nether')}
+                {data.bastion != null && data.bastion < data.fortress && line('bastion')}
+                {data.fortress != null && data.fortress < data.bastion && line('fortress')}
+                {data.bastion != null && data.bastion >= data.fortress && line('bastion')}
+                {data.fortress != null && data.fortress >= data.bastion && line('fortress')}
+                {line('first_portal')}
+                {line('stronghold')}
+                {line('end')}
+                {line('finish')}
             </div>
         </div>
     )

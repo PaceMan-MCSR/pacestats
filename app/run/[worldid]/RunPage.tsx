@@ -11,6 +11,7 @@ import {useEffect, useState} from "react";
 import RunCard from "@/app/run/[worldid]/RunCard";
 import RunButtons from "@/app/run/[worldid]/RunButtons";
 import RunHeader from "@/app/run/[worldid]/RunHeader";
+import {useShallow} from 'zustand/react/shallow';
 
 export default function RunPage({params, initialWorld}: {
     params: { worldid: string },
@@ -19,7 +20,13 @@ export default function RunPage({params, initialWorld}: {
     const store = useRunStoreApi();
     const isLive = useRunStore(state => state.isLive);
     const isLoading = useRunStore(state => state.isLoading);
-    const data = useRunStore(state => state.data);
+    // Polling changes bookkeeping fields even when the visible run is unchanged.
+    // Keep the layout and embedded player independent of those updates.
+    const data = useRunStore(useShallow(state => state.data == null ? state.data : {
+        vodId: state.data.vodId,
+        vodOffset: state.data.vodOffset,
+        twitch: state.data.twitch,
+    }));
     const [vodFailed, setVodFailed] = useState(false)
     const [hasBeenLive, setHasBeenLive] = useState(false)
 
