@@ -149,3 +149,51 @@ helpers, so its `.mjs` entry point also requires `--import tsx`. The first-open
 filter probe reports the first usable preset button, resource bytes, long
 tasks and CDP heap usage. Its screenshot waits for the collapse animation
 after the measured interaction has finished.
+
+## Third-round checks
+
+The next 20 local commits compare `5857b6a` with the third-round source.
+Save samples under `/app/test-artifacts/performance/round3/`. Production servers
+used ports 5081 (baseline), 5082 (candidate), and 5083 (candidate with empty
+Redis 15). Repeat the main browser benchmark three times per revision, alternating
+their order. Run the AA probe separately while no other browser or producer is active.
+
+```sh
+node --import tsx tests/identity-index.ts
+node --import tsx tests/search-top-results.ts
+PERF_COMPARE_SOURCE_ROOT=/tmp/pacestats-round3-baseline node --expose-gc --import tsx tests/session-query-work.ts
+node --import tsx tests/session-window-boundaries.ts
+PERF_COMPARE_SOURCE_ROOT=/tmp/pacestats-round3-baseline node --import tsx tests/latest-completion-query.ts
+PERF_COMPARE_SOURCE_ROOT=/tmp/pacestats-round3-baseline node --expose-gc --import tsx tests/export-row-processing.ts
+node --import tsx tests/player-info-cache.ts
+node --import tsx tests/font-catalog.ts
+node --import tsx tests/session-subscription.ts
+node --import tsx tests/time-formatting.ts --bench
+node --import tsx tests/run-history-splice.mjs
+node --import tsx tests/run-history-layout.mjs
+node --import tsx tests/combined-summary-small.mjs
+node tests/run-store-rendering.mjs
+PERF_SOURCE_ROOT=/tmp/pacestats-round3-baseline node tests/run-store-rendering.mjs
+PERF_BASE_URL=http://127.0.0.1:5082/stats/ node tests/sample-visibility.mjs
+PERF_BASE_URL=http://127.0.0.1:5082/stats/ node tests/search-dismissal.mjs
+PERF_BASELINE_URL=http://127.0.0.1:5081/stats/ PERF_BASE_URL=http://127.0.0.1:5082/stats/ node tests/aa-leaderboard-parity.mjs
+PERF_BASELINE_URL=http://127.0.0.1:5081/stats/ PERF_BASE_URL=http://127.0.0.1:5082/stats/ node scripts/perf-aa.mjs
+PERF_LOCAL_DOCKER=1 node --expose-gc --import tsx scripts/perf-periods.mjs pace
+PERF_LOCAL_DOCKER=1 node --expose-gc --import tsx scripts/perf-periods.mjs nph
+PERF_SERVER_PID=<isolated-Next-PID> PERF_BASE_URL=http://127.0.0.1:5083/stats/ node scripts/perf-api-burst.mjs
+```
+
+All commands above run **inside Docker**, from `/app`. `perf-periods.mjs` uses
+`PERF_SOURCE_FILE` for the older producer and `PERF_AS_OF` to hold the window
+constant; it never publishes. Check both a current window and an older timestamp
+with populated 1d/7d/30d data. The run-store integration test bundles the actual
+components in development React to count commits, stubbing polling, routing,
+fonts and Twitch; its counts are not production CPU measurements. Full navigation
+tests exercise the real production router separately.
+
+The burst probe makes 18 concurrent read-only requests and two recovery requests.
+Use a fresh isolated Next process: module loading is part of the result. It reads
+that process's Linux CPU ticks and samples RSS every 10ms. It checks useful 200
+responses, retryable 429 overload responses and subsequent recovery. It does not
+claim a CPU utilization ceiling or measure total Docker/database memory. Keep it
+separate from timed browser runs.

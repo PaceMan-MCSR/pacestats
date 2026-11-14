@@ -48,6 +48,9 @@ try {
     assert.equal(await page.locator('[data-test="result"]').count(), 0);
     assert.equal(prefetches.length, 0, "A dismissed response must not prefetch hidden players");
     queryDelay = 0;
+    // The header click can leave the pointer where the result menu appears.
+    // Keep this keyboard path independent of a synthetic hover selecting it.
+    await page.mouse.move(0, 0);
     await input.fill("NoFe");
     await page.locator('[data-test="result"]').filter({hasText: "NoFearr1337"}).waitFor();
     await input.press("ArrowDown");

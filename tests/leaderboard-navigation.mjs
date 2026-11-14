@@ -147,6 +147,19 @@ try {
     await help.hover();
     await page.getByRole("tooltip").filter({hasText: "Automatically adjust layout"}).waitFor();
     console.log("PASS: SVG help icons forward tooltip interaction handlers");
+    await page.mouse.move(0, 0);
+    const font = page.getByRole("combobox", {name: "Font", exact: true});
+    assert.equal(await font.inputValue(), "Minecraft");
+    await font.selectOption("Inter");
+    await page.waitForFunction(() => document.querySelector('.fontExample')?.style.fontFamily === 'Inter'
+        && [...document.querySelectorAll('.urlBox')].every(element => element.textContent.includes('font=Inter')));
+    await font.selectOption("Minecraft");
+    await page.waitForFunction(() => document.querySelector('.fontExample')?.style.fontFamily === 'Minecraft');
+    if (process.env.PERF_OBS_SCREENSHOT) {
+        await page.getByRole('tooltip').waitFor({state: 'detached'});
+        await page.screenshot({path: process.env.PERF_OBS_SCREENSHOT});
+    }
+    console.log("PASS: native font selection updates the preview and both generated overlay URLs");
     assert.deepEqual(errors, [], "No browser hydration or runtime errors");
 } finally {
     await context.close();
