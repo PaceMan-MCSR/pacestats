@@ -2,6 +2,9 @@ import {withSentryConfig} from '@sentry/nextjs';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     basePath: '/stats',
+    // Docker's loopback URL needs HMR access: Next's React debug channel
+    // carries data required for development hydration over this socket.
+    allowedDevOrigins: ['127.0.0.1'],
     // nginx compresses responses (Brotli, with gzip as the fallback). If Next
     // gzipped them first, nginx would pass that through and Brotli would
     // never apply. See ops/nginx/pacestats.conf.
