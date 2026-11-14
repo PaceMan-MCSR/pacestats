@@ -470,30 +470,48 @@ function finalizePaceSummaries(players: Map<string, PacePlayerSummary>, days: nu
 }
 
 /**
- * Accumulate every period from one pass over the newest-first source rows.
+ * Accumulate every period from bounded batches of newest-first source rows.
  * Each period's accumulator receives its rows in the same order as a
  * separate pass over that period would, and pacing counts source rows.
  */
-async function accumulatePacePeriods(
-    rows: PaceRow[],
+async function readPacePeriods(
+    conn: Connection,
+    cutoff: Date | null,
+    asOf: Date,
     days: readonly number[],
-    asOfMs: number,
+    sqlBatchSize: number,
     pacer?: CachePacer,
-): Promise<Map<number, Map<string, PacePlayerAccumulator>>> {
+): Promise<{periods: Map<number, Map<string, PacePlayerAccumulator>>; rowCounts: Map<number, number>}> {
+    const asOfMs = asOf.getTime();
     const periods = days.map((day) => ({
         day,
         maxAgeMs: day * 86_400_000,
         players: new Map<string, PacePlayerAccumulator>(),
+        rowCount: 0,
     }));
-    for (let index = 0; index < rows.length; index++) {
-        const row = rows[index];
-        const ageMs = asOfMs - row.insertTime.getTime();
-        for (const period of periods) {
-            if (period.day === 9999 || ageMs <= period.maxAgeMs) accumulatePaceRow(period.players, row);
+    let processed = 0;
+    const where = cutoff ? "WHERE insertTime >= ? AND insertTime <= ?" : "WHERE insertTime <= ?";
+    await streamRowBatches<PaceRow>(conn, {
+        sql: `SELECT id, nickname, uuid, nether, bastion, fortress, first_portal, second_portal,
+            stronghold, end, finish, obtainRod, insertTime
+         FROM pace ${where} ORDER BY insertTime DESC, id DESC;`,
+    }, cutoff ? [cutoff, asOf] : [asOf], sqlBatchSize, async (rows) => {
+        pacer?.lease?.assertHeld();
+        for (const row of rows) {
+            const ageMs = asOfMs - row.insertTime.getTime();
+            for (const period of periods) {
+                if (period.day === 9999 || ageMs <= period.maxAgeMs) {
+                    accumulatePaceRow(period.players, row);
+                    period.rowCount++;
+                }
+            }
+            if (pacer && ++processed % pacer.rowBatchSize === 0) await pacingPause(pacer);
         }
-        if (pacer && (index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
-    }
-    return new Map(periods.map(({day, players}) => [day, players]));
+    });
+    return {
+        periods: new Map(periods.map(({day, players}) => [day, players])),
+        rowCounts: new Map(periods.map(({day, rowCount}) => [day, rowCount])),
+    };
 }
 
 /** The NPH counterpart of accumulatePacePeriods, with calculateNph's filters. */
@@ -874,17 +892,6 @@ async function refreshChangedUserData(
         users: [...usersByUuid.values()],
         details: [...topTwitches].map(([uuid, accounts]) => [`users:twitch_details:${uuid}`, accounts]),
     };
-}
-
-async function fetchPaceRows(conn: Connection, cutoff: Date | null, asOf: Date): Promise<PaceRow[]> {
-    const where = cutoff ? "WHERE insertTime >= ? AND insertTime <= ?" : "WHERE insertTime <= ?";
-    const [rows] = await conn.execute(
-        `SELECT id, nickname, uuid, nether, bastion, fortress, first_portal, second_portal,
-            stronghold, end, finish, obtainRod, insertTime
-         FROM pace ${where} ORDER BY insertTime DESC, id DESC;`,
-        cutoff ? [cutoff, asOf] : [asOf],
-    );
-    return rows as PaceRow[];
 }
 
 async function fetchAaRows(conn: Connection, cutoff: Date | null, asOf: Date): Promise<AaRow[]> {
@@ -1611,15 +1618,9 @@ async function main(): Promise<void> {
             periodCounts.get(9999)!.nethers = nphEntries.length;
         } else {
             const paceStartedAt = Date.now();
-            const paceRows = await fetchPaceRows(conn, cutoff, asOf);
-            const pacePeriods = await accumulatePacePeriods(paceRows, days, asOfMs, pacer);
-            const periodRowCounts = new Map(days.map((day) => [day, 0]));
-            for (const row of paceRows) {
-                const ageMs = asOfMs - row.insertTime.getTime();
-                for (const day of days) {
-                    if (day === 9999 || ageMs <= day * 86_400_000) periodRowCounts.set(day, periodRowCounts.get(day)! + 1);
-                }
-            }
+            const {periods: pacePeriods, rowCounts: periodRowCounts} = await readPacePeriods(
+                conn, cutoff, asOf, days, sqlBatchSize, pacer,
+            );
             for (const day of days) {
                 lock.assertHeld();
                 const leaderboards = finalizePacePlayers(pacePeriods.get(day)!, day);
@@ -1634,7 +1635,6 @@ async function main(): Promise<void> {
                 periodCounts.set(day, {pace: periodRowCounts.get(day)!, aa: 0, nethers: 0});
                 await pacingPause(pacer);
             }
-            paceRows.length = 0;
             phaseTimingsMs.pace = Date.now() - paceStartedAt;
             sampleMemory();
 
