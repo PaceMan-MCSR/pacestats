@@ -1,7 +1,7 @@
 'use client'
 
 import {useRouter} from "next/navigation";
-import {useRef, useState} from "react";
+import {useEffect, useRef, useState, useTransition} from "react";
 import type {FocusEvent, MouseEvent, PointerEvent, TouchEvent} from "react";
 
 /**
@@ -16,27 +16,22 @@ import type {FocusEvent, MouseEvent, PointerEvent, TouchEvent} from "react";
  */
 export function useIntentLink(href: string) {
     const router = useRouter();
-    const [intent, setIntent] = useState(false);
-    const [pending, setPending] = useState(false);
+    const {intent, intentProps} = usePrefetchIntent();
+    const [pending, startTransition] = useTransition();
     // Set on mouse-down so the click that follows does not navigate again.
     const pushedOnMouseDown = useRef(false);
-
-    const showIntent = () => setIntent(true);
 
     const linkProps = {
         href,
         prefetch: intent,
-        onPointerEnter: (_event: PointerEvent<HTMLAnchorElement>) => showIntent(),
-        onTouchStart: (_event: TouchEvent<HTMLAnchorElement>) => showIntent(),
-        onFocus: (_event: FocusEvent<HTMLAnchorElement>) => showIntent(),
+        ...intentProps,
         onMouseDown: (event: MouseEvent<HTMLAnchorElement>) => {
             pushedOnMouseDown.current = false;
             // Leave middle clicks and modified clicks (new tab, new window,
             // download) to the browser.
             if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             pushedOnMouseDown.current = true;
-            setPending(true);
-            router.push(href);
+            startTransition(() => router.push(href));
         },
         onClick: (event: MouseEvent<HTMLAnchorElement>) => {
             if (!pushedOnMouseDown.current) return;
@@ -46,4 +41,33 @@ export function useIntentLink(href: string) {
     };
 
     return {linkProps, pending};
+}
+
+// Crossing a leaderboard with the pointer should not start dozens of cold
+// page renders. A short dwell still starts the fetch before a deliberate
+// click; focus and touch express intent immediately.
+export function usePrefetchIntent() {
+    const [intent, setIntent] = useState(false);
+    const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const cancel = () => {
+        clearTimeout(timer.current);
+        timer.current = undefined;
+    };
+    const activate = () => {
+        cancel();
+        setIntent(true);
+    };
+    useEffect(() => () => clearTimeout(timer.current), []);
+
+    return {
+        intent,
+        intentProps: {
+            onPointerEnter: (_event: PointerEvent<HTMLAnchorElement>) => {
+                if (!intent && timer.current === undefined) timer.current = setTimeout(activate, 100);
+            },
+            onPointerLeave: (_event: PointerEvent<HTMLAnchorElement>) => cancel(),
+            onTouchStart: (_event: TouchEvent<HTMLAnchorElement>) => activate(),
+            onFocus: (_event: FocusEvent<HTMLAnchorElement>) => activate(),
+        },
+    };
 }

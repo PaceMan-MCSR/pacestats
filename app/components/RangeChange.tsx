@@ -1,105 +1,89 @@
 'use client';
 
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useContext, useTransition } from "react";
-import { UserColoursContext } from "@/app/contexts";
-import { colourVars, customClass } from "@/app/components/customColours";
+import {useSearchParams, useRouter, usePathname} from "next/navigation";
+import {useContext, useEffect, useOptimistic, useRef, useTransition} from "react";
+import {UserColoursContext} from "@/app/contexts";
+import {colourVars, customClass} from "@/app/components/customColours";
+import {PrefetchKind} from "next/dist/client/components/router-reducer/router-reducer-types";
+
+const RANGES = [
+    {days: 1, label: "24 hours"},
+    {days: 7, label: "7 days"},
+    {days: 30, label: "30 days"},
+    {days: 9999, label: "Lifetime"},
+];
 
 export default function RangeChange() {
-    // Hooks for navigation and state
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const [isPending, startTransition] = useTransition();
-
-    // Get current 'days' value from URL
-    const days = parseInt(searchParams.get('days') || '30');
-
-    // Get custom colours from context
+    const requestedDays = Number(searchParams.get('days') || '30');
+    const days = RANGES.some((range) => range.days === requestedDays) ? requestedDays : 30;
+    const [selectedDays, setSelectedDays] = useOptimistic(days);
     const colours = useContext(UserColoursContext);
+    const prefetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const prefetched = useRef(new Map<string, number>());
 
-    // This function now uses the router for client-side navigation
+    const cancelPrefetch = () => clearTimeout(prefetchTimer.current);
+    useEffect(() => () => clearTimeout(prefetchTimer.current), []);
+
+    const rangeUrl = (newDays: number) => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("days", String(newDays));
+        return `${pathname}?${params}`;
+    };
+
     const handleDaysChange = (newDays: number) => {
-        if(isPending) return;
-        if(days === newDays) return;
-        // Create a new URLSearchParams object to avoid mutating the read-only one.
-        const newParams = new URLSearchParams(searchParams.toString());
-        newParams.set("days", newDays.toString());
-
-        // startTransition will set `isPending` to true immediately
-        // and then update it to false when the navigation is complete.
+        if (isPending || days === newDays) return;
+        cancelPrefetch();
         startTransition(() => {
-            // router.push() performs a client-side navigation without a page reload.
-            // It will update the URL and re-render only the components that need to change.
-            router.push(`${pathname}?${newParams.toString()}`);
+            setSelectedDays(newDays);
+            router.push(rangeUrl(newDays), {scroll: false});
         });
     };
 
-    const prefetchDays = (newDays: number) => {
-        if (days === newDays) return;
-        const newParams = new URLSearchParams(searchParams.toString());
-        newParams.set("days", newDays.toString());
-        router.prefetch(`${pathname}?${newParams.toString()}`);
+    const prefetchDays = (newDays: number, immediate = false) => {
+        cancelPrefetch();
+        if (isPending || days === newDays) return;
+        const href = rangeUrl(newDays);
+        const prefetch = () => {
+            if (Date.now() - (prefetched.current.get(href) ?? 0) < 30_000) return;
+            // Keep speculative work bounded across category changes, too.
+            if (prefetched.current.size >= 4) prefetched.current.clear();
+            prefetched.current.set(href, Date.now());
+            router.prefetch(href, {
+                kind: PrefetchKind.FULL,
+                onInvalidate: () => { prefetched.current.delete(href); },
+            });
+        };
+        if (immediate) prefetch();
+        else prefetchTimer.current = setTimeout(prefetch, 100);
     };
 
-    return (
-        <div
-            className={customClass(colours, "ccRange", "rangeButtons")}
-            style={{
-                // Dim the buttons while the new range loads.
-                opacity: isPending ? 0.7 : 1,
-                transition: 'opacity 0.2s ease-in-out',
-                ...colourVars(colours),
+    return <div
+        className={customClass(colours, "ccRange", "rangeButtons")}
+        aria-busy={isPending}
+        style={{opacity: isPending ? 0.7 : 1, transition: 'opacity 0.2s ease-in-out', ...colourVars(colours)}}
+    >
+        {RANGES.map((range) => <button
+            type="button"
+            key={range.days}
+            className={"btn " + (selectedDays === range.days ? "btn-primary" : "btn-dark")}
+            aria-pressed={selectedDays === range.days}
+            onMouseEnter={() => prefetchDays(range.days)}
+            onMouseLeave={cancelPrefetch}
+            onFocus={() => prefetchDays(range.days, true)}
+            onBlur={cancelPrefetch}
+            onMouseDown={(event) => {
+                if (event.button === 0) handleDaysChange(range.days);
             }}
-        >
-            <button
-                className={"btn " + (days === 1 ? "btn-primary" : "btn-dark")}
-                onMouseEnter={() => prefetchDays(1)}
-                onFocus={() => prefetchDays(1)}
-                onMouseDown={(e) => {
-                    if (e.button !== 0) return; // Only handle left mouse button
-                    handleDaysChange(1)
-                }}
-                disabled={isPending}
-            >
-                24 hours
-            </button>
-            <button
-                className={"btn " + (days === 7 ? "btn-primary" : "btn-dark")}
-                onMouseEnter={() => prefetchDays(7)}
-                onFocus={() => prefetchDays(7)}
-                onMouseDown={(e) => {
-                    if (e.button !== 0) return; // Only handle left mouse button
-                    handleDaysChange(7)
-                }}
-                disabled={isPending}
-            >
-                7 days
-            </button>
-            <button
-                className={"btn " + (days === 30 ? "btn-primary" : "btn-dark")}
-                onMouseEnter={() => prefetchDays(30)}
-                onFocus={() => prefetchDays(30)}
-                onMouseDown={(e) => {
-                    if (e.button !== 0) return; // Only handle left mouse button
-                    handleDaysChange(30)
-                }}
-                disabled={isPending}
-            >
-                30 days
-            </button>
-            <button
-                className={"btn " + (days === 9999 ? "btn-primary" : "btn-dark")}
-                onMouseEnter={() => prefetchDays(9999)}
-                onFocus={() => prefetchDays(9999)}
-                onMouseDown={(e) => {
-                    if (e.button !== 0) return; // Only handle left mouse button
-                    handleDaysChange(9999)
-                }}
-                disabled={isPending}
-            >
-                Lifetime
-            </button>
-        </div>
-    );
+            onClick={(event) => {
+                // Mouse activation begins on mouse-down; keyboard activation
+                // has no mouse-down and must navigate from the click.
+                if (event.detail === 0) handleDaysChange(range.days);
+            }}
+            disabled={isPending}
+        >{range.label}</button>)}
+    </div>;
 }
