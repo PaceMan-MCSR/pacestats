@@ -1026,24 +1026,44 @@ async function readNphSummaries(
     };
     if (uuids === null) {
         const grouped = new Map<string, NphAccumulator>();
-        let lastId = 0;
-        while (true) {
+        let currentUuid: string | undefined;
+        const flushPlayer = () => {
+            if (currentUuid === undefined) return;
+            summaries.set(currentUuid, summarizeNph(grouped.get(currentUuid)!));
+            grouped.clear();
+        };
+        await lease.verifyHeld();
+        // Equivalent production indexes may have another name. Prefer a
+        // visible (uuid, id) index to a full filesort, while remaining correct
+        // on databases where the optional performance indexes are absent.
+        const [indexRows] = await conn.query(`
+            SELECT INDEX_NAME AS name
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nethers' AND IS_VISIBLE='YES'
+            GROUP BY INDEX_NAME
+            HAVING GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) IN ('uuid', 'uuid,id')
+                OR GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) LIKE 'uuid,id,%'
+            LIMIT 1;`);
+        const index = (indexRows as Array<{name: string}>)[0]?.name;
+        const indexHint = index ? `FORCE INDEX (\`${index.replace(/`/g, "``")}\`)` : "";
+        await streamRowBatches<NetherPaceRow>(conn, {
+            sql: `SELECT ${columns}
+                 FROM nethers ${indexHint} INNER JOIN pace ON nethers.runId = pace.id
+                 WHERE nethers.id <= ? AND nethers.insertTime <= ?
+                 ORDER BY nethers.uuid ASC, nethers.id ASC;`,
+        }, [maximumId, asOf], sqlBatchSize, async (rows) => {
             await lease.verifyHeld();
-            const [rawRows] = await conn.execute(
-                `SELECT ${columns}
-                 FROM nethers INNER JOIN pace ON nethers.runId = pace.id
-                 WHERE nethers.id > ? AND nethers.id <= ? AND nethers.insertTime <= ?
-                 ORDER BY nethers.id ASC LIMIT ${sqlBatchSize};`,
-                [lastId, maximumId, asOf],
-            );
-            const rows = rawRows as NetherPaceRow[];
-            if (rows.length === 0) break;
-            await consume(rows, grouped);
-            lastId = rows[rows.length - 1].id;
-            if (rows.length < sqlBatchSize) break;
+            for (let index = 0; index < rows.length; index++) {
+                const row = rows[index];
+                if (currentUuid !== undefined && currentUuid !== row.uuid) flushPlayer();
+                currentUuid = row.uuid;
+                accumulateNphRow(grouped, row);
+                rowCount++;
+                if ((index + 1) % pacer.rowBatchSize === 0) await pacingPause(pacer);
+            }
             await pacingPause(pacer);
-        }
-        for (const [uuid, player] of grouped) summaries.set(uuid, summarizeNph(player));
+        });
+        flushPlayer();
         return {summaries, rowCount};
     }
     for (let offset = 0; offset < uuids.length; offset += FULL_UUID_BATCH_SIZE) {
@@ -1479,9 +1499,9 @@ async function main(): Promise<void> {
         }
         lock.assertHeld();
 
-        // Normal runs buffer the bounded 30-day sources. A full pace scan
-        // streams in player order, releasing each player's raw splits once
-        // summarised; the other full sources use bounded SQL pages.
+        // Normal runs buffer the bounded 30-day sources. Full pace and NPH
+        // scans stream in player order, releasing each player's raw values
+        // once summarised; the AA source uses bounded SQL pages.
         if (full) {
             const [[maximumPaceRow]] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM pace") as any;
             const [[maximumNetherRow]] = await conn.query("SELECT COALESCE(MAX(id), 0) AS maximumId FROM nethers") as any;
