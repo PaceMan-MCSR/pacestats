@@ -1007,7 +1007,7 @@ class TimeSeries {
 
 /**
  * These averages used to come from SQL AVG() over an INT column, which
- * returns a DECIMAL rounded half-up to four places. Round the same way so the
+ * returns a DECIMAL, rounding half-up to four places. Round the same way so the
  * endpoints keep returning the same numbers.
  */
 const averageAsSqlDecimal = (stats: TrimmedStats): number => {
