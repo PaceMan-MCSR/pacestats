@@ -15,7 +15,7 @@ try {
         else group.lowestOpenId = Math.min(group.lowestOpenId, row.id);
     }
     const connection = {async execute(sql) {
-        if (sql.includes('FROM pace')) {assert.match(sql, /GROUP BY uuid/); return [[...grouped.values()]];}
+        if (sql.includes('FROM pace')) {assert.match(sql, /GROUP BY uuid, BINARY uuid/); return [[...grouped.values()]];}
         return [[{entityId: 'deleted'}, {entityId: ''}]];
     }};
     const redis = {pipeline() {

@@ -267,7 +267,7 @@ async function findStalePlayers(
          FROM pace
          WHERE lastUpdated >= FROM_UNIXTIME(?) AND UNIX_TIMESTAMP(lastUpdated) >= ?
             AND uuid IS NOT NULL
-         GROUP BY uuid;`,
+         GROUP BY uuid, BINARY uuid;`,
         [closedEnd, closedEnd, Math.max(0, checkedFrom - COMBINED_ZONE_SLACK_SECONDS), checkedFrom],
     ) as any;
     // A changed row newer than the buckets is still covered if its id is: it
