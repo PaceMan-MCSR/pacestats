@@ -8,6 +8,7 @@ try {
             name: `Player ${index}`, stats: {nether: [index % 40, index + 0.5, index % 9 + 1]},
             minima: {nether: [index % 9 + 1, index + 10]},
         }]));
+        if (count > 0) players.set('partial-cache-entry', {name: 'Partial', stats: {}, minima: {nether: [2, 30]}});
         for (const day of [1, 7, 30, 9999]) {
             const {full, top, fastest} = producer.finalizePaceSummaries(players, day);
             const expected = {};

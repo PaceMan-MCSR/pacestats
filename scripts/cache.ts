@@ -465,7 +465,9 @@ function finalizePaceSummaries(players: Map<string, PacePlayerSummary>, days: nu
         // Keep the front page on the same compact top-leaderboard read used by
         // its other views while retaining the run ID needed for clickable times.
         top[CategoryType.FASTEST][category] = fastest[category].slice(0, 10).map((entry) => {
-            const [qty, avg] = players.get(entry.uuid)!.stats[category];
+            const stats = players.get(entry.uuid)!.stats[category];
+            if (!stats) return {...entry};
+            const [qty, avg] = stats;
             return {uuid: entry.uuid, name: entry.name, value: entry.value, qty, avg, runId: entry.runId};
         });
     }
