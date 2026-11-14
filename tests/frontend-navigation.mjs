@@ -46,8 +46,37 @@ async function rangeReady(page, days) {
     assert.equal(await page.locator('.rangeButtons button[aria-pressed="true"]').count(), 1);
 }
 
+async function verifyTracker() {
+    const {context, page} = await createContext();
+    await page.mouse.move(500, 500);
+    const initialRequests = requests.length;
+    await page.goto(url(`player/${player}/nethers/`), {waitUntil: 'domcontentloaded'});
+    await page.waitForFunction(() => {
+        const body = document.querySelector('.recentNethers tbody');
+        const key = body && Object.keys(body).find(value => value.startsWith('__reactProps$'));
+        return key && typeof body[key].onPointerMove === 'function';
+    });
+    await page.waitForTimeout(180);
+    const isRunPrefetch = request => request.headers['next-router-prefetch'] === '1' && new URL(request.url).pathname.startsWith('/stats/run/');
+    assert.equal(requests.slice(initialRequests).filter(isRunPrefetch).length, 0, 'Stationary pointer must not prefetch newly rendered rows');
+    const first = page.locator('.recentNethers tbody tr').first();
+    await page.mouse.move(0, 0);
+    const deliberatePrefetch = page.waitForRequest(request => request.headers()['next-router-prefetch'] === '1' && new URL(request.url()).pathname.startsWith('/stats/run/'));
+    await first.hover();
+    await deliberatePrefetch;
+    const runId = await first.getAttribute('data-run');
+    await first.focus();
+    await first.press('Enter');
+    await page.waitForURL(current => current.pathname.endsWith(`/run/${runId}/`));
+    await page.locator('.run-card').waitFor();
+    await context.close();
+    console.log('PASS: tracker table ignores stationary pointer, prefetches real movement and navigates by keyboard');
+}
+
 try {
-    if (process.env.PERF_COLD_ONLY !== '1') {
+    if (process.env.PERF_TRACKER_ONLY === '1') {
+        await verifyTracker();
+    } else if (process.env.PERF_COLD_ONLY !== '1') {
         const {context, page} = await createContext();
         await page.goto(url('?days=9999'), {waitUntil: 'domcontentloaded'});
         await boardReady(page);
@@ -160,6 +189,7 @@ try {
         assert.equal(await overlayPage.evaluate(() => window.__intervalDelays.filter(delay => delay === 20).length), 0);
         console.log('PASS: ordinary overlays install no 20ms poll; preview dimensions update after a real resize');
         await overlayContext.close();
+        await verifyTracker();
     }
 
     if (process.env.PERF_COLD_BASE_URL) {
