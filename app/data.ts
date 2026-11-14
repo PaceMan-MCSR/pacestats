@@ -2827,14 +2827,41 @@ export const getAllPBs = async () => {
 }
 
 export const getPBs = async (nicks: string[], uuids: string[]) => {
-    const all = await getCached(getAllPBs, "getAllPBs")
-    if(nicks.length > 0){
-        return all.filter((x: any) => nicks.includes(x.name))
+    if (nicks.length === 0 && uuids.length === 0) return getCached(getAllPBs, "getAllPBs");
+
+    let selectedUuids = [...new Set(uuids)];
+    let namesByUuid: Map<string, string> | undefined;
+    if (nicks.length > 0) {
+        // Retain exact current-name matching and name-list precedence. A
+        // nickname may belong to several players, so preserve every match.
+        const wantedNames = new Set(nicks);
+        const users = await getCached(getAllUsers, "getAllUsers") as any[];
+        const matches = users.filter((user) => wantedNames.has(user.nick));
+        namesByUuid = new Map(matches.map((user) => [user.id, user.nick]));
+        selectedUuids = [...namesByUuid.keys()];
     }
-    if(uuids.length > 0){
-        return all.filter((x: any) => uuids.includes(x.uuid))
+    if (selectedUuids.length === 0) return [];
+
+    const results: any[] = [];
+    // Each branch stops at the first (uuid,finish,id) index entry. Filtered
+    // requests formerly calculated every player's PB and fetched every
+    // winning timestamp before throwing away all but the submitted players.
+    for (let offset = 0; offset < selectedUuids.length; offset += 100) {
+        const batch = selectedUuids.slice(offset, offset + 100);
+        const [rows] = await executeDb<any[]>(
+            batch.map(() => `(SELECT p.uuid, p.finish, UNIX_TIMESTAMP(p.insertTime) AS timestamp,
+                    (SELECT nickname FROM pace WHERE uuid=? ORDER BY id DESC LIMIT 1) AS name
+                FROM pace p WHERE p.uuid=? AND p.finish IS NOT NULL
+                ORDER BY p.finish ASC, p.id ASC LIMIT 1)`).join(" UNION ALL ") + ";",
+            batch.flatMap((uuid) => [uuid, uuid])
+        );
+        for (const row of rows) {
+            const name = namesByUuid?.get(row.uuid) ?? row.name;
+            const result = {uuid: row.uuid, finish: row.finish, timestamp: Number(row.timestamp), pb: formatTime(row.finish)};
+            results.push(name ? {...result, name} : result);
+        }
     }
-    return all;
+    return results.sort((left, right) => left.finish - right.finish || left.uuid.localeCompare(right.uuid));
 }
 
 export interface CursorPage<T = any> {

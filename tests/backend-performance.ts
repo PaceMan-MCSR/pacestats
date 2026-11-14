@@ -1,6 +1,6 @@
 /** Docker only: docker exec pacestats-dev node --import tsx tests/backend-performance.ts */
 import assert from "node:assert/strict";
-import {getConn, getPlayerRunsOffsetPage, type PlayerRunFilter, type PlayerRunSort} from "../app/data";
+import {getAllPBs, getConn, getPBs, getPlayerRunsOffsetPage, type PlayerRunFilter, type PlayerRunSort} from "../app/data";
 
 const uuid = process.env.PERF_TEST_UUID ?? "e4cd494a-4e0a-423b-9988-618b86858c96";
 
@@ -75,4 +75,23 @@ async function verifyRunPages() {
     console.log(`Run pagination: ${cases.length + 2} correctness cases passed`);
 }
 
-verifyRunPages().then(() => process.exit(0), (error) => { console.error(error); process.exit(1); });
+async function verifyPBs() {
+    const started = performance.now();
+    const selected = await getPBs([], [uuid]);
+    console.log(JSON.stringify({case: "cold-filtered-pb", ms: performance.now() - started, returned: selected.length}));
+    const all = await getAllPBs();
+    assert.deepEqual(selected, all.filter((row: any) => row.uuid === uuid));
+    const ids = [...new Set([uuid, ...all.slice(0, 6).map((row: any) => row.uuid)])];
+    assert.deepEqual(await getPBs([], [...ids, ids[0]]), all.filter((row: any) => ids.includes(row.uuid)));
+    const names = all.slice(0, 6).map((row: any) => row.name).filter(Boolean);
+    assert.deepEqual(await getPBs(names, ["ignored-uuid"]), all.filter((row: any) => names.includes(row.name)));
+    assert.deepEqual(await getPBs(["no-such-player"], []), []);
+    assert.deepEqual(await getPBs([], ["no-such-player"]), []);
+    console.log("Filtered PBs: 5 parity cases passed against complete PB result");
+}
+
+async function main() {
+    await verifyRunPages();
+    await verifyPBs();
+}
+main().then(() => process.exit(0), (error) => { console.error(error); process.exit(1); });
