@@ -462,7 +462,7 @@ export async function fetchPlayerStatsFromRedis(uuid: string, days = 30) {
     return getCached(readPlayerStats, "fetchPlayerStatsFromRedis", uuid, safeDays);
 }
 
-export async function fetchTwitchesFromRedis(uuid: string) {
+const readTwitchDetails = async (uuid: string) => {
     try {
         const jsonString = await redis.call('JSON.GET', `users:twitch_details:${uuid}`, '$');
         if (jsonString) return JSON.parse(String(jsonString))[0];
@@ -471,6 +471,10 @@ export async function fetchTwitchesFromRedis(uuid: string) {
     }
     const accounts = await getCached(getTwitchAccounts, "getTwitchAccounts", uuid);
     return (accounts ?? []).map((account: any) => ({...account, live: false}));
+};
+
+export async function fetchTwitchesFromRedis(uuid: string) {
+    return getCached(readTwitchDetails, "fetchTwitchesFromRedis", uuid);
 }
 
 export async function fetchAllUsersFromRedis() {
@@ -630,8 +634,7 @@ export async function fetchAllPlayerRunsFromRedis(uuid: string){
     return mergeRuns(runs, recentRuns);
 }
 
-export async function fetchNphFromRedis(uuid: string, days: number) {
-    const safeDays = leaderboardPeriods.has(days) ? days : 30;
+const readNph = async (uuid: string, safeDays: number) => {
     try {
         const jsonString = await redis.call('JSON.GET', `nph:${uuid}:${safeDays}day`, '$');
         const parsed = jsonString ? JSON.parse(String(jsonString))[0] : null;
@@ -640,6 +643,11 @@ export async function fetchNphFromRedis(uuid: string, days: number) {
         console.error("Unable to read NPH from Redis; falling back to MySQL:", error);
     }
     return getCached(calculateNphFromDatabase, "calculateNphFromDatabase", uuid, safeDays);
+};
+
+export async function fetchNphFromRedis(uuid: string, days: number) {
+    const safeDays = leaderboardPeriods.has(days) ? days : 30;
+    return getCached(readNph, "fetchNphFromRedis", uuid, safeDays);
 }
 
 async function fetchTopLeaderboardsFromRedis(days = 30) {
@@ -814,6 +822,8 @@ const ttls = {
     getRunsPaginated: 60,
     fetchAllUsersFromRedis: 60,
     fetchPlayerStatsFromRedis: 10,
+    fetchNphFromRedis: 10,
+    fetchTwitchesFromRedis: 60,
     calculateNphFromDatabase: 10,
     fetchAllPlayerRunsFromRedis: 5,
     fetchFastestLeaderboardsFromRedis: 60,
@@ -1995,7 +2005,7 @@ export const getAllPlayerRuns = async (uuid: string, limit : number = 100) => {
 
 export const getAllUserInfo = async () => {
     try {
-        const users = await fetchAllUsersFromRedis();
+        const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis");
         if (users.length > 0 && users.every((user: any) => Object.prototype.hasOwnProperty.call(user, "displayName"))) {
             // The Redis list holds every player for search. Pages embed this
             // projection in their HTML only to look up custom names and
