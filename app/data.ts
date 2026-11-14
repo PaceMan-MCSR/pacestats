@@ -3287,8 +3287,7 @@ export const getPlayerRunsOffsetPage = async (
                 ORDER BY ${order} LIMIT ? OFFSET ?
             ) selected ON selected.id=pace.id
             ORDER BY ${order}`;
-    const [rowsResult, rowCount] = await Promise.all([
-        executeDb<any[]>(
+    const [rows] = await executeDb<any[]>(
             `SELECT pace.id, nether, bastion, fortress,
                 ${playerRunColumns.first_structure} AS first_structure,
                 ${playerRunColumns.second_structure} AS second_structure,
@@ -3296,13 +3295,17 @@ export const getPlayerRunsOffsetPage = async (
                 UNIX_TIMESTAMP(lastUpdated) * 1000 AS lastUpdated, CAST(vodId AS CHAR) AS vodId, twitch
              ${pageSource};`,
             [...where.values, mysqlIntegerParam(safePageSize), mysqlIntegerParam(safePage * safePageSize)]
-        ),
-        getCached(countPlayerRunsMatching, "countPlayerRunsMatching", uuid, filters),
-    ]);
+        );
+    // A short page proves the exact total, except an empty page beyond the
+    // start (which may simply be out of range). Small profiles and selective
+    // filters then need no second SQL scan merely to count the rows just read.
+    const rowCount = rows.length < safePageSize && (safePage === 0 || rows.length > 0)
+        ? safePage * safePageSize + rows.length
+        : await getCached(countPlayerRunsMatching, "countPlayerRunsMatching", uuid, filters);
     // Read only the displayed rows, including when Redis has no history. A
     // cold visit formerly decoded, copied and sorted the player's entire
     // lifetime (tens of thousands of objects) for every sort/filter/page.
-    return {rows: rowsResult[0], rowCount};
+    return {rows, rowCount};
 };
 
 export const getPlayerRunsPage = async (
