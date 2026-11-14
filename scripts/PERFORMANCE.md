@@ -116,3 +116,35 @@ in the initial Flight serialization, adding about 99 KB of raw HTML (about
 10 KB with Brotli); the normal external CSS was about 51 KB raw. RSC navigation
 payloads retain stylesheet references and do not acquire the CSS body. Recheck
 this tradeoff after a Next upgrade because the option is experimental.
+
+## Second-round checks
+
+The 15 November investigation compares `edf658e` with the second-round build.
+Use a separate `PERF_OUTPUT` directory such as
+`/app/test-artifacts/performance/round2/` and set `PERF_SAMPLES_DIR` to it when
+running `perf-summary.mjs`. Both revisions must read the same Redis generation;
+restart their test processes after publishing verification and before the
+paired comparison. Do not publish while capturing browser parity or timing.
+
+Additional Docker commands, from `/app` with `PERF_BASE_URL` set to the desired
+local production server:
+
+```sh
+node --import tsx tests/redis-read-coalescing.ts
+node --import tsx tests/prepared-statement-budget.ts
+node --expose-gc --import tsx tests/aa-cold-statistics.ts
+node --import tsx tests/leaderboard-presentation.ts
+node --import tsx tests/cache-producer-metadata.mjs
+node tests/run-history-navigation.mjs
+PERF_BASELINE_URL=http://127.0.0.1:5071/stats/ node tests/leaderboard-navigation.mjs
+node scripts/perf-interactions.mjs
+PERF_LOCAL_DOCKER=1 node --expose-gc --import tsx scripts/perf-producers.mjs pace
+PERF_LOCAL_DOCKER=1 node --expose-gc --import tsx scripts/perf-producers.mjs nph
+```
+
+The producer profiler replaces publication with hashes; it does not write Redis.
+It dynamically loads a disposable copy of the private TypeScript producer
+helpers, so its `.mjs` entry point also requires `--import tsx`. The first-open
+filter probe reports the first usable preset button, resource bytes, long
+tasks and CDP heap usage. Its screenshot waits for the collapse animation
+after the measured interaction has finished.

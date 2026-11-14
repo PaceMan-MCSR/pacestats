@@ -101,7 +101,9 @@ const boardReady = async () => {
     await page.locator('.rangeButtons button').first().waitFor();
     await page.waitForFunction(() => {
         const button = document.querySelector('.rangeButtons button');
-        return button && Object.keys(button).some(key => key.startsWith('__reactProps$'));
+        const link = document.querySelector('.boardLink');
+        const hydrated = element => element && Object.keys(element).some(key => key.startsWith('__reactProps$'));
+        return hydrated(button) && (!link || hydrated(link));
     });
 };
 const profileReady = async () => {

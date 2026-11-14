@@ -53,7 +53,12 @@ try {
         const metrics = (await client.send('Performance.getMetrics')).metrics;
         const heapMiB = (metrics.find(metric => metric.name === 'JSHeapUsedSize')?.value ?? 0) / 1048576;
         results.push({sample: sample + 1, readyMs, ...observation, heapMiB});
-        if (sample === 2) await page.screenshot({path: output.replace(/\.json$/, '.png'), fullPage: true});
+        if (sample === 2) {
+            // Capture the finished collapse animation for visual review.
+            // This delay is outside all reported measurements.
+            await page.waitForTimeout(400);
+            await page.screenshot({path: output.replace(/\.json$/, '.png'), fullPage: true});
+        }
         await context.close();
     }
     if (errors.length) throw new Error(JSON.stringify(errors));
