@@ -3046,14 +3046,35 @@ export const getPBs = async (nicks: string[], uuids: string[]) => {
 
     let selectedUuids = [...new Set(uuids)];
     let namesByUuid: Map<string, string> | undefined;
+    let wantedNames: Set<string> | undefined;
     if (nicks.length > 0) {
         // Retain exact current-name matching and name-list precedence. A
         // nickname may belong to several players, so preserve every match.
-        const wantedNames = new Set(nicks);
-        const users = await getCached(getAllUsers, "getAllUsers") as any[];
-        const matches = users.filter((user) => wantedNames.has(user.nick));
-        namesByUuid = new Map(matches.map((user) => [user.id, user.nick]));
-        selectedUuids = [...namesByUuid.keys()];
+        wantedNames = new Set(nicks);
+        let users: any[] = [];
+        try {
+            users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis");
+        } catch (error) {
+            console.error("Unable to read PB identities from Redis; falling back to MySQL:", error);
+        }
+        if (users.length > 0) {
+            const matches = users.filter((user) => wantedNames!.has(user.nick));
+            namesByUuid = new Map(matches.map((user) => [user.id, user.nick]));
+            selectedUuids = [...namesByUuid.keys()];
+        } else {
+            // Missing Redis formerly built the complete player/Twitch list
+            // from3M rows. Read only owners of submitted historical names;
+            // the PB lookup below validates their current exact nickname.
+            const candidateUuids = new Set<string>();
+            for (let offset = 0; offset < nicks.length; offset += 100) {
+                const batch = nicks.slice(offset, offset + 100);
+                const [candidates] = await executeDb<any[]>(
+                    `SELECT DISTINCT uuid FROM pace WHERE nickname IN (${batch.map(() => "?").join(",")});`, batch
+                );
+                for (const candidate of candidates) if (candidate.uuid) candidateUuids.add(candidate.uuid);
+            }
+            selectedUuids = [...candidateUuids];
+        }
     }
     if (selectedUuids.length === 0) return [];
 
@@ -3072,6 +3093,7 @@ export const getPBs = async (nicks: string[], uuids: string[]) => {
         );
         for (const row of rows) {
             const name = namesByUuid?.get(row.uuid) ?? row.name;
+            if (wantedNames && !wantedNames.has(name)) continue;
             const result = {uuid: row.uuid, finish: row.finish, timestamp: Number(row.timestamp), pb: formatTime(row.finish)};
             results.push(name ? {...result, name} : result);
         }

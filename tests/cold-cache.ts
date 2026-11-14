@@ -42,9 +42,13 @@ async function main() {
     const identityStart = performance.now();
     assert.deepEqual(await data.getAllNamesByNick("NoFearr1337"), {uuid, nick: "NoFearr1337"});
     assert.deepEqual(await data.getAllNamesByTwitch("nofearr1337"), {uuid, nick: "NoFearr1337"});
+    const identityDurationMs = performance.now() - identityStart;
+    const pbs = await data.getPBs(["NoFearr1337"], ["ignored-by-name-precedence"]);
+    assert.deepEqual(pbs, await data.getPBs([], [uuid]));
+    assert.deepEqual(await data.getPBs(["nofearr1337"], []), [], "PB nicknames retain exact case matching");
     const localCache = (globalThis as typeof globalThis & {__paceStatsCache: {keys: () => string[]; del: (key: string) => number}}).__paceStatsCache;
     assert.ok(!localCache.keys().includes('["getAllUsers"]'), "One player's identity must not enumerate every player on a cold cache");
-    console.log(JSON.stringify({case: "redis-empty-identity", ms: performance.now() - identityStart}));
+    console.log(JSON.stringify({case: "redis-empty-identity", ms: identityDurationMs}));
     const {GET: playerInfo} = await import("../app/api/getPlayerInfo/route");
     const infoResponse = await playerInfo(new NextRequest("http://localhost:5050/stats/api/getPlayerInfo?names=NoFearr1337,not-a-player"));
     assert.equal(infoResponse.status, 200);
