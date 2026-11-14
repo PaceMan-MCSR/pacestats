@@ -770,6 +770,7 @@ const ttls = {
     searchPlayers: 60,
     getPlayerRunsPage: 5,
     getPlayerRunsOffsetPage: 5,
+    countPlayerRunsMatching: 5,
     getAAPlayerRunsPage: 30,
     resolveCombinedPlayerUuids: 60,
     getCombinedSplitAggregates: 10,
@@ -2862,29 +2863,51 @@ export interface OffsetPage<T = any> {
     rowCount: number;
 }
 
-const playerRunFilterValue = (run: any, column: PlayerRunFilter["column"]): number | null => {
-    if (column === "date") {
-        if (run.lastUpdated == null) return null;
-        if (typeof run.lastUpdated === "number") return run.lastUpdated;
-        const timestamp = new Date(run.lastUpdated).getTime();
-        return Number.isFinite(timestamp) ? timestamp : null;
-    }
-    const value = run[column];
-    return typeof value === "number" && Number.isFinite(value) ? value : null;
+const playerRunColumns: Record<PlayerRunFilter["column"], string> = {
+    date: "lastUpdated",
+    nether: "nether",
+    bastion: "bastion",
+    fortress: "fortress",
+    first_structure: "COALESCE(LEAST(bastion, fortress), bastion, fortress)",
+    second_structure: "GREATEST(bastion, fortress)",
+    first_portal: "first_portal",
+    stronghold: "stronghold",
+    end: "`end`",
+    finish: "finish",
 };
 
-const matchesPlayerRunFilter = (run: any, filter: PlayerRunFilter): boolean => {
-    const value = playerRunFilterValue(run, filter.column);
-    if (filter.operatorValue === "isNotEmpty") return value !== null;
-    if (filter.operatorValue === "isEmpty") return value === null;
-    if (value === null || filter.value === undefined) return false;
-    if (filter.operatorValue === "during") {
-        return filter.endValue !== undefined && value >= filter.value && value < filter.endValue;
+/** Build only allowlisted expressions; every submitted value remains bound. */
+const playerRunWhere = (uuid: string, filters: PlayerRunFilter[]) => {
+    const clauses = ["uuid=?"];
+    const values: unknown[] = [uuid];
+    for (const filter of filters) {
+        if (!Object.hasOwn(playerRunColumns, filter.column)) throw new Error("Unsupported run filter column");
+        const column = playerRunColumns[filter.column];
+        if (filter.operatorValue === "isNotEmpty" || filter.operatorValue === "isEmpty") {
+            clauses.push(`${column} IS ${filter.operatorValue === "isNotEmpty" ? "NOT " : ""}NULL`);
+            continue;
+        }
+        if (!Number.isFinite(filter.value)) throw new Error("Invalid run filter value");
+        // Comparing the column directly keeps date range predicates indexable.
+        const marker = filter.column === "date" ? "FROM_UNIXTIME(? / 1000)" : "?";
+        if (filter.operatorValue === "during") {
+            if (!Number.isFinite(filter.endValue)) throw new Error("Invalid run filter end value");
+            clauses.push(`${column} >= ${marker} AND ${column} < ${marker}`);
+            values.push(filter.value, filter.endValue);
+        } else {
+            const operator = {lessThan: "<", greaterThan: ">", before: "<=", after: ">="}[filter.operatorValue];
+            if (!operator) throw new Error("Unsupported run filter operator");
+            clauses.push(`${column} ${operator} ${marker}`);
+            values.push(filter.value);
+        }
     }
-    if (filter.operatorValue === "lessThan") return value < filter.value;
-    if (filter.operatorValue === "greaterThan") return value > filter.value;
-    if (filter.operatorValue === "before") return value <= filter.value;
-    return value >= filter.value;
+    return {sql: clauses.join(" AND "), values};
+};
+
+const countPlayerRunsMatching = async (uuid: string, filters: PlayerRunFilter[]): Promise<number> => {
+    const where = playerRunWhere(uuid, filters);
+    const [counts] = await executeDb<any[]>(`SELECT COUNT(*) AS count FROM pace WHERE ${where.sql};`, where.values);
+    return Number(counts[0].count);
 };
 
 export const getPlayerRunsOffsetPage = async (
@@ -2899,36 +2922,31 @@ export const getPlayerRunsOffsetPage = async (
 
     const safePage = boundedInteger(page, 0, 0, 1_000_000);
     const safePageSize = boundedInteger(pageSize, 25, 1, 100);
-    const history = await getCached(
-        fetchAllPlayerRunsFromRedis,
-        "fetchAllPlayerRunsFromRedis",
-        uuid,
-    ) as any[];
-    const matchingRows = filters.length === 0
-        ? [...history]
-        : history.filter((run) => filters.every((filter) => matchesPlayerRunFilter(run, filter)));
-    matchingRows.sort((left, right) => {
-        const leftValue = playerRunFilterValue(left, sort.column);
-        const rightValue = playerRunFilterValue(right, sort.column);
-
-        // Keep missing splits at the bottom in either direction, matching the
-        // useful behavior of the old data grid.
-        if (leftValue === null && rightValue !== null) return 1;
-        if (leftValue !== null && rightValue === null) return -1;
-        if (leftValue !== null && rightValue !== null && leftValue !== rightValue) {
-            return sort.direction === "asc" ? leftValue - rightValue : rightValue - leftValue;
-        }
-
-        // A stable, deterministic tie-breaker prevents rows from moving
-        // between pages when several runs have the same split.
-        return Number(right.id) - Number(left.id);
-    });
-    const offset = safePage * safePageSize;
-
-    return {
-        rows: matchingRows.slice(offset, offset + safePageSize),
-        rowCount: matchingRows.length,
-    };
+    const where = playerRunWhere(uuid, filters);
+    if (!Object.hasOwn(playerRunColumns, sort.column)) throw new Error("Unsupported run sort column");
+    const sortColumn = playerRunColumns[sort.column];
+    const direction = sort.direction === "asc" ? "ASC" : "DESC";
+    // DESC naturally puts NULL last. ASC needs an explicit NULL-last key.
+    // The common date DESC path can walk (uuid,lastUpdated,id) for one page.
+    const nullsLast = direction === "ASC" ? `${sortColumn} IS NULL ASC, ` : "";
+    const [rowsResult, rowCount] = await Promise.all([
+        executeDb<any[]>(
+            `SELECT id, nether, bastion, fortress,
+                ${playerRunColumns.first_structure} AS first_structure,
+                ${playerRunColumns.second_structure} AS second_structure,
+                first_portal, stronghold, \`end\`, finish,
+                UNIX_TIMESTAMP(lastUpdated) * 1000 AS lastUpdated, vodId, twitch
+             FROM pace WHERE ${where.sql}
+             ORDER BY ${nullsLast}${sortColumn} ${direction}, id DESC
+             LIMIT ? OFFSET ?;`,
+            [...where.values, mysqlIntegerParam(safePageSize), mysqlIntegerParam(safePage * safePageSize)]
+        ),
+        getCached(countPlayerRunsMatching, "countPlayerRunsMatching", uuid, filters),
+    ]);
+    // Read only the displayed rows, including when Redis has no history. A
+    // cold visit formerly decoded, copied and sorted the player's entire
+    // lifetime (tens of thousands of objects) for every sort/filter/page.
+    return {rows: rowsResult[0], rowCount};
 };
 
 export const getPlayerRunsPage = async (
