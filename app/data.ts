@@ -2442,7 +2442,8 @@ export const getTrimmedLeaderboards = async (days: number) => {
 }
 
 export const getTrimmedAALB = async (days: number, limit = 10, skipFastest = false) => {
-    const lb = await getCached(getAALB, "getAALB", days + " DAY")
+    const safeDays = leaderboardPeriods.has(days) ? days : 30;
+    const safeLimit = boundedInteger(limit, 10, 0, 999_999);
     const filters = [
         CategoryType.AVG,
         CategoryType.COUNT,
@@ -2459,6 +2460,19 @@ export const getTrimmedAALB = async (days: number, limit = 10, skipFastest = fal
         "credits",
         "finish"
     ]
+    try {
+        const selected = await readBoardPrefixes(`aa:leaderboards:${safeDays}day`,
+            filters.filter((filter) => filter !== CategoryType.FASTEST || !skipFastest).flatMap((filter) =>
+                categories.map((category) => ({filter, category,
+                    minimumQty: filter === CategoryType.AVG || filter === CategoryType.CONVERSION ? getMinAAQty(category, days) : 0}))), safeLimit);
+        if (skipFastest) selected[CategoryType.FASTEST] = Object.fromEntries(categories.map((category) => [category, []]));
+        return selected;
+    } catch (error) {
+        if (!(error instanceof CacheNotReadyError)) console.error("Unable to read AA leaderboard prefixes; falling back to the complete board:", error);
+    }
+    // An empty Redis still uses the exact, scoped AA SQL fallback. Reading
+    // the complete generated document is reserved for callers that need it.
+    const lb = await getCached(getAALB, "getAALB", safeDays + " DAY")
     let leaderboards: { [filter: number]: { [category: string]: Entry[] } } = {}
     for (const filter of filters) {
         leaderboards[filter] = {}
@@ -2482,7 +2496,7 @@ export const getTrimmedAALB = async (days: number, limit = 10, skipFastest = fal
             } else {
                 specific = data
             }
-            leaderboards[filter][category] = specific.slice(0, limit)
+            leaderboards[filter][category] = specific.slice(0, safeLimit)
         }
     }
     return leaderboards
