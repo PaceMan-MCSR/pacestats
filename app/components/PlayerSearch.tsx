@@ -126,7 +126,13 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
         }
         loadPlayerNames()
             .then((players) => {
-                if (mounted.current) setLoadedItems(players);
+                if (mounted.current) {
+                    // The reusable index now covers this query; a slower
+                    // remote response must not replace it or prefetch rows.
+                    searchController.current?.abort();
+                    clearSearchPrefetches();
+                    setLoadedItems(players);
+                }
             })
             .catch(() => {
                 // Per-query search remains available if the background list fails.
@@ -169,7 +175,7 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
                     .filter((release): release is () => void => release !== undefined);
             })
             .catch((error) => {
-                if (error.name !== "AbortError") setRemoteItems([]);
+                if (!controller.signal.aborted && mounted.current && error.name !== "AbortError") setRemoteItems([]);
             });
     };
 
@@ -182,6 +188,11 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
         // @ts-ignore
         document.activeElement.blur()
     }
+
+    const dismissSearch = () => {
+        searchController.current?.abort();
+        clearSearchPrefetches();
+    };
 
 
     // Hovering or arrowing to a result is a strong sign of intent, so load
@@ -231,6 +242,7 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
                 onSearch={handleOnSearch}
                 onFocus={requestPlayerNames}
                 onSelect={handleOnSelect}
+                onDismiss={dismissSearch}
                 onHover={handleOnHover}
                 formatResult={formatResult}
                 inputSearchString={input}

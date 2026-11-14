@@ -82,6 +82,7 @@ export interface SearchAutocompleteProps<T extends Item> {
     onSelect?: (result: T) => void;
     onFocus?: FocusEventHandler<HTMLInputElement>;
     onClear?: () => void;
+    onDismiss?: () => void;
     showIcon?: boolean;
     showClear?: boolean;
     maxResults?: number;
@@ -295,6 +296,7 @@ export default function SearchAutocomplete<T extends Item>({
     onSelect = () => {},
     onFocus = () => {},
     onClear = () => {},
+    onDismiss = () => {},
     showIcon = true,
     showClear = true,
     maxResults = MAX_RESULTS,
@@ -331,6 +333,10 @@ export default function SearchAutocomplete<T extends Item>({
     // True from a keystroke until the results are dismissed (blur, selection
     // or a click elsewhere).
     const [hasTyped, setHasTyped] = useState(false);
+    const [pendingKeyword, setPendingKeyword] = useState<string | null>(null);
+    const root = useRef<HTMLDivElement>(null);
+    const dismissCallback = useRef(onDismiss);
+    useEffect(() => { dismissCallback.current = onDismiss; }, [onDismiss]);
 
     // Empty until Fuse.js has loaded; the effect on `items` and `FuseClass`
     // below fills in the results when it arrives.
@@ -345,17 +351,17 @@ export default function SearchAutocomplete<T extends Item>({
         setResults([]);
         setIsSearchComplete(true);
         setHasTyped(false);
+        setPendingKeyword(null);
+        setIsTyping(false);
+        setHasFocus(false);
+        dismissCallback.current();
     };
 
-    // The three effects below sync state from props exactly as the package
-    // does; deriving it during render would change when results appear.
+    // A controlled value is a selected/prefilled name, not a new search.
+    // Only focus or typing needs Fuse and result computation.
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setSearchString(inputSearchString);
-        if (inputSearchString?.length > 0) requestFuse();
-        const timeoutId = setTimeout(() => setResults(fuseResults(inputSearchString)), 0);
-        return () => clearTimeout(timeoutId);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [inputSearchString]);
 
     useEffect(() => {
@@ -363,8 +369,6 @@ export default function SearchAutocomplete<T extends Item>({
         // package, this also covers a focused box that has no results yet:
         // the player list loads on first use, so someone can finish typing
         // before the items they are searching arrive.
-        // `hasFocus` cannot be used here: the click that focuses the input
-        // also reaches the document-level click handler, which clears it.
         const awaitingResults = hasTyped && !isSearchComplete;
         if (searchString?.length > 0 && (results?.length > 0 || awaitingResults)) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -385,7 +389,8 @@ export default function SearchAutocomplete<T extends Item>({
     }, [showItemsOnFocus, results, searchString, hasFocus]);
 
     useEffect(() => {
-        const handleDocumentClick = () => {
+        const handleDocumentClick = (event: globalThis.MouseEvent) => {
+            if (event.target instanceof Node && root.current?.contains(event.target)) return;
             eraseResults();
             setHasFocus(false);
         };
@@ -412,7 +417,6 @@ export default function SearchAutocomplete<T extends Item>({
     // function that closed over one render's items: a keystroke typed just
     // before the player list arrived searched the old (empty) list 100 ms
     // later and wiped the results the new list had just produced.
-    const [pendingKeyword, setPendingKeyword] = useState<string | null>(null);
     useEffect(() => {
         if (pendingKeyword === null) return;
         const timeoutId = setTimeout(() => {
@@ -453,6 +457,11 @@ export default function SearchAutocomplete<T extends Item>({
             setValues(index);
         } else if (event) {
             switch (event.key) {
+                case "Escape":
+                    event.preventDefault();
+                    eraseResults();
+                    setHasFocus(false);
+                    break;
                 case "Enter":
                     if (results.length > 0 && results[highlightedItem]) {
                         event.preventDefault();
@@ -480,7 +489,7 @@ export default function SearchAutocomplete<T extends Item>({
     };
 
     return (
-        <div className={className ? `rsa ${className}` : "rsa"}>
+        <div ref={root} className={className ? `rsa ${className}` : "rsa"}>
             <div className="wrapper">
                 <SearchInput
                     searchString={searchString}
