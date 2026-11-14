@@ -115,8 +115,50 @@ async function verifyPBs() {
     console.log("Filtered PBs: 5 parity cases passed against complete PB result");
 }
 
+async function verifyCoveringSorts() {
+    const pool = (globalThis as typeof globalThis & {__paceStatsDbPool: any}).__paceStatsDbPool;
+    for (const column of ["finish", "date"] as const) {
+        const acquire = pool.getConnection.bind(pool);
+        let issued: {sql: string; values: unknown[]} | undefined;
+        pool.getConnection = async () => {
+            const connection = await acquire();
+            const execute = connection.execute.bind(connection);
+            connection.execute = (options: {sql: string}, values: unknown[]) => {
+                connection.execute = execute;
+                if (options.sql.includes("CAST(vodId AS CHAR) AS vodId")) issued = {sql: options.sql, values};
+                return execute(options, values);
+            };
+            return connection;
+        };
+        const started = performance.now();
+        try {
+            await getPlayerRunsOffsetPage(uuid, 0, 25, [], {column, direction: "asc"});
+        } finally {
+            pool.getConnection = acquire;
+        }
+        const durationMs = performance.now() - started;
+        assert.ok(issued);
+        const [plans] = await (await getConn()).execute<any[]>(`EXPLAIN FORMAT=JSON ${issued.sql}`, issued.values);
+        const plan = JSON.parse(plans[0].EXPLAIN);
+        const tables: any[] = [];
+        const walk = (node: any) => {
+            if (!node || typeof node !== "object") return;
+            if (node.table_name) tables.push(node);
+            for (const value of Object.values(node)) walk(value);
+        };
+        walk(plan);
+        const index = column === "finish" ? "idx_pace_uuid_finish" : "idx_pace_uuid_last_updated_id";
+        assert.ok(tables.some((table) => table.key === index && table.using_index === true),
+            `${column} must select IDs from a covering index before fetching displayed rows`);
+        assert.ok(tables.some((table) => table.table_name === "pace" && table.key === "PRIMARY" && table.access_type === "eq_ref"),
+            `${column} must fetch only the selected IDs through primary-key lookups`);
+        console.log(JSON.stringify({case: `covering-${column}-sort`, ms: durationMs}));
+    }
+}
+
 async function main() {
     await verifyRunPages();
+    await verifyCoveringSorts();
     await verifyPBs();
 }
 main().then(() => process.exit(0), (error) => { console.error(error); process.exit(1); });

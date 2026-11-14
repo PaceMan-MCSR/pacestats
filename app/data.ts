@@ -3153,16 +3153,27 @@ export const getPlayerRunsOffsetPage = async (
     // DESC naturally puts NULL last. ASC needs an explicit NULL-last key.
     // The common date DESC path can walk (uuid,lastUpdated,id) for one page.
     const nullsLast = direction === "ASC" ? `${sortColumn} IS NULL ASC, ` : "";
+    const order = `${nullsLast}${sortColumn} ${direction}, pace.id DESC`;
+    // The default date page already stops after one indexed page. Other
+    // sorts should first select narrow IDs, then fetch only the displayed
+    // rows. In particular finish/date ASC can sort a covering index rather
+    // than fetching and sorting every wide lifetime row.
+    const indexedDatePage = sort.column === "date" && direction === "DESC";
+    const pageSource = indexedDatePage
+        ? `FROM pace WHERE ${where.sql} ORDER BY ${order} LIMIT ? OFFSET ?`
+        : `FROM pace INNER JOIN (
+                SELECT id FROM pace WHERE ${where.sql}
+                ORDER BY ${order} LIMIT ? OFFSET ?
+            ) selected ON selected.id=pace.id
+            ORDER BY ${order}`;
     const [rowsResult, rowCount] = await Promise.all([
         executeDb<any[]>(
-            `SELECT id, nether, bastion, fortress,
+            `SELECT pace.id, nether, bastion, fortress,
                 ${playerRunColumns.first_structure} AS first_structure,
                 ${playerRunColumns.second_structure} AS second_structure,
                 first_portal, stronghold, \`end\`, finish,
                 UNIX_TIMESTAMP(lastUpdated) * 1000 AS lastUpdated, CAST(vodId AS CHAR) AS vodId, twitch
-             FROM pace WHERE ${where.sql}
-             ORDER BY ${nullsLast}${sortColumn} ${direction}, id DESC
-             LIMIT ? OFFSET ?;`,
+             ${pageSource};`,
             [...where.values, mysqlIntegerParam(safePageSize), mysqlIntegerParam(safePage * safePageSize)]
         ),
         getCached(countPlayerRunsMatching, "countPlayerRunsMatching", uuid, filters),
