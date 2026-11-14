@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import Redis from 'ioredis';
 import { WebSocket, WebSocketServer } from 'ws';
 import { CoalescedBroadcasts } from './coalesced-broadcasts.mjs';
+import { HeartbeatWheel } from './heartbeat-wheel.mjs';
 
 dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env.local' });
 
@@ -26,6 +27,7 @@ const allowedOrigins = new Set(
 const wss = new WebSocketServer({ port, maxPayload: 1024 });
 const clientsByUuid = new Map();
 const pendingBroadcasts = new CoalescedBroadcasts(broadcast, coalesceMs);
+const heartbeat = new HeartbeatWheel();
 let subscriber = null;
 let shuttingDown = false;
 
@@ -41,6 +43,7 @@ function tokensMatch(actual, expected) {
 }
 
 function removePullClient(ws) {
+    heartbeat.remove(ws);
     if (!ws.uuid) return;
     const clients = clientsByUuid.get(ws.uuid);
     if (!clients) return;
@@ -114,6 +117,7 @@ wss.on('connection', (ws, req) => {
             ws.uuid = uuid;
             ws.isAlive = true;
             clients.add(ws);
+            heartbeat.add(ws);
             ws.on('pong', () => { ws.isAlive = true; });
             ws.on('close', () => removePullClient(ws));
             ws.on('error', (error) => {
@@ -139,20 +143,6 @@ wss.on('connection', (ws, req) => {
         ws.close(1008, 'Invalid request');
     }
 });
-
-const heartbeatInterval = setInterval(() => {
-    for (const clients of clientsByUuid.values()) {
-        for (const ws of clients) {
-            if (ws.isAlive === false) {
-                ws.terminate();
-                continue;
-            }
-            ws.isAlive = false;
-            ws.ping();
-        }
-    }
-}, 30_000);
-heartbeatInterval.unref();
 
 if (redisUrl) {
     subscriber = new Redis(redisUrl, {
@@ -186,7 +176,7 @@ async function shutdown(signal) {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`Received ${signal}; shutting down WebSocket server.`);
-    clearInterval(heartbeatInterval);
+    heartbeat.clear();
     pendingBroadcasts.clear();
     for (const clients of clientsByUuid.values()) {
         for (const ws of clients) ws.close(1001, 'Server shutting down');
