@@ -73,8 +73,31 @@ async function verifyTracker() {
     console.log('PASS: tracker table ignores stationary pointer, prefetches real movement and navigates by keyboard');
 }
 
+async function verifyDebugPrefetch() {
+    const {context, page} = await createContext();
+    const historyPath = `/stats/player/${player}/nethers/`;
+    const prepared = page.waitForResponse(response => new URL(response.url()).pathname === historyPath
+        && response.request().headers()['next-router-prefetch'] === '1' && response.status() === 200);
+    await page.goto(url(`player/${player}/`), {waitUntil: 'domcontentloaded'});
+    const debug = page.getByRole('button', {name: 'Debug', exact: true});
+    await debug.waitFor();
+    await (await prepared).finished();
+    assert.ok(new URL(page.url()).pathname.endsWith(`/player/${player}/`), 'History prefetch must finish before clicking Debug');
+    await debug.click();
+    await page.waitForURL(current => current.pathname === historyPath);
+    await page.waitForFunction(() => {
+        const body = document.querySelector('.recentNethers tbody');
+        const key = body && Object.keys(body).find(value => value.startsWith('__reactProps$'));
+        return key && typeof body[key].onPointerMove === 'function';
+    });
+    await context.close();
+    console.log('PASS: the single Debug route prefetches while its profile is visible and opens hydrated history');
+}
+
 try {
-    if (process.env.PERF_TRACKER_ONLY === '1') {
+    if (process.env.PERF_DEBUG_ONLY === '1') {
+        await verifyDebugPrefetch();
+    } else if (process.env.PERF_TRACKER_ONLY === '1') {
         await verifyTracker();
     } else if (process.env.PERF_COLD_ONLY !== '1') {
         const {context, page} = await createContext();
@@ -202,6 +225,7 @@ try {
         assert.equal(await overlayPage.evaluate(() => window.__intervalDelays.filter(delay => delay === 20).length), 0);
         console.log('PASS: ordinary overlays install no 20ms poll; preview dimensions update after a real resize');
         await overlayContext.close();
+        await verifyDebugPrefetch();
         await verifyTracker();
     }
 
