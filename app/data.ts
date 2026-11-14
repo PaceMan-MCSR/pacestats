@@ -2675,16 +2675,15 @@ export const getRecentNethers = async (uuid: string, limit: number = 100, liveOn
 export const SESSION_PAGE_ROWS = 1_000;
 
 /**
- * How many rows a session window holds, counted up to `limit`. A session that
- * ends inside the first page still has to report whether the whole window
- * would have been truncated.
+ * A session ending inside its first page still reports whole-window overflow.
+ * Read one sentinel instead of materializing and counting an entire prefix.
  */
-const countWindowRows = async (from: string, values: unknown[], limit: number): Promise<number> => {
+const windowExceedsLimit = async (from: string, values: unknown[], limit: number): Promise<boolean> => {
     const [rows] = await (await getConn()).execute<any[]>(
-        `SELECT COUNT(*) AS windowRows FROM (SELECT 1 ${from} LIMIT ?) bounded;`,
+        `SELECT 1 AS overflow ${from} LIMIT 1 OFFSET ?;`,
         [...values, mysqlIntegerParam(limit)]
     );
-    return Number(rows[0].windowRows);
+    return rows.length > 0;
 };
 
 const nphColumns = `pace.nether as nether, wallTime, playTime, enters,
@@ -2746,7 +2745,7 @@ export const getNPH = async (uuid: string, hours: number, hoursBetween: number, 
     // rows, then immediately reading those same rows again in a larger page.
     const initialLimit = safeHoursBetween >= safeHours ? MAX_SESSION_ROWS + 1 : SESSION_PAGE_ROWS;
     let results = await readRows(initialLimit);
-    let windowRows = results.length;
+    let truncated = results.length > MAX_SESSION_ROWS;
     let session = walkNphSession(results.length > MAX_SESSION_ROWS ? results.slice(0, MAX_SESSION_ROWS) : results, safeHoursBetween);
     if (initialLimit === SESSION_PAGE_ROWS && results.length === SESSION_PAGE_ROWS) {
         if (session.stopped) {
@@ -2754,13 +2753,13 @@ export const getNPH = async (uuid: string, hours: number, hoursBetween: number, 
             // live rows are a subset of all the player's nether rows, which
             // the nethers index counts without the join; the join is needed
             // only when that count is itself over the limit.
-            windowRows = await countWindowRows(nphCountWindow(false), windowValues, MAX_SESSION_ROWS + 1);
-            if (liveOnly && windowRows > MAX_SESSION_ROWS) {
-                windowRows = await countWindowRows(nphCountWindow(true), windowValues, MAX_SESSION_ROWS + 1);
+            truncated = await windowExceedsLimit(nphCountWindow(false), windowValues, MAX_SESSION_ROWS);
+            if (liveOnly && truncated) {
+                truncated = await windowExceedsLimit(nphCountWindow(true), windowValues, MAX_SESSION_ROWS);
             }
         } else {
             results = await readRows(MAX_SESSION_ROWS + 1);
-            windowRows = results.length;
+            truncated = results.length > MAX_SESSION_ROWS;
             session = walkNphSession(results.slice(0, MAX_SESSION_ROWS), safeHoursBetween);
         }
     }
@@ -2782,7 +2781,6 @@ export const getNPH = async (uuid: string, hours: number, hoursBetween: number, 
         };
     }
 
-    const truncated = windowRows > MAX_SESSION_ROWS;
     const {wallTime, playTime, firstTime, lastTime, nethers, resets, enters, times} = session;
     let avg = calculateAvg(times)
 
@@ -3008,14 +3006,14 @@ export const getSessionStats = async (uuid: string, hours: number, hoursBetween:
         safeHours,
         initialLimit
     )
-    let windowRows = runs.length
+    let truncated = runs.length > MAX_SESSION_ROWS
     let walk = walkSessionStats(runs.length > MAX_SESSION_ROWS ? runs.slice(0, MAX_SESSION_ROWS) : runs, safeHours, safeHoursBetween)
     if (initialLimit === SESSION_PAGE_ROWS && runs.length === SESSION_PAGE_ROWS) {
         if (walk.stopped) {
-            windowRows = await countWindowRows(
+            truncated = await windowExceedsLimit(
                 "FROM pace WHERE uuid=? AND insertTime >= NOW() - INTERVAL ? HOUR",
                 [uuid, mysqlIntegerParam(safeHours)],
-                MAX_SESSION_ROWS + 1
+                MAX_SESSION_ROWS
             )
         } else {
             runs = await getCached(
@@ -3025,12 +3023,11 @@ export const getSessionStats = async (uuid: string, hours: number, hoursBetween:
                 safeHours,
                 MAX_SESSION_ROWS + 1
             )
-            windowRows = runs.length
+            truncated = runs.length > MAX_SESSION_ROWS
             walk = walkSessionStats(runs.slice(0, MAX_SESSION_ROWS), safeHours, safeHoursBetween)
         }
     }
 
-    const truncated = windowRows > MAX_SESSION_ROWS;
     const categories = sessionStatsCategories
     const splits = walk.splits
 
