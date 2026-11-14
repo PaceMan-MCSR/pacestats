@@ -104,28 +104,9 @@ async function closeBucket(
     pacingDelayMs = 0,
 ): Promise<number> {
     await lease.verifyHeld();
-    const players = new Map<string, BucketAccumulator>();
+    let currentUuid: string | undefined;
+    let currentPlayer: BucketAccumulator | undefined;
     let rowCount = 0;
-    await streamRowBatches<any[]>(conn,
-        {sql: sourceRowsSql(insertTimeRangeSql()), rowsAsArray: true},
-        insertTimeRangeValues(bucketStart(bucket), bucketStart(bucket + 1)),
-        sqlBatchSize,
-        async (rows) => {
-            lease.assertHeld();
-            rowCount += rows.length;
-            for (const row of rows) {
-                const uuid = row[0];
-                if (uuid === null) continue;
-                let player = players.get(uuid);
-                if (!player) {
-                    player = new BucketAccumulator();
-                    players.set(uuid, player);
-                }
-                player.add(Number(row[1]), row, 3);
-            }
-            if (pacingDelayMs > 0) await pause(pacingDelayMs);
-        },
-    );
     let batch: Array<[string, string, number]> = [];
     const flush = async () => {
         if (batch.length === 0) return;
@@ -141,11 +122,33 @@ async function closeBucket(
         );
         batch = [];
     };
-    for (const [uuid, player] of players) {
-        batch.push([uuid, JSON.stringify(player.summary()), player.maxId]);
-        players.delete(uuid);
+    const flushPlayer = async () => {
+        if (!currentPlayer || currentUuid === undefined) return;
+        batch.push([currentUuid, JSON.stringify(currentPlayer.summary()), currentPlayer.maxId]);
+        currentPlayer = undefined;
         if (batch.length >= batchSize) await flush();
-    }
+    };
+    await streamRowBatches<any[]>(conn,
+        {sql: sourceRowsSql(insertTimeRangeSql(), "ORDER BY uuid ASC"), rowsAsArray: true},
+        insertTimeRangeValues(bucketStart(bucket), bucketStart(bucket + 1)),
+        sqlBatchSize,
+        async (rows) => {
+            lease.assertHeld();
+            rowCount += rows.length;
+            for (const row of rows) {
+                const uuid = row[0];
+                if (uuid === null) continue;
+                if (currentUuid !== uuid) {
+                    await flushPlayer();
+                    currentUuid = uuid;
+                    currentPlayer = new BucketAccumulator();
+                }
+                currentPlayer!.add(Number(row[1]), row, 3);
+            }
+            if (pacingDelayMs > 0) await pause(pacingDelayMs);
+        },
+    );
+    await flushPlayer();
     await flush();
     lease.assertHeld();
     return rowCount;
