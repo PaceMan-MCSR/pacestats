@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as pause } from "node:timers/promises";
 import mysql, { type Connection } from "mysql2/promise";
 import Redis from "ioredis";
 import dotenv from "dotenv";
@@ -13,6 +14,7 @@ import {
     scanKeys,
     setHashIfLeaseHeld,
     stageStringEntries,
+    streamRowBatches,
     type RedisLease,
     type StagedKey,
 } from "./cache-runtime";
@@ -33,6 +35,8 @@ import {
 } from "@/app/runHistory";
 
 dotenv.config({ path: ".env.local" });
+
+const pacingDelayMs = envInt("RECENT_PACING_DELAY_MS", 10, 0);
 
 const mysqlConfig = {
     host: process.env.DB_HOST,
@@ -84,7 +88,10 @@ const runColumns = `
 `;
 
 function recentFullScanMode(): "primary" | "uuid" {
-    return (process.env.RECENT_FULL_SCAN_MODE || "primary").toLowerCase() === "uuid" ? "uuid" : "primary";
+    // A primary-key scan keeps every encoded history in memory until the
+    // table ends. The uuid index lets us stage and release one player at a
+    // time; retain the primary scan only as an explicit operator override.
+    return (process.env.RECENT_FULL_SCAN_MODE || "uuid").toLowerCase() === "primary" ? "primary" : "uuid";
 }
 
 function csvEncodeRun(run: RunRow): string {
@@ -218,8 +225,6 @@ async function fullRebuildByUuid(
     let pending: Array<[string, string]> = [];
     let currentUuid: string | null = null;
     let currentRuns: string[] = [];
-    let lastUuid: string | null = null;
-    let lastId = 0;
     let rowCount = 0;
     let nextLogAt = 100_000;
 
@@ -237,21 +242,11 @@ async function fullRebuildByUuid(
         }
     };
 
-    while (true) {
+    await lease.verifyHeld();
+    await streamRowBatches<RunRow>(conn, {
+        sql: `SELECT ${runColumns} FROM pace FORCE INDEX (uuid) WHERE id <= ? ORDER BY uuid ASC, id ASC;`,
+    }, [maximumId], sqlBatchSize, async (rows) => {
         lease.assertHeld();
-        const where = lastUuid === null
-            ? "WHERE id <= ?"
-            : "WHERE id <= ? AND (uuid > ? OR (uuid = ? AND id > ?))";
-        const params = lastUuid === null
-            ? [maximumId]
-            : [maximumId, lastUuid, lastUuid, lastId];
-        const [rawRows] = await conn.execute(
-            `SELECT ${runColumns} FROM pace ${where} ORDER BY uuid ASC, id ASC LIMIT ${sqlBatchSize};`,
-            params,
-        );
-        const rows = rawRows as RunRow[];
-        if (rows.length === 0) break;
-
         for (const row of rows) {
             if (currentUuid !== null && row.uuid !== currentUuid) await flushPlayer();
             if (currentUuid === null) currentUuid = row.uuid;
@@ -259,14 +254,12 @@ async function fullRebuildByUuid(
             rowCount++;
         }
         const last = rows[rows.length - 1];
-        lastUuid = last.uuid;
-        lastId = last.id;
         if (rowCount >= nextLogAt) {
-            console.log(`Staged ${rowCount} run rows so far (through UUID ${lastUuid}).`);
+            console.log(`Staged ${rowCount} run rows so far (through UUID ${last.uuid}).`);
             nextLogAt += 100_000;
         }
-        if (rows.length < sqlBatchSize) break;
-    }
+        if (pacingDelayMs > 0) await pause(pacingDelayMs);
+    });
 
     await flushPlayer();
     staged.push(...await stageRunEntries(redis, pending, generation, redisBatchSize, stagingTtlSeconds));
@@ -828,6 +821,8 @@ async function main(): Promise<void> {
             overlapSeconds,
             redisBatchSize,
             uuidBatchSize,
+            sqlBatchSize,
+            pacingDelayMs,
             lease: lock,
         });
         phaseTimingsMs.combined = Date.now() - combinedStartedAt;

@@ -1,5 +1,6 @@
 import type { Connection } from "mysql2/promise";
 import type Redis from "ioredis";
+import { setTimeout as pause } from "node:timers/promises";
 import {
     BucketAccumulator,
     bucketOf,
@@ -18,7 +19,7 @@ import {
     insertTimeRangeSql,
     insertTimeRangeValues,
 } from "@/app/combinedSummary";
-import { scanKeys, setHashIfLeaseHeld, type RedisLease } from "./cache-runtime";
+import { scanKeys, setHashIfLeaseHeld, streamRowBatches, type RedisLease } from "./cache-runtime";
 
 /**
  * Maintains the per-player bucket summaries read by the combined endpoints
@@ -38,7 +39,7 @@ import { scanKeys, setHashIfLeaseHeld, type RedisLease } from "./cache-runtime";
 
 const splitColumns = combinedSplitCategories.join(", ");
 
-const sourceRowsSql = (where: string) => `
+const sourceRowsSql = (where: string, order = "") => `
     WITH window_rows AS (
         SELECT id, uuid, insertTime, nether, bastion, fortress, first_portal,
             stronghold, end, finish, obtainRod
@@ -46,7 +47,7 @@ const sourceRowsSql = (where: string) => `
         WHERE ${where}
     ), ${combinedSplitRowsSql("window_rows")}
     SELECT uuid, id, UNIX_TIMESTAMP(insertTime) AS instant, ${splitColumns}
-    FROM split_rows;`;
+    FROM split_rows ${order};`;
 
 const writeBucketScript = `
     if redis.call('GET', KEYS[1]) ~= ARGV[1] then
@@ -98,27 +99,36 @@ async function closeBucket(
     redis: Redis,
     bucket: number,
     batchSize: number,
+    sqlBatchSize: number,
     lease: RedisLease,
+    pacingDelayMs = 0,
 ): Promise<number> {
     await lease.verifyHeld();
-    const [rows] = await conn.execute(
+    const players = new Map<string, BucketAccumulator>();
+    let rowCount = 0;
+    await streamRowBatches<any[]>(conn,
         {sql: sourceRowsSql(insertTimeRangeSql()), rowsAsArray: true},
         insertTimeRangeValues(bucketStart(bucket), bucketStart(bucket + 1)),
-    ) as unknown as [any[][]];
-    const players = new Map<string, BucketAccumulator>();
-    for (const row of rows) {
-        const uuid = row[0];
-        if (uuid === null) continue;
-        let player = players.get(uuid);
-        if (!player) {
-            player = new BucketAccumulator();
-            players.set(uuid, player);
-        }
-        player.add(Number(row[1]), row, 3);
-    }
-    const entries = [...players];
-    for (let offset = 0; offset < entries.length; offset += batchSize) {
-        const batch = entries.slice(offset, offset + batchSize);
+        sqlBatchSize,
+        async (rows) => {
+            lease.assertHeld();
+            rowCount += rows.length;
+            for (const row of rows) {
+                const uuid = row[0];
+                if (uuid === null) continue;
+                let player = players.get(uuid);
+                if (!player) {
+                    player = new BucketAccumulator();
+                    players.set(uuid, player);
+                }
+                player.add(Number(row[1]), row, 3);
+            }
+            if (pacingDelayMs > 0) await pause(pacingDelayMs);
+        },
+    );
+    let batch: Array<[string, string, number]> = [];
+    const flush = async () => {
+        if (batch.length === 0) return;
         lease.assertHeld();
         await redis.eval(
             writeBucketScript,
@@ -127,11 +137,18 @@ async function closeBucket(
             ...batch.map(([uuid]) => combinedSummaryKey(uuid)),
             lease.token,
             String(bucket),
-            ...batch.flatMap(([, player]) => [JSON.stringify(player.summary()), String(player.maxId)]),
+            ...batch.flatMap(([, summary, maxId]) => [summary, String(maxId)]),
         );
+        batch = [];
+    };
+    for (const [uuid, player] of players) {
+        batch.push([uuid, JSON.stringify(player.summary()), player.maxId]);
+        players.delete(uuid);
+        if (batch.length >= batchSize) await flush();
     }
+    await flush();
     lease.assertHeld();
-    return rows.length;
+    return rowCount;
 }
 
 /** Rebuild every summarised bucket of these players. Returns the rows read. */
@@ -141,50 +158,63 @@ async function rebuildPlayers(
     uuids: string[],
     closedThrough: number,
     uuidBatchSize: number,
+    sqlBatchSize: number,
     lease: RedisLease,
+    pacingDelayMs = 0,
 ): Promise<number> {
     const closedEnd = bucketStart(closedThrough + 1);
     let rowCount = 0;
     for (let offset = 0; offset < uuids.length; offset += uuidBatchSize) {
         const batch = uuids.slice(offset, offset + uuidBatchSize);
         await lease.verifyHeld();
-        const [rows] = await conn.execute(
-            {
-                sql: sourceRowsSql(
-                    `uuid IN (${batch.map(() => "?").join(",")})
-                     AND insertTime < FROM_UNIXTIME(?) AND UNIX_TIMESTAMP(insertTime) < ?`,
-                ),
-                rowsAsArray: true,
-            },
-            [...batch, closedEnd + COMBINED_ZONE_SLACK_SECONDS, closedEnd],
-        ) as unknown as [any[][]];
-        rowCount += rows.length;
-        const players = new Map<string, Map<number, BucketAccumulator>>();
-        for (const row of rows) {
-            let buckets = players.get(row[0]);
-            if (!buckets) {
-                buckets = new Map();
-                players.set(row[0], buckets);
-            }
-            const bucket = bucketOf(Number(row[2]));
-            let accumulator = buckets.get(bucket);
-            if (!accumulator) {
-                accumulator = new BucketAccumulator();
-                buckets.set(bucket, accumulator);
-            }
-            accumulator.add(Number(row[1]), row, 3);
-        }
-        for (const uuid of batch) {
-            const buckets = players.get(uuid);
+        let currentUuid: string | undefined;
+        let buckets = new Map<number, BucketAccumulator>();
+        const missing = new Set(batch);
+        const flushPlayer = async (uuid: string) => {
             const fields: string[] = [];
             let maxId = 0;
-            for (const [bucket, accumulator] of buckets ?? []) {
+            for (const [bucket, accumulator] of buckets) {
                 fields.push(String(bucket), JSON.stringify(accumulator.summary()));
                 if (accumulator.maxId > maxId) maxId = accumulator.maxId;
             }
             if (fields.length > 0) fields.push(COMBINED_MAX_ID_FIELD, String(maxId));
             lease.assertHeld();
             await redis.eval(replacePlayerScript, 2, lease.key, combinedSummaryKey(uuid), lease.token, ...fields);
+            missing.delete(uuid);
+            buckets = new Map();
+        };
+        await streamRowBatches<any[]>(conn,
+            {
+                sql: sourceRowsSql(
+                    `uuid IN (${batch.map(() => "?").join(",")})
+                     AND insertTime < FROM_UNIXTIME(?) AND UNIX_TIMESTAMP(insertTime) < ?`,
+                    "ORDER BY uuid ASC",
+                ),
+                rowsAsArray: true,
+            },
+            [...batch, closedEnd + COMBINED_ZONE_SLACK_SECONDS, closedEnd],
+            sqlBatchSize,
+            async (rows) => {
+                lease.assertHeld();
+                rowCount += rows.length;
+                for (const row of rows) {
+                    if (currentUuid !== undefined && currentUuid !== row[0]) await flushPlayer(currentUuid);
+                    currentUuid = row[0];
+                    const bucket = bucketOf(Number(row[2]));
+                    let accumulator = buckets.get(bucket);
+                    if (!accumulator) {
+                        accumulator = new BucketAccumulator();
+                        buckets.set(bucket, accumulator);
+                    }
+                    accumulator.add(Number(row[1]), row, 3);
+                }
+                if (pacingDelayMs > 0) await pause(pacingDelayMs);
+            },
+        );
+        if (currentUuid !== undefined) await flushPlayer(currentUuid);
+        // A player whose last old run was removed must lose its summaries.
+        for (const uuid of missing) {
+            await flushPlayer(uuid);
         }
     }
     lease.assertHeld();
@@ -264,6 +294,8 @@ export async function refreshCombinedSummaries(
         overlapSeconds: number;
         redisBatchSize: number;
         uuidBatchSize: number;
+        sqlBatchSize: number;
+        pacingDelayMs: number;
         lease: RedisLease;
     },
 ): Promise<CombinedSummaryResult> {
@@ -297,19 +329,25 @@ export async function refreshCombinedSummaries(
         const [[first]] = await conn.query("SELECT UNIX_TIMESTAMP(MIN(insertTime)) AS firstSeconds FROM pace") as any;
         if (first.firstSeconds !== null) {
             for (let bucket = bucketOf(Number(first.firstSeconds)); bucket <= target; bucket++) {
-                rowCount += await closeBucket(conn, redis, bucket, options.redisBatchSize, lease);
+                rowCount += await closeBucket(
+                    conn, redis, bucket, options.redisBatchSize, options.sqlBatchSize, lease, options.pacingDelayMs,
+                );
                 closedBuckets++;
             }
         }
     } else {
         for (let bucket = previousClosed + 1; bucket <= target; bucket++) {
-            rowCount += await closeBucket(conn, redis, bucket, options.redisBatchSize, lease);
+            rowCount += await closeBucket(
+                conn, redis, bucket, options.redisBatchSize, options.sqlBatchSize, lease, options.pacingDelayMs,
+            );
             closedBuckets++;
         }
         const stale = await findStalePlayers(conn, redis, previousChecked, target);
         for (const uuid of options.deletedUuids) stale.add(uuid);
         rebuiltPlayers = stale.size;
-        rowCount += await rebuildPlayers(conn, redis, [...stale].sort(), target, options.uuidBatchSize, lease);
+        rowCount += await rebuildPlayers(
+            conn, redis, [...stale].sort(), target, options.uuidBatchSize, options.sqlBatchSize, lease, options.pacingDelayMs,
+        );
     }
 
     await setHashIfLeaseHeld(redis, COMBINED_STATE_KEY, {

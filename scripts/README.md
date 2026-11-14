@@ -9,7 +9,7 @@ publishing generation and health metadata for operations.
 - `npm run cache:refresh:full` builds the `9999day`/all-time caches. After the first run it recomputes only
   players whose rows changed (see below); `npm run cache:refresh:full -- --rebuild` forces a full rescan.
 - `npm run cache:runs` incrementally refreshes histories changed since the last successful watermark.
-- `npm run cache:runs:full` performs a primary-key history rebuild and removes stale history keys; UUID mode is the low-memory fallback.
+- `npm run cache:runs:full` streams histories in UUID/id order, staging and releasing one player at a time, and removes stale history keys.
 - `npm run cache:profile` reports cache metadata, Redis memory/slowlog data, MySQL plans, and page timings.
 - `npm run cache:benchmark:incremental` marks the busiest player dirty and times its cache-only history rebuild.
 - `npm run ws:start` starts the WebSocket invalidation service.
@@ -126,8 +126,12 @@ The jobs use renewable Redis leases:
 Keep the scheduler's own overlap policy set to `Forbid` as a second layer. A
 typical deployment runs the normal aggregate job and incremental history job
 frequently, with full jobs during a low-traffic window. The all-time aggregate
-still needs memory proportional to its largest source table/derived split set;
-measure its peak RSS before choosing the production schedule.
+streams pace and NPH rows through their UUID indexes and releases each player's
+derived split arrays once summarised. History rebuilds use the same bounded batches
+and player-at-a-time processing. Combined-summary jobs stream source rows and
+release each player's rebuilt buckets before continuing. Measure peak RSS
+before choosing the production schedule; the largest single player and the
+split arrays of a newly closed 30-day bucket still affect memory use.
 
 ## Configuration
 
@@ -141,7 +145,7 @@ All settings are optional unless noted:
 | `CACHE_REDIS_BATCH_SIZE` | 250 | Staging and cleanup batch size |
 | `CACHE_REDIS_PUBLISH_BATCH_SIZE` | 250 | Dynamic rename transaction size; tune against Redis p99 latency |
 | `CACHE_MANIFEST_BATCH_SIZE` | 1000 | Manifest set staging batch size |
-| `CACHE_SQL_BATCH_SIZE` | 5000 | Keyset page size for full aggregate source scans |
+| `CACHE_SQL_BATCH_SIZE` | 5000 | Stream batch/keyset page size for full aggregate source scans |
 | `CACHE_FULL_REBUILD_INTERVAL_SECONDS` | 604800 | Longest time between full all-time rescans |
 | `CACHE_FULL_INCREMENTAL_MAX_PLAYERS` | 2000 | Changed players above which the all-time job rescans everything |
 | `CACHE_FULL_WATERMARK_OVERLAP_SECONDS` | 300 | Overlap for the all-time job's change detection |
@@ -150,10 +154,11 @@ All settings are optional unless noted:
 | `CACHE_REDIS_COMMAND_TIMEOUT_MS` | 60000 | Per-command Redis timeout for cron jobs |
 | `CACHE_PLAYER_TTL_SECONDS` | 1209600 | Normal dynamic-key TTL (14 days) |
 | `CACHE_FULL_PLAYER_TTL_SECONDS` | 3888000 | Full dynamic-key TTL (45 days) |
-| `RECENT_SQL_BATCH_SIZE` | 5000 | Keyset query page size |
-| `RECENT_FULL_SCAN_MODE` | primary | `primary` is faster but retains compact encoded histories; `uuid` minimizes memory |
+| `RECENT_SQL_BATCH_SIZE` | 5000 | Stream batch/keyset query page size |
+| `RECENT_FULL_SCAN_MODE` | uuid | `uuid` streams one player's history at a time; explicit `primary` retains all encoded histories |
 | `RECENT_OUTBOX_BATCH_SIZE` | 500 | Durable invalidation read/acknowledgement batch size |
 | `RECENT_REDIS_BATCH_SIZE` | 25 | History Redis batch size |
+| `RECENT_PACING_DELAY_MS` | 10 | Pause between streamed SQL batches during history/combined rebuilds; 0 disables pacing |
 | `RECENT_UUID_BATCH_SIZE` | 50 | Changed players fetched together per incremental SQL scan |
 | `RECENT_INCREMENTAL_MAX_PLAYERS` | 1000 | Threshold that triggers a safe full rebuild |
 | `RECENT_INCREMENTAL_MAX_ROWS` | 250000 | History rows allowed before incremental work falls back to a full rebuild |
