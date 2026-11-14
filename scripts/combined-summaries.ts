@@ -247,17 +247,28 @@ async function findStalePlayers(
             lowestOpenId.set(row.uuid, Math.min(lowestOpenId.get(row.uuid) ?? Infinity, Number(row.id)));
         }
     }
-    const candidates = [...lowestOpenId].filter(([uuid]) => !stale.has(uuid));
-    if (candidates.length > 0) {
+    // Large watermark overlaps can touch every player. Keep Redis command and
+    // reply buffers bounded instead of queuing one pipeline for the whole set.
+    let candidates: Array<[string, number]> = [];
+    const flushCandidates = async () => {
+        if (candidates.length === 0) return;
         const pipeline = redis.pipeline();
         for (const [uuid] of candidates) pipeline.hget(combinedSummaryKey(uuid), COMBINED_MAX_ID_FIELD);
         const results = await pipeline.exec();
-        candidates.forEach(([uuid, lowestId], index) => {
+        for (let index = 0; index < candidates.length; index++) {
             const [error, maxId] = results![index];
             if (error) throw error;
+            const [uuid, lowestId] = candidates[index];
             if (lowestId <= Number(maxId ?? 0)) stale.add(uuid);
-        });
+        }
+        candidates = [];
+    };
+    for (const [uuid, lowestId] of lowestOpenId) {
+        if (stale.has(uuid)) continue;
+        candidates.push([uuid, lowestId]);
+        if (candidates.length === 500) await flushCandidates();
     }
+    await flushCandidates();
     // Rows deleted outside deleteRun are reported by the aggregate triggers.
     // Those entries are acknowledged by the all-time job, so go by their time.
     const [deletedRows] = await conn.execute(
