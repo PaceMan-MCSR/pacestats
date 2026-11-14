@@ -1715,20 +1715,44 @@ export const getAllUsers = async () => {
     return Object.values(nameMap);
 }
 
+type CompactUserIndexes = {
+    byNickname: Map<string, any | null>;
+    byTwitch: Map<string, any | null>;
+    byUuid: Map<string, any>;
+};
+const compactUserIndexes = new WeakMap<any[], CompactUserIndexes>();
+
+/** Rebuild once when the shared parsed Redis list changes, then use O(1) lookups. */
+const indexCompactUsers = (users: any[]): CompactUserIndexes => {
+    const known = compactUserIndexes.get(users);
+    if (known) return known;
+    const index: CompactUserIndexes = {byNickname: new Map(), byTwitch: new Map(), byUuid: new Map()};
+    for (const user of users) {
+        const nick = String(user.nick || "").toLocaleLowerCase();
+        index.byNickname.set(nick, index.byNickname.has(nick) ? null : user);
+        if (!index.byUuid.has(user.id)) index.byUuid.set(user.id, user);
+        // Repeated spellings inside one user's aliases still count as one
+        // match; ownership by two users must retain the SQL fallback.
+        if (Array.isArray(user.twitches) && user.twitches.length > 0) {
+            const aliases = new Set<string>(user.twitches.map((alias: unknown) => String(alias).toLocaleLowerCase()));
+            for (const alias of aliases) index.byTwitch.set(alias, index.byTwitch.has(alias) ? null : user);
+        }
+    }
+    compactUserIndexes.set(users, index);
+    return index;
+};
+
 export const getAllNamesByNick = async (nick: string) => {
     try {
         const normalizedNick = nick.toLocaleLowerCase();
         // Missing Redis must not enumerate all 3M runs merely to resolve one
         // nickname. Use a compact cached list only; SQL below reads one index entry.
         const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis");
-        const matches = (users as any[]).filter(
-            (candidate) => String(candidate.nick || "").toLocaleLowerCase() === normalizedNick
-        );
+        const user = indexCompactUsers(users).byNickname.get(normalizedNick);
         // Reused names can belong to multiple UUIDs. The compact cache does
         // not carry association IDs, so only use it when ownership is
         // unambiguous; SQL preserves the latest-association behavior.
-        if (matches.length === 1) {
-            const user = matches[0];
+        if (user) {
             const bans = await getCached(getBans, "getBans");
             return bans.includes(user.id) ? null : {nick: user.nick, uuid: user.id};
         }
@@ -1755,13 +1779,8 @@ export const getAllNamesByTwitch = async (twitch: string) => {
     try {
         const normalizedTwitch = twitch.toLocaleLowerCase();
         const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis");
-        const matches = (users as any[]).filter((candidate) =>
-            Array.isArray(candidate.twitches) && candidate.twitches.some(
-                (account: unknown) => String(account).toLocaleLowerCase() === normalizedTwitch
-            )
-        );
-        if (matches.length === 1) {
-            const user = matches[0];
+        const user = indexCompactUsers(users).byTwitch.get(normalizedTwitch);
+        if (user) {
             const bans = await getCached(getBans, "getBans");
             return bans.includes(user.id) ? null : {nick: user.nick, uuid: user.id};
         }
@@ -2042,7 +2061,7 @@ export const getAllUserInfo = async () => {
 export const getUserInfo = async (uuid: string) => {
     try {
         const users = await getCached(fetchAllUsersFromRedis, "fetchAllUsersFromRedis");
-        const user = users.find((candidate: any) => candidate.id === uuid);
+        const user = indexCompactUsers(users).byUuid.get(uuid);
         if (user && Object.prototype.hasOwnProperty.call(user, "displayName")) {
             return {
                 uuid,
