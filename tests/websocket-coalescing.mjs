@@ -11,6 +11,8 @@ const queue = new CoalescedBroadcasts((uuid,message) => {
     now:() => now,
     schedule:(run,delay) => {const id = ++nextId;timers.set(id,{run,due:now+delay});return id;},
     cancel:id => timers.delete(id),
+    defer:run => {const id = ++nextId;timers.set(id,{run,due:now});return id;},
+    cancelDefer:id => timers.delete(id),
 });
 const advance = to => {
     while(timers.size) {
@@ -33,6 +35,21 @@ advance(500);assert.equal(delivered.length,4);
 for(let i=0;i<10_000;i++) queue.add(`uuid-${i}`);
 assert.equal(timers.size,1);advance(600);assert.equal(delivered.length,10_004);assert.equal(timers.size,0);
 console.log('PASS: one shared timer preserves deadlines, duplicate coalescing, reload priority, reentrant delivery and shutdown cleanup');
+
+let wake, continuation, weight = 0, maxWeight = 0;
+const weighted = new CoalescedBroadcasts(() => {weight += 100;},0,{
+    now:()=>0,weightFor:()=>100,
+    schedule:callback => {wake = callback;return 1;},cancel:()=>{},
+    defer:callback => {continuation = callback;return 2;},cancelDefer:()=>{continuation = undefined;},
+});
+for(let i=0;i<100;i++) weighted.add(`group-${i}`);
+wake();maxWeight = weight;
+while(continuation) {const callback = continuation;continuation = undefined;weight = 0;callback();maxWeight = Math.max(maxWeight,weight);}
+assert.equal(weighted.pending.size,0);
+assert.equal(maxWeight,200,'Ten thousand subscribers are dispatched with bounded weighted callbacks');
+for(let i=0;i<100;i++) weighted.add(`clear-${i}`);
+wake();assert.ok(continuation);weighted.clear();assert.equal(continuation,undefined);
+console.log('PASS: weighted dispatch bounds default subscription fanout, yields between batches and cancels continuations');
 
 if(process.env.PERF_BENCHMARK === '1') {
     const kind = process.env.PERF_VARIANT ?? 'current';

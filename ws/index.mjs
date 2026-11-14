@@ -26,7 +26,9 @@ const allowedOrigins = new Set(
 
 const wss = new WebSocketServer({ port, maxPayload: 1024 });
 const clientsByUuid = new Map();
-const pendingBroadcasts = new CoalescedBroadcasts(broadcast, coalesceMs);
+const pendingBroadcasts = new CoalescedBroadcasts(broadcast, coalesceMs, {
+    weightFor: uuid => clientsByUuid.get(uuid)?.size || 1,
+});
 const heartbeat = new HeartbeatWheel();
 let subscriber = null;
 let shuttingDown = false;
