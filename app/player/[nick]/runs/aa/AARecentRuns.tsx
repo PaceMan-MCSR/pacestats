@@ -1,6 +1,6 @@
 'use client'
 
-import {useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
 import {formatIfNotNull} from "@/app/utils";
 
@@ -35,9 +35,15 @@ export default function AARecentRuns({uuid, initialPage}: { uuid: string, initia
     const [nextCursor, setNextCursor] = useState<number | null>(initialPage.nextCursor);
     const [loading, setLoading] = useState(false);
     const [failed, setFailed] = useState(false);
+    const request = useRef<AbortController | null>(null);
+
+    useEffect(() => () => request.current?.abort(), []);
 
     const loadMore = async () => {
-        if (loading || nextCursor === null) return;
+        // The ref also guards two clicks before React commits the disabled button.
+        if (request.current || nextCursor === null) return;
+        const controller = new AbortController();
+        request.current = controller;
         setLoading(true);
         setFailed(false);
         try {
@@ -46,15 +52,17 @@ export default function AARecentRuns({uuid, initialPage}: { uuid: string, initia
                 beforeId: String(nextCursor),
                 limit: String(PAGE_SIZE),
             });
-            const response = await fetch(`/stats/api/getAAPlayerRuns/?${params}`);
+            const response = await fetch(`/stats/api/getAAPlayerRuns/?${params}`, {signal: controller.signal});
             if (!response.ok) throw new Error(`Unable to load AA runs (${response.status})`);
             const page = await response.json() as AARunsPage;
+            if (controller.signal.aborted) return;
             setRuns((current) => [...current, ...page.rows]);
             setNextCursor(page.hasMore ? page.nextCursor : null);
         } catch {
-            setFailed(true);
+            if (!controller.signal.aborted) setFailed(true);
         } finally {
-            setLoading(false);
+            if (request.current === controller) request.current = null;
+            if (!controller.signal.aborted) setLoading(false);
         }
     };
 

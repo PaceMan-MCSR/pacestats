@@ -57,7 +57,7 @@ export default async function Page(
                         </Link>
                     </div>
                     <Suspense fallback={<div>Loading...</div>}>
-                        <AARecentRuns uuid={uuid} initialPage={initialPage}/>
+                    <AARecentRuns key={uuid} uuid={uuid} initialPage={initialPage}/>
                     </Suspense>
                 </div>
             </div>
