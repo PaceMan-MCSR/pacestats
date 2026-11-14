@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import dotenv from 'dotenv';
 import Redis from 'ioredis';
 import { WebSocket, WebSocketServer } from 'ws';
+import { CoalescedBroadcasts } from './coalesced-broadcasts.mjs';
 
 dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env.local' });
 
@@ -24,7 +25,7 @@ const allowedOrigins = new Set(
 
 const wss = new WebSocketServer({ port, maxPayload: 1024 });
 const clientsByUuid = new Map();
-const pendingBroadcasts = new Map();
+const pendingBroadcasts = new CoalescedBroadcasts(broadcast, coalesceMs);
 let subscriber = null;
 let shuttingDown = false;
 
@@ -64,20 +65,7 @@ function broadcast(uuid, message = 'refresh') {
 }
 
 function scheduleBroadcast(uuid, message = 'refresh') {
-    const existing = pendingBroadcasts.get(uuid);
-    if (existing) {
-        // A page reload is stronger than a data refresh, so retain it if either
-        // event in the coalescing window requests one.
-        if (message === 'reloadPage') existing.message = message;
-        return;
-    }
-    const pending = { message, timer: null };
-    pending.timer = setTimeout(() => {
-        pendingBroadcasts.delete(uuid);
-        broadcast(uuid, pending.message);
-    }, Math.max(0, coalesceMs));
-    pending.timer.unref();
-    pendingBroadcasts.set(uuid, pending);
+    pendingBroadcasts.add(uuid, message);
 }
 
 function parseRequestPath(requestUrl) {
@@ -199,7 +187,6 @@ async function shutdown(signal) {
     shuttingDown = true;
     console.log(`Received ${signal}; shutting down WebSocket server.`);
     clearInterval(heartbeatInterval);
-    for (const pending of pendingBroadcasts.values()) clearTimeout(pending.timer);
     pendingBroadcasts.clear();
     for (const clients of clientsByUuid.values()) {
         for (const ws of clients) ws.close(1001, 'Server shutting down');
