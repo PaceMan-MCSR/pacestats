@@ -17,7 +17,7 @@ try {
             const captured = new Map();
             let writes = 0;
             const connection = {connection: {query(options) {
-                assert.match(options.sql, /ORDER BY uuid ASC/);
+                assert.match(options.sql, /ORDER BY uuid ASC, BINARY uuid ASC/);
                 assert.equal(options.rowsAsArray, true);
                 assert.equal(options.values.length, 4);
                 return {stream() {return Readable.from(fixture);}};

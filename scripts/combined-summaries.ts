@@ -135,7 +135,9 @@ async function closeBucket(
         if (batch.length >= batchSize) await flush();
     };
     await streamRowBatches<any[]>(conn,
-        {sql: sourceRowsSql(insertTimeRangeSql(), "ORDER BY uuid ASC"), rowsAsArray: true},
+        // Distinct strings must stay contiguous even under a case-insensitive
+        // UUID column collation; the accumulator groups by exact string value.
+        {sql: sourceRowsSql(insertTimeRangeSql(), "ORDER BY uuid ASC, BINARY uuid ASC"), rowsAsArray: true},
         insertTimeRangeValues(bucketStart(bucket), bucketStart(bucket + 1)),
         sqlBatchSize,
         async (rows) => {
