@@ -354,6 +354,44 @@ const parseRedisJsonArray = (value: unknown): any[] => {
     return Array.isArray(parsed) ? parsed : [];
 };
 
+type BoardBranch = {filter: CategoryType; category: string; minimumQty: number};
+
+/** Batch independent sorted branches while keeping each filtered scan bounded. */
+const readBoardPrefixes = async (key: string, branches: BoardBranch[], limit: number) => {
+    const result: Record<number, Record<string, any[]>> = {};
+    let pending = branches.map(({filter, category, minimumQty}) => {
+        const selected: any[] = [];
+        (result[filter] ??= {})[category] = selected;
+        return {path: `$.${filter}.${category}`, minimumQty, selected, offset: 0,
+            size: minimumQty > 0 ? Math.min(256, Math.max(32, limit * 2)) : limit};
+    });
+    if (limit === 0) return result;
+    while (pending.length > 0) {
+        const paths = pending.map(({path, offset, size}) => `${path}[${offset}:${offset + size}]`);
+        const raw = await redis.call("JSON.GET", key, ...paths);
+        if (!raw) throw new CacheNotReadyError();
+        const parsed = JSON.parse(String(raw));
+        const unfinished: typeof pending = [];
+        for (let index = 0; index < pending.length; index++) {
+            const branch = pending[index];
+            // RedisJSON returns an array for one path, an object for many.
+            const rows = paths.length === 1 ? parsed : parsed[paths[index]];
+            if (!Array.isArray(rows)) continue;
+            for (const row of rows) {
+                if (branch.minimumQty <= 0 || row.qty >= branch.minimumQty) branch.selected.push(row);
+                if (branch.selected.length === limit) break;
+            }
+            if (branch.selected.length < limit && rows.length === branch.size) {
+                branch.offset += rows.length;
+                branch.size = Math.min(1_024, branch.size * 2);
+                unfinished.push(branch);
+            }
+        }
+        pending = unfinished;
+    }
+    return result;
+};
+
 /**
  * Read only the requested leaderboard branch from RedisJSON. The lifetime
  * aggregate is several megabytes serialized, so loading the root document to
@@ -665,24 +703,20 @@ async function fetchTopLeaderboardsFromRedis(days = 30) {
     if (jsonString) return JSON.parse(String(jsonString))[0];
     // Recover an expired compact board from its authoritative generated root.
     // The fallback reads bounded sorted prefixes, not all players or SQL rows.
-    if (!await redis.exists(`leaderboards:${days}day`)) throw new CacheNotReadyError();
-    const result: Record<number, Record<string, any[]>> = {};
-    for (const filter of [CategoryType.COUNT, CategoryType.AVG, CategoryType.FASTEST, CategoryType.CONVERSION]) {
-        result[filter] = {};
-        for (const category of leaderboardCategoryNames) {
-            result[filter][category] = await getCached(
-                fetchLeaderboardCategoryFromRedis, "fetchLeaderboardCategoryFromRedis",
-                days, category, filter, 10, getMinQty(category, days)
-            );
-        }
-    }
+    const result = await readBoardPrefixes(`leaderboards:${days}day`,
+        [CategoryType.COUNT, CategoryType.AVG, CategoryType.FASTEST, CategoryType.CONVERSION].flatMap((filter) =>
+            leaderboardCategoryNames.map((category) => ({filter, category,
+                minimumQty: filter === CategoryType.AVG || filter === CategoryType.CONVERSION ? getMinQty(category, days) : 0}))), 10);
     // Fastest times link to a run. Merge those IDs when the companion
     // document exists; an independently missing companion keeps safe stats.
-    if (await redis.exists(`fastestLeaderboards:${days}day`)) {
-        const fastest = await fetchFastestLeaderboardsFromRedis(days, 10);
+    const paths = leaderboardCategoryNames.map((category) => `$.${category}[0:10]`);
+    const storedFastest = await redis.call("JSON.GET", `fastestLeaderboards:${days}day`, ...paths);
+    if (storedFastest) {
+        const parsed = JSON.parse(String(storedFastest));
         for (const category of leaderboardCategoryNames) {
             const details = new Map(result[CategoryType.FASTEST][category].map((entry) => [entry.uuid, entry]));
-            result[CategoryType.FASTEST][category] = fastest[category].map((entry: any) => ({...details.get(entry.uuid), ...entry}));
+            const fastest = parsed[`$.${category}[0:10]`] ?? [];
+            result[CategoryType.FASTEST][category] = fastest.map((entry: any) => ({...details.get(entry.uuid), ...entry}));
         }
     }
     return result;
