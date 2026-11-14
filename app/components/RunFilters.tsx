@@ -1,14 +1,12 @@
 'use client'
 
 import React, { useState } from "react";
-import dynamic from "next/dynamic";
 import { Collapse } from "@/app/components/HoverTooltip";
+import RunFiltersPanel from "@/app/components/RunFiltersPanel";
 
-// Keep even the small filter form off the initial run-history path.
-const RunFiltersPanel = dynamic(() => import("@/app/components/RunFiltersPanel"), {
-    ssr: false,
-    loading: () => <p style={{margin: "15px 0"}}>Loading filters...</p>,
-});
+// The native form is only a few KB. Share the history route's download so
+// opening it needs no script/stylesheet round trip. Collapse still defers
+// mounting the controls until they are used.
 
 export default function RunFilters({bf, filters, setFilters}: {bf: boolean, filters: any[], setFilters: (filters: any[]) => void}) {
     const [toggled, setToggled] = useState(false);
