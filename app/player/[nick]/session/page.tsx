@@ -2,7 +2,7 @@ import {
     getCached,
     getAllNamesByNick,
     getAllNamesByTwitch,
-    getTwitchAccounts, getNPH, isTwitchLive, getSessionStats,
+    getNPH, getSessionStats,
 } from "@/app/data";
 import Link from "next/link";
 import {fixDisplayName} from "@/app/utils";
@@ -71,16 +71,9 @@ export default async function Page(
     const uuid = names.uuid
 
     // Independent reads: start them together instead of one after another.
-    const [session, nph, twitches] = await Promise.all([
+    const [session, nph] = await Promise.all([
         getCached(getSessionStats, "getSessionStats", uuid, hours, hoursBetween),
         getCached(getNPH, "getNPH", uuid, hours, hoursBetween),
-        getCached(getTwitchAccounts, "getTwitchAccounts", uuid) as Promise<{ twitch: string, time: number }[]>,
     ])
-    let t = [];
-    if(twitches !== null) {
-        t = await Promise.all(twitches.map(async (t): Promise<any> => {
-            return {twitch: t.twitch, time: t.time, live: await getCached(isTwitchLive, "isTwitchLive", t.twitch)}
-        }));
-    }
-    return <SessionPage name={realNick} uuid={uuid} twitches={t} nph={nph} data={session} hours={hours} hoursBetween={hoursBetween} />
+    return <SessionPage name={realNick} uuid={uuid} nph={nph} data={session} hours={hours} hoursBetween={hoursBetween} />
 }

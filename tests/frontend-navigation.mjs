@@ -119,6 +119,14 @@ try {
     await rangeReady(touchPage, 9999);
     console.log('PASS: touch range changes complete and release pending state');
     await touchContext.close();
+    await page.goto(url(`player/${player}/session/`), {waitUntil: 'domcontentloaded'});
+    for (const category of ['Nether Enters', 'First Portal', 'Stronghold', 'End Enter']) {
+        await page.getByRole('heading', {name: category, exact: true}).waitFor();
+    }
+    await hydratedRange(page);
+    await page.getByRole('heading', {name: 'Nether Enters', exact: true}).click();
+    await page.getByText('24h/3h', {exact: true}).waitFor();
+    console.log('PASS: session profile renders all four session cards and hydrates screenshot interactions');
     await context.close();
 
     if (process.env.PERF_COLD_BASE_URL) {
