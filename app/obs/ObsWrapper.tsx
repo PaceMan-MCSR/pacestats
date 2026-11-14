@@ -8,6 +8,7 @@ import SessionNethers from "@/app/obs/sessionNethers/[nick]/SessionNethers";
 import Session from "@/app/obs/session/[nick]/Session";
 import MaterialIcon from "@/app/components/MaterialIcon";
 import FontPicker from "@/app/obs/FontPicker";
+import {useFrameState} from './useFrameState';
 
 const SessionPreview = memo(Session);
 const NethersPreview = memo(SessionNethers);
@@ -25,7 +26,7 @@ const ColorInput = lazyLoad(() => import("@/app/obs/ObsColorPicker").then((modul
 
 export default function ObsWrapper() {
     const [search, setSearch] = useState("")
-    const [color, setColor] = useState("#000000")
+    const [color, colorUpdate] = useFrameState("#000000")
     const [hours, setHours] = useState(24)
     const [hoursBetween, setHoursBetween] = useState(2)
 
@@ -129,13 +130,13 @@ export default function ObsWrapper() {
                             <button style={{display: hours !== bufferedHours || hoursBetween !== bufferedHoursBetween ? "block" : "none"}} className="btn btn-primary" onClick={pushHours}>Preview updated hours</button>
                             <FontPicker output={setFont}/>
                         </div>
-                        <div className="colorSection col-5 col-xl-5 col-xxl-4">
+                        <div className="colorSection col-5 col-xl-5 col-xxl-4" onPointerUpCapture={colorUpdate.flush}>
                             <label>Text color:</label>
                             <div className="colorPicker">
-                                <ColorPicker color={color} onChange={setColor} />
+                                <ColorPicker color={color} onChange={colorUpdate.schedule} />
                             </div>
                             <div className="colorPickerInput">
-                                <ColorInput color={color} onChange={setColor} />
+                                <ColorInput color={color} onChange={colorUpdate.immediately} />
                             </div>
                         </div>
                     </div>
