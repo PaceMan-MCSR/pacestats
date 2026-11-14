@@ -24,6 +24,7 @@ try {
         page.on('pageerror', error => errors.push(error.message));
         const client = await context.newCDPSession(page);
         await client.send('Network.enable');
+        await client.send('Performance.enable');
         await client.send('Network.emulateNetworkConditions', {offline: false, latency: 300, downloadThroughput: 10_000_000 / 8, uploadThroughput: 5_000_000 / 8});
         await client.send('Emulation.setCPUThrottlingRate', {rate: 4});
         await page.addInitScript(() => {
@@ -47,10 +48,11 @@ try {
                 decodedBytes: resources.reduce((total, entry) => total + entry.decodedBodySize, 0),
                 scriptBytes: resources.filter(entry => entry.initiatorType === 'script').reduce((total, entry) => total + entry.decodedBodySize, 0),
                 longTaskMs: window.__tasks.slice(before.tasks).reduce((total, value) => total + value, 0),
-                heapMiB: performance.memory?.usedJSHeapSize / 1048576,
             };
         }, before);
-        results.push({sample: sample + 1, readyMs, ...observation});
+        const metrics = (await client.send('Performance.getMetrics')).metrics;
+        const heapMiB = (metrics.find(metric => metric.name === 'JSHeapUsedSize')?.value ?? 0) / 1048576;
+        results.push({sample: sample + 1, readyMs, ...observation, heapMiB});
         if (sample === 2) await page.screenshot({path: output.replace(/\.json$/, '.png'), fullPage: true});
         await context.close();
     }

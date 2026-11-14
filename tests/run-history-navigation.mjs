@@ -93,7 +93,7 @@ try {
     await page.getByRole('button', {name: 'Retry run history', exact: true}).click();
     assert.equal((await recovered).status(), 200);
     await settled();
-    await page.getByRole('alert').waitFor({state: 'detached'});
+    await page.getByRole('alert').filter({hasText: 'Could not load run history.'}).waitFor({state: 'detached'});
     console.log('PASS: failed run-history requests expose Retry and recover without reloading the page');
     assert.deepEqual(errors, []);
 } catch (error) {
