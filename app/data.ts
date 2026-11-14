@@ -3332,20 +3332,39 @@ export const searchPlayers = async (query: string, limit: number = 8): Promise<P
     if (normalizedQuery.length < 2) return [];
     const safeLimit = boundedInteger(limit, 8, 1, 20);
     const users = await getCached(getAllUsers, "getAllUsers");
-    const matches = searchIndexFor(users as any[])
-        .map(({user, name, normalizedName, aliases}) => {
-            let score = Number.POSITIVE_INFINITY;
-            if (normalizedName === normalizedQuery) score = 0;
-            else if (normalizedName.startsWith(normalizedQuery)) score = 1;
-            else if (aliases.some((alias: string) => alias === normalizedQuery)) score = 2;
-            else if (aliases.some((alias: string) => alias.startsWith(normalizedQuery))) score = 3;
-            else if (normalizedName.includes(normalizedQuery)) score = 4;
-            else if (aliases.some((alias: string) => alias.includes(normalizedQuery))) score = 5;
-            return {user, name, score};
-        })
-        .filter(({score}) => Number.isFinite(score))
-        .sort((left, right) => left.score - right.score || left.name.localeCompare(right.name))
-        .slice(0, safeLimit);
+    const matches: {user: any; name: string; score: number}[] = [];
+    for (const {user, name, normalizedName, aliases} of searchIndexFor(users as any[])) {
+        let score = Number.POSITIVE_INFINITY;
+        if (normalizedName === normalizedQuery) score = 0;
+        else if (normalizedName.startsWith(normalizedQuery)) score = 1;
+        else {
+            if (normalizedName.includes(normalizedQuery)) score = 4;
+            for (const alias of aliases) {
+                if (alias === normalizedQuery) {score = 2; break;}
+                if (alias.startsWith(normalizedQuery)) score = Math.min(score, 3);
+                else if (score > 5 && alias.includes(normalizedQuery)) score = 5;
+            }
+        }
+        if (!Number.isFinite(score)) continue;
+        const worst = matches[matches.length - 1];
+        if (matches.length === safeLimit && (score > worst.score ||
+            (score === worst.score && name.localeCompare(worst.name) >= 0))) continue;
+        let low = 0, high = matches.length;
+        while (low < high) {
+            const middle = (low + high) >>> 1;
+            const other = matches[middle];
+            const order = score - other.score || name.localeCompare(other.name);
+            if (order < 0) high = middle;
+            else low = middle + 1; // Keep the original order of exact ties.
+        }
+        // Retain and reuse at most20 candidate objects. The previous search
+        // allocated one score object per player, sorted every match, then
+        // discarded all but eight entries on every new search query.
+        const match = matches.length === safeLimit ? matches.pop()! : {user, name, score};
+        match.user = user; match.name = name; match.score = score;
+        for (let index = matches.length; index > low; index--) matches[index] = matches[index - 1];
+        matches[low] = match;
+    }
 
     let userInfoByUuid = new Map<string, any>();
     if (matches.some(({user}) => !Object.prototype.hasOwnProperty.call(user, "displayName"))) {
