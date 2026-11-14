@@ -3,7 +3,7 @@ import {
     getAllNamesByNick,
     getAllNamesByTwitch,
     getPlayerRuns,
-    getAllUserInfo, fetchPlayerStatsFromRedis, fetchTwitchesFromRedis, fetchNphFromRedis,
+    getUserInfo, fetchPlayerStatsFromRedis, fetchTwitchesFromRedis, fetchNphFromRedis,
 } from "@/app/data";
 import Link from "next/link";
 import {fixDisplayName} from "@/app/utils";
@@ -79,12 +79,14 @@ export default async function Page(
     const uuid = names.uuid
 
     // Independent reads: start them together instead of one after another.
-    const [data, recentRuns, nph, users, twitches] = await Promise.all([
+    const [data, recentRuns, nph, playerUser, twitches] = await Promise.all([
         fetchPlayerStatsFromRedis(uuid, days),
         getCached(getPlayerRuns, "getPlayerRuns", uuid, 4),
         fetchNphFromRedis(uuid, days),
-        getCached(getAllUserInfo, "getAllUserInfo"),
+        getCached(getUserInfo, "getUserInfo", uuid),
         fetchTwitchesFromRedis(uuid),
     ]);
-    return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} twitches={twitches} nph={nph} data={data} days={days} bf={bastionFort} users={users} />
+    // The profile only renders this player's customization. Search resolves
+    // its own results, so other players do not need to cross the client boundary.
+    return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRuns} twitches={twitches} nph={nph} data={data} days={days} bf={bastionFort} users={playerUser ? [playerUser] : []} />
 }
