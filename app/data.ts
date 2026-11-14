@@ -43,6 +43,7 @@ const DEFAULT_DB_POOL_SIZE = 10;
 const DEFAULT_DB_POOL_QUEUE_LIMIT = 500;
 const DEFAULT_CACHE_MAX_KEYS = 2_000;
 const DEFAULT_CACHE_MAX_ARRAY_ROWS = 25_000;
+const DEFAULT_CACHE_MAX_TOTAL_ROWS = 250_000;
 const MAX_LOOKBACK_DAYS = 9_999;
 const MAX_STATS_ROWS_PER_PLAYER = 100_000;
 const MAX_SESSION_ROWS = 10_000;
@@ -73,6 +74,9 @@ type PaceStatsRuntime = typeof globalThis & {
     __paceStatsCache?: NodeCache;
     __paceStatsCacheAccess?: Map<string, number>;
     __paceStatsCacheListenersRegistered?: boolean;
+    __paceStatsCacheRowWeights?: Map<string, number>;
+    __paceStatsCacheRows?: number;
+    __paceStatsCacheRowListenersRegistered?: boolean;
     __paceStatsPromiseCache?: Map<string, Promise<unknown>>;
     __paceStatsDbPool?: mysql.Pool;
     __paceStatsRedis?: Redis;
@@ -115,6 +119,7 @@ const cacheMaxArrayRows = boundedEnvInteger(
     1_000,
     250_000
 );
+const cacheMaxTotalRows = boundedEnvInteger(process.env.DATA_CACHE_MAX_TOTAL_ROWS, DEFAULT_CACHE_MAX_TOTAL_ROWS, 1_000, 5_000_000);
 const dbPoolSize = boundedEnvInteger(process.env.DB_POOL_SIZE, DEFAULT_DB_POOL_SIZE, 1, 30);
 const dbAcquireTimeoutMs = boundedEnvInteger(process.env.DB_POOL_ACQUIRE_TIMEOUT_MS, 5_000, 250, 60_000);
 const dbQueryTimeoutMs = boundedEnvInteger(process.env.DB_QUERY_TIMEOUT_MS, 30_000, 1_000, 300_000);
@@ -2186,10 +2191,55 @@ const resolveCacheTtl = (funcName: string, args: unknown[]) => {
     return configuredTtl[normalizedRange] ?? configuredTtl[String(rawRange)] ?? configuredTtl.default;
 };
 
-const makeRoomInCache = (incomingKey: string) => {
-    if (cache.has(incomingKey) || cache.getStats().keys < cacheMaxKeys) return;
+/** Count table/board rows without traversing every field of every row. */
+const cacheResultRows = (result: unknown): number => {
+    let rows = 0;
+    const pending = [result];
+    const visited = new Set<object>();
+    while (pending.length > 0) {
+        const value = pending.pop();
+        if (value === null || typeof value !== "object" || visited.has(value)) continue;
+        visited.add(value);
+        if (Array.isArray(value)) {
+            rows += value.length;
+            // Rows are atomic here: do not allocate/traverse thousands of
+            // entry objects merely to enforce a memory budget.
+            if (rows > cacheMaxArrayRows || rows > cacheMaxTotalRows) return rows;
+        } else {
+            pending.push(...Object.values(value));
+        }
+    }
+    return rows;
+};
 
-    const entriesToRemove = Math.max(1, Math.ceil(cacheMaxKeys * 0.1));
+const cacheRowWeights = runtime.__paceStatsCacheRowWeights ?? new Map<string, number>();
+runtime.__paceStatsCacheRowWeights = cacheRowWeights;
+if (runtime.__paceStatsCacheRows === undefined) {
+    runtime.__paceStatsCacheRows = 0;
+    for (const key of cache.keys()) {
+        const rows = cacheResultRows(cache.get(key));
+        cacheRowWeights.set(key, rows);
+        runtime.__paceStatsCacheRows += rows;
+    }
+}
+if (!runtime.__paceStatsCacheRowListenersRegistered) {
+    cache.on("del", (key) => {
+        runtime.__paceStatsCacheRows = Math.max(0, (runtime.__paceStatsCacheRows ?? 0) - (cacheRowWeights.get(String(key)) ?? 0));
+        cacheRowWeights.delete(String(key));
+    });
+    cache.on("flush", () => {
+        cacheRowWeights.clear();
+        runtime.__paceStatsCacheRows = 0;
+    });
+    runtime.__paceStatsCacheRowListenersRegistered = true;
+}
+
+const makeRoomInCache = (incomingKey: string, incomingRows: number) => {
+    if (cache.has(incomingKey)) return;
+    const keysFull = cache.getStats().keys >= cacheMaxKeys;
+    if (!keysFull && (runtime.__paceStatsCacheRows ?? 0) + incomingRows <= cacheMaxTotalRows) return;
+
+    const entriesToRemove = keysFull ? Math.max(1, Math.ceil(cacheMaxKeys * 0.1)) : 0;
     // node-cache drops an expired entry only when it is read or at its
     // periodic check, so most of a full cache is usually dead short-TTL
     // entries. Remove those first; evicting by age alone throws away live
@@ -2213,10 +2263,14 @@ const makeRoomInCache = (incomingKey: string) => {
         cache.del(victims);
         for (const key of victims) cacheAccess.delete(key);
     }
+    // Limit the total retained rows as well as individual entries. A page
+    // object ({rows:[...]}) formerly bypassed the array cap, and up to2,000
+    // individually valid arrays could retain tens of millions of objects.
+    for (const key of cacheAccess.keys()) {
+        if ((runtime.__paceStatsCacheRows ?? 0) + incomingRows <= cacheMaxTotalRows) break;
+        cache.del(key);
+    }
 };
-
-const shouldCacheResult = (result: unknown) =>
-    !Array.isArray(result) || result.length <= cacheMaxArrayRows;
 
 /** Moves a key to the recently-used end; the value is when its entry expires. */
 const touchCacheKey = (key: string, expiresAt?: number) => {
@@ -2266,14 +2320,17 @@ export const getCached = async <T>(
         const ttl = resolveCacheTtl(funcName, args);
 
         // 8. Store the final result in the main data cache
-        if (shouldCacheResult(result)) {
-            makeRoomInCache(key);
+        const resultRows = cacheResultRows(result);
+        if (resultRows <= cacheMaxArrayRows && resultRows <= cacheMaxTotalRows) {
+            makeRoomInCache(key, resultRows);
             try {
                 if (ttl === undefined) {
                     cache.set(key, result);
                 } else {
                     cache.set(key, result, ttl);
                 }
+                runtime.__paceStatsCacheRows = (runtime.__paceStatsCacheRows ?? 0) + resultRows - (cacheRowWeights.get(key) ?? 0);
+                cacheRowWeights.set(key, resultRows);
                 touchCacheKey(key, Date.now() + (ttl ?? DEFAULT_CACHE_TTL_SECONDS) * 1_000);
             } catch (error) {
                 // A full local cache must never turn a successful database/Redis read into a 500.
