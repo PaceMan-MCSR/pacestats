@@ -12,7 +12,6 @@ export default function SessionPage({name, uuid, nph, data, hours, hoursBetween}
     hours: number,
     hoursBetween: number,
 }) {
-    const skinUrl = "https://mc-api.io/render/FULL/" + uuid
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
     const days = 0;
     return (<main className="main playerStats">
@@ -52,7 +51,7 @@ export default function SessionPage({name, uuid, nph, data, hours, hoursBetween}
                     <SessionStat category="End Enter" data={data["end"]} headUrl={headUrl} name={name} hours={hours} hoursBetween={hoursBetween}/>
                 </div>
                 <div className="col-sm-12 col-md-6 col-xl-4 col-xxl-3">
-                    <Stat category="Finish" data={data["finish"]} headUrl={headUrl} name={name} days={days}/>
+                    <SessionStat category="Finish" data={data["finish"]} headUrl={headUrl} name={name} hours={hours} hoursBetween={hoursBetween}/>
                 </div>
             </div>
         </div>
