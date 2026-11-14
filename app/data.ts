@@ -2266,8 +2266,14 @@ const serializeCacheArgument = (value: unknown): unknown => {
     return value;
 };
 
-const makeCacheKey = (funcName: string, args: unknown[]) =>
-    JSON.stringify([funcName, ...args.map(normalizeCacheKeyArgument).map(serializeCacheArgument)]);
+const makeCacheKey = (funcName: string, args: unknown[]) => {
+    const parts = new Array<unknown>(args.length + 1);
+    parts[0] = funcName;
+    for (let index = 0; index < args.length; index++) {
+        parts[index + 1] = serializeCacheArgument(normalizeCacheKeyArgument(args[index]));
+    }
+    return JSON.stringify(parts);
+};
 
 // SQL interval units are case-insensitive, so normalize this common form before
 // constructing a key. This lets callers using "30 DAY" and "30 day" share an
@@ -2388,10 +2394,13 @@ export const getCached = async <T>(
     const key = makeCacheKey(funcName, args);
 
     // 2. Check the main data cache first for a valid, non-expired result
-    if (cache.has(key)) {
+    const cached = cache.get<T>(key);
+    // node-cache permits storing undefined; retain that distinction without
+    // a second expiry/key lookup on the ordinary defined-value hit path.
+    if (cached !== undefined || cache.has(key)) {
         touchCacheKey(key);
         //console.log(`[CACHE HIT] Returning data for key: ${key}`);
-        return cache.get(key) as T;
+        return cached;
     }
 
     // 3. Check if another request for the same key is already in-flight
