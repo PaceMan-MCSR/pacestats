@@ -5,8 +5,8 @@
 // with a tooltip. These render Bootstrap's own tooltip markup, so the
 // existing tooltip classes in main.css keep working.
 
-import {cloneElement, useCallback, useEffect, useLayoutEffect, useRef, useState} from "react";
-import type {ReactElement, ReactNode} from "react";
+import {useCallback, useEffect, useLayoutEffect, useRef, useState} from "react";
+import type {ReactElement, ReactNode, SyntheticEvent} from "react";
 import {createPortal} from "react-dom";
 
 type TooltipProps = {className?: string, children?: ReactNode};
@@ -29,8 +29,9 @@ export function OverlayTrigger({overlay, delay, children}: {
 }) {
     const [open, setOpen] = useState(false);
     const [position, setPosition] = useState<Position | null>(null);
-    // The trigger element, kept in state so cloneElement can take the setter as its ref.
-    const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+    // Capture the anchor only on interaction. A ref callback in state made
+    // every closed tooltip render twice while its page was hydrating.
+    const anchor = useRef<Element | null>(null);
     const tip = useRef<HTMLDivElement | null>(null);
     const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -52,8 +53,8 @@ export function OverlayTrigger({overlay, delay, children}: {
         if (!open) return;
         const place = () => {
             const bubble = tip.current;
-            if (!anchor || !bubble) return;
-            const rect = anchor.getBoundingClientRect();
+            if (!anchor.current || !bubble) return;
+            const rect = anchor.current.getBoundingClientRect();
             const width = bubble.offsetWidth;
             const height = bubble.offsetHeight;
             const centre = rect.left + rect.width / 2;
@@ -69,34 +70,35 @@ export function OverlayTrigger({overlay, delay, children}: {
                 below,
             });
         };
+        let frame = 0;
+        const schedulePlace = () => {
+            if (frame) return;
+            frame = requestAnimationFrame(() => { frame = 0; place(); });
+        };
         place();
-        window.addEventListener("scroll", place, true);
-        window.addEventListener("resize", place);
+        window.addEventListener("scroll", schedulePlace, true);
+        window.addEventListener("resize", schedulePlace);
         return () => {
-            window.removeEventListener("scroll", place, true);
-            window.removeEventListener("resize", place);
+            cancelAnimationFrame(frame);
+            window.removeEventListener("scroll", schedulePlace, true);
+            window.removeEventListener("resize", schedulePlace);
             setPosition(null);
         };
-    }, [open, anchor]);
+    }, [open]);
 
-    // Listen on the element itself, which leaves the child's own handlers alone.
-    useEffect(() => {
-        if (!anchor) return;
-        const show = () => schedule(true, showDelay);
-        const hide = () => schedule(false, hideDelay);
-        anchor.addEventListener("mouseenter", show);
-        anchor.addEventListener("mouseleave", hide);
-        anchor.addEventListener("focusin", show);
-        anchor.addEventListener("focusout", hide);
-        return () => {
-            anchor.removeEventListener("mouseenter", show);
-            anchor.removeEventListener("mouseleave", hide);
-            anchor.removeEventListener("focusin", show);
-            anchor.removeEventListener("focusout", hide);
-        };
-    }, [anchor, schedule, showDelay, hideDelay]);
-
-    const trigger = cloneElement(children, {ref: setAnchor});
+    const show = (event: SyntheticEvent<Element>) => {
+        anchor.current = event.currentTarget;
+        schedule(true, showDelay);
+    };
+    // React delegates these events at the page root, avoiding four native
+    // listeners per timestamp/header. Keep the child's handlers and ref.
+    const Trigger = children.type;
+    const trigger = <Trigger {...children.props} key={children.key}
+        onMouseEnter={(event: SyntheticEvent<Element>) => { children.props.onMouseEnter?.(event); show(event); }}
+        onMouseLeave={(event: SyntheticEvent<Element>) => { children.props.onMouseLeave?.(event); schedule(false, hideDelay); }}
+        onFocus={(event: SyntheticEvent<Element>) => { children.props.onFocus?.(event); show(event); }}
+        onBlur={(event: SyntheticEvent<Element>) => { children.props.onBlur?.(event); schedule(false, hideDelay); }}
+    />;
 
     // Whole class names, so scripts/trim-bootstrap.mjs finds them in this file.
     const sideClass = position?.below ? "bs-tooltip-bottom" : "bs-tooltip-top";

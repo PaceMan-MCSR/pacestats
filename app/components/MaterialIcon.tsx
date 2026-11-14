@@ -1,4 +1,4 @@
-import type {CSSProperties} from "react";
+import type {ComponentProps} from "react";
 
 const paths = {
     menu: "M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z",
@@ -9,12 +9,10 @@ const paths = {
     help: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.25-.9.92C13.45 13.4 13 14 13 15h-2v-.5c0-.8.45-1.55 1.17-2.27l1.24-1.26c.37-.36.59-.86.59-1.37a2 2 0 0 0-4 0H8a4 4 0 0 1 8 0c0 .88-.36 1.68-.93 2.15z",
 } as const;
 
-export default function MaterialIcon({icon, className, style}: {
+export default function MaterialIcon({icon, className, ...props}: ComponentProps<"svg"> & {
     icon: keyof typeof paths,
-    className?: string,
-    style?: CSSProperties,
 }) {
-    return <svg className={className ? `materialIcon ${className}` : "materialIcon"} style={style} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    return <svg className={className ? `materialIcon ${className}` : "materialIcon"} viewBox="0 0 24 24" aria-hidden="true" focusable="false" {...props}>
         <path d={paths[icon]}/>
     </svg>;
 }
