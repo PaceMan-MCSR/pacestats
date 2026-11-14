@@ -2,7 +2,7 @@
 
 import useSWR, {useSWRConfig} from 'swr'
 import useWebSocket from "react-use-websocket";
-import { useEffect, useState } from "react";
+import {sessionSocketUrl} from "@/app/obs/sessionSubscription";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 const refresh = 60
@@ -34,21 +34,18 @@ export default function SessionNethers({name, settings}: {
 
     const baseUrl = process.env.NEXT_PUBLIC_WS_ENDPOINT as string
 
-    const { sendMessage, lastMessage, readyState } = useWebSocket(baseUrl + "/pull/" + data?.uuid || "null", {
+    useWebSocket(sessionSocketUrl(baseUrl, data?.uuid), {
+        share: true,
         shouldReconnect: (closeEvent) => true,
-        reconnectInterval: 5000
+        reconnectInterval: 5000,
+        // Control messages can refresh SWR directly. Retaining every message
+        // in component state adds a render before that data update.
+        filter: () => false,
+        onMessage: (message) => {
+            if (message.data === "refresh") void mutate(key);
+            if (message.data === "reloadPage") window.location.reload();
+        },
     });
-
-    useEffect(() => {
-        if (lastMessage !== null) {
-            if(lastMessage.data === "refresh") {
-                mutate(key)
-            }
-            if(lastMessage.data === "reloadPage"){
-                window.location.reload()
-            }
-        }
-    }, [lastMessage]);
 
     if(data && data.error) {
         return <main className="main obs sessionNethers">
