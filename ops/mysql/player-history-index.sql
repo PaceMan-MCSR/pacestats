@@ -20,6 +20,13 @@ PREPARE history_index_statement FROM @history_index_ddl;
 EXECUTE history_index_statement;
 DEALLOCATE PREPARE history_index_statement;
 
-EXPLAIN SELECT id, lastUpdated FROM pace
+-- Include the real numeric timestamp projection: an unqualified ORDER BY
+-- lastUpdated resolves its alias and defeats this index with a full filesort.
+EXPLAIN SELECT id, nether, bastion, fortress,
+    COALESCE(LEAST(bastion, fortress), bastion, fortress) AS first_structure,
+    GREATEST(bastion, fortress) AS second_structure,
+    first_portal, stronghold, `end`, finish,
+    UNIX_TIMESTAMP(lastUpdated) * 1000 AS lastUpdated,
+    CAST(vodId AS CHAR) AS vodId, twitch FROM pace
 WHERE uuid = 'sample-uuid'
-ORDER BY lastUpdated DESC, id DESC LIMIT 25;
+ORDER BY pace.lastUpdated DESC, id DESC LIMIT 25;

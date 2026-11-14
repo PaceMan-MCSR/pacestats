@@ -5,11 +5,36 @@ import {getAllPBs, getConn, getPBs, getPlayerRunsOffsetPage, type PlayerRunFilte
 const uuid = process.env.PERF_TEST_UUID ?? "e4cd494a-4e0a-423b-9988-618b86858c96";
 
 async function verifyRunPages() {
+    // Capture the actual prepared page statement. A simplified index probe
+    // misses alias resolution (ORDER BY a projected timestamp forces filesort).
+    const pool = (globalThis as typeof globalThis & {__paceStatsDbPool: any}).__paceStatsDbPool;
+    const acquire = pool.getConnection.bind(pool);
+    let issuedPage: {sql: string; values: unknown[]} | undefined;
+    pool.getConnection = async () => {
+        const connection = await acquire();
+        const execute = connection.execute.bind(connection);
+        connection.execute = (options: {sql: string}, values: unknown[]) => {
+            connection.execute = execute;
+            if (options.sql.includes("CAST(vodId AS CHAR) AS vodId")) issuedPage = {sql: options.sql, values};
+            return execute(options, values);
+        };
+        return connection;
+    };
     const coldHeap = process.memoryUsage().heapUsed;
     const coldStart = performance.now();
-    const first = await getPlayerRunsOffsetPage(uuid);
+    let first;
+    try {
+        first = await getPlayerRunsOffsetPage(uuid);
+    } finally {
+        pool.getConnection = acquire;
+    }
     console.log(JSON.stringify({case: "cold-run-page", ms: performance.now() - coldStart,
         heapDeltaBytes: process.memoryUsage().heapUsed - coldHeap, returned: first.rows.length, total: first.rowCount}));
+    assert.ok(issuedPage, "The executed page query must be captured");
+    const [plans] = await (await getConn()).execute<any[]>(`EXPLAIN FORMAT=JSON ${issuedPage.sql}`, issuedPage.values);
+    const plan = JSON.parse(plans[0].EXPLAIN);
+    assert.ok(!plan.query_block.ordering_operation?.using_filesort, "The actual page projection must not filesort the complete lifetime");
+    assert.equal((plan.query_block.table ?? plan.query_block.ordering_operation?.table)?.key, "idx_pace_uuid_last_updated_id");
     // The reference deliberately reads the complete authoritative history once.
     // Production pagination must return the same result while transferring only a page.
     const [reference] = await (await getConn()).execute<any[]>(

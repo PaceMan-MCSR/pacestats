@@ -3086,7 +3086,9 @@ export interface OffsetPage<T = any> {
 }
 
 const playerRunColumns: Record<PlayerRunFilter["column"], string> = {
-    date: "lastUpdated",
+    // Qualify this column: SELECT projects a numeric alias also named
+    // lastUpdated. ORDER BY that alias sorts the full lifetime in MySQL.
+    date: "pace.lastUpdated",
     nether: "nether",
     bastion: "bastion",
     fortress: "fortress",
