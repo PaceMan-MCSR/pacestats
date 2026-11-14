@@ -35,4 +35,12 @@ assert.deepEqual(createLeaderboardModel({}, [], 30, "count_avg", false), {player
 
 const many = Array.from({length: 15}, (_, index) => ({...entry, uuid: `p${index}`}));
 assert.equal(createLeaderboardModel({[CategoryType.COUNT]: {nether: many}}, [], 30, "count_avg", false).boards[0].rows.length, 10);
+const aaAverage = createLeaderboardModel(data, users, 7, "average", false, true);
+assert.equal(aaAverage.aa, true);
+assert.deepEqual(aaAverage.boards.map(board => board.id), ["nether-average", "bastion-average"]);
+assert.deepEqual(aaAverage.boards[0].sample, {minimum: 5, good: 10, left: "#ff0000", right: "#00FF00"});
+const aaFastest = createLeaderboardModel(data, users, 7, "fastest", false, true);
+assert.equal(aaFastest.boards[0].rows[0].runId, undefined, "AA times do not link to normal-run IDs");
+assert.equal(aaFastest.players.length, 1, "AA views serialize only identities they display");
+assert.equal(aaFastest.boards.every(board => board.kind === "fastest"), true);
 console.log("PASS: selected leaderboard models preserve values, split modes, identities and missing-run fallbacks without unrelated payloads");

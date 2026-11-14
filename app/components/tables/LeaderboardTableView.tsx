@@ -4,7 +4,8 @@ import {useEffect, useRef, useTransition} from "react";
 import type {MouseEvent, ReactNode} from "react";
 import {useRouter} from "next/navigation";
 import {PrefetchKind} from "next/dist/client/components/router-reducer/router-reducer-types";
-import type {LeaderboardModel} from "@/app/components/tables/leaderboardModel";
+import type {BoardModel, LeaderboardModel} from "@/app/components/tables/leaderboardModel";
+import {OverlayTrigger, Tooltip} from "@/app/components/HoverTooltip";
 
 const BASE_PATH = "/stats";
 
@@ -92,11 +93,28 @@ function BoardNavigation({children}: {children: ReactNode}) {
     >{children}</div>;
 }
 
-export default function LeaderboardTableView({players, boards, showQty}: LeaderboardModel & {showQty: boolean}) {
+function BoardHeader({board}: {board: BoardModel}) {
+    if (!board.sample) return <p className="tableHeader" title={board.help}>{board.title}</p>;
+    const {minimum, good, left, right} = board.sample;
+    const middle = Math.floor((minimum + good) / 2);
+    const middleMargin = minimum < 100 && (middle >= 100 || (minimum < 10 && middle >= 10)) ? 8 : 0;
+    return <OverlayTrigger overlay={<Tooltip className="colorTooltip">
+        <p className="colorHint justify-content-center justify-self-center">Sample size</p>
+        <div style={{backgroundImage: `linear-gradient(to right, ${left}, ${right})`}} className="d-flex justify-content-between colorHeader">
+            <p className="d-flex colorCaption">{minimum}</p>
+            {middle >= 10 && <p className="d-flex colorCaption midQty" style={{marginLeft: middleMargin}}>{middle}</p>}
+            <p className="d-flex colorCaption">{good}</p>
+        </div>
+    </Tooltip>} delay={{show: 0, hide: 800}}>
+        <p className="tableHeader">{board.title}</p>
+    </OverlayTrigger>;
+}
+
+export default function LeaderboardTableView({players, boards, showQty, aa = false}: LeaderboardModel & {showQty: boolean}) {
     return <BoardNavigation>{boards.map(board => {
         const sample = board.kind === "average" || board.kind === "conversion";
         return <div key={board.id} className="tableWrapper col-sm-12 col-md-6 col-xl-4 col-xxl-3">
-            <p className="tableHeader" title={board.help}>{board.title}</p>
+            <BoardHeader board={board}/>
             <table className="table table-dark caption-top">
                 <thead><tr>
                     <th id={board.kind === "average" ? "num" : undefined}>#</th>
@@ -110,10 +128,10 @@ export default function LeaderboardTableView({players, boards, showQty}: Leaderb
                     return <tr key={`${row.player}-${row.runId ?? index}`}>
                         <td className="col-1"><p>{index + 1}</p></td>
                         <td className="col-10">
-                            <a className="boardLink" href={`${BASE_PATH}/player/${player.name}/`} data-board-link="">
+                            <a className="boardLink" href={`${BASE_PATH}/player/${player.name}/${aa ? "aa/" : ""}`} data-board-link="">
                                 <p className="playerName" style={{opacity: 1, color: player.color}}>
                                     <img className="avatar" src={`https://mc-api.io/render/FACE/${player.uuid}?size=8`}
-                                        alt={player.name} loading="lazy" decoding="async" fetchPriority={index >= 3 ? "low" : undefined} width={24} height={24}/>
+                                        alt={aa ? label : player.name} loading="lazy" decoding="async" fetchPriority={index >= 3 ? "low" : undefined} width={24} height={24}/>
                                     {label}
                                 </p>
                             </a>
