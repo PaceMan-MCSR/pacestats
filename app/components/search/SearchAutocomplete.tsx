@@ -348,7 +348,7 @@ export default function SearchAutocomplete<T extends Item>({
             : [];
 
     const eraseResults = () => {
-        setResults([]);
+        setResults(current => current.length ? [] : current);
         setIsSearchComplete(true);
         setHasTyped(false);
         setPendingKeyword(null);
@@ -389,6 +389,8 @@ export default function SearchAutocomplete<T extends Item>({
     }, [showItemsOnFocus, results, searchString, hasFocus]);
 
     useEffect(() => {
+        // A closed search should not handle every click elsewhere on the page.
+        if (!hasFocus && !hasTyped) return;
         const handleDocumentClick = (event: globalThis.MouseEvent) => {
             if (event.target instanceof Node && root.current?.contains(event.target)) return;
             eraseResults();
@@ -396,7 +398,9 @@ export default function SearchAutocomplete<T extends Item>({
         };
         document.addEventListener("click", handleDocumentClick);
         return () => document.removeEventListener("click", handleDocumentClick);
-    }, []);
+        // eraseResults only uses stable setters and the current callback ref.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hasFocus, hasTyped]);
 
     const handleOnFocus = (event: FocusEvent<HTMLInputElement>) => {
         onFocus(event);
