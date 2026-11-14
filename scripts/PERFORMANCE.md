@@ -135,6 +135,7 @@ node --import tsx tests/prepared-statement-budget.ts
 node --expose-gc --import tsx tests/aa-cold-statistics.ts
 node --import tsx tests/leaderboard-presentation.ts
 node --import tsx tests/cache-producer-metadata.mjs
+node --import tsx tests/deferred-prefetch.ts
 node tests/run-history-navigation.mjs
 PERF_BASELINE_URL=http://127.0.0.1:5071/stats/ node tests/leaderboard-navigation.mjs
 node scripts/perf-interactions.mjs
