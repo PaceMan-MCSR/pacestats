@@ -41,6 +41,7 @@ import NodeCache from "node-cache";
 
 const DEFAULT_DB_POOL_SIZE = 10;
 const DEFAULT_DB_POOL_QUEUE_LIMIT = 500;
+const DEFAULT_DB_MAX_PREPARED_STATEMENTS = 256;
 const DEFAULT_CACHE_MAX_KEYS = 2_000;
 const DEFAULT_CACHE_MAX_ARRAY_ROWS = 25_000;
 const DEFAULT_CACHE_MAX_TOTAL_ROWS = 250_000;
@@ -193,6 +194,15 @@ const dbPool = runtime.__paceStatsDbPool ?? mysql.createPool({
     queueLimit: boundedEnvInteger(process.env.DB_POOL_QUEUE_LIMIT, DEFAULT_DB_POOL_QUEUE_LIMIT, 1, 10_000),
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
+    // mysql2 otherwise retains up to16,000 statements per connection. Run
+    // filters and variable-size IN/UNION batches create many distinct SQL
+    // shapes; bound their client/server memory before MySQL's global limit.
+    maxPreparedStatements: boundedEnvInteger(
+        process.env.DB_MAX_PREPARED_STATEMENTS,
+        DEFAULT_DB_MAX_PREPARED_STATEMENTS,
+        16,
+        1_024
+    ),
 });
 runtime.__paceStatsDbPool = dbPool;
 
