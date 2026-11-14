@@ -525,13 +525,23 @@ export async function fetchTwitchesFromRedis(uuid: string) {
     return getCached(readTwitchDetails, "fetchTwitchesFromRedis", uuid);
 }
 
+let compactUsersFailure: {retryAt: number; error: unknown} | undefined;
+
 export async function fetchAllUsersFromRedis() {
-    const jsonString = await redis.call('JSON.GET', `users`, '$');
-    if (!jsonString) {
-        return []
+    // A failed nickname read is followed by Twitch/customization fallbacks.
+    // Reuse that failure briefly so an unavailable Redis cannot impose its
+    // command timeout repeatedly in one request. No failed result enters the
+    // normal 60-second users cache; a new Redis probe is allowed after 1 second.
+    if (compactUsersFailure && Date.now() < compactUsersFailure.retryAt) throw compactUsersFailure.error;
+    try {
+        const jsonString = await redis.call('JSON.GET', `users`, '$');
+        compactUsersFailure = undefined;
+        if (!jsonString) return [];
+        return JSON.parse(String(jsonString))[0];
+    } catch (error) {
+        compactUsersFailure = {retryAt: Date.now() + 1_000, error};
+        throw error;
     }
-    const parsedData = JSON.parse(jsonString as string);
-    return parsedData[0];
 }
 
 async function getTheMostRecentOfRuns(uuid: string){
