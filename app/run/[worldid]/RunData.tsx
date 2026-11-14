@@ -28,7 +28,12 @@ export default function RunData({params, initialWorld}: {
         {
             fallbackData: initialWorld,
             revalidateOnMount: false,
-            refreshInterval: (snapshot) => snapshot?.isLive || snapshot?.liveStatusUnknown ? 3_000 : 0,
+            // SWR passes its cache value (undefined before the first fetch),
+            // rather than fallbackData, when choosing the first interval.
+            refreshInterval: (snapshot) => {
+                const latest = snapshot === undefined ? initialWorld : snapshot;
+                return latest?.isLive || latest?.liveStatusUnknown ? 3_000 : 0;
+            },
             revalidateOnFocus: shouldRefresh,
             revalidateOnReconnect: shouldRefresh,
         }
