@@ -466,7 +466,8 @@ function finalizePaceSummaries(players: Map<string, PacePlayerSummary>, days: nu
         // its other views while retaining the run ID needed for clickable times.
         top[CategoryType.FASTEST][category] = fastest[category].slice(0, 10).map((entry) => {
             const stats = players.get(entry.uuid)!.stats[category];
-            if (!stats) return {...entry};
+            // Preserve the legacy sparse wire value for incomplete old state.
+            if (!stats) return {...entry} as unknown as Entry;
             const [qty, avg] = stats;
             return {uuid: entry.uuid, name: entry.name, value: entry.value, qty, avg, runId: entry.runId};
         });
