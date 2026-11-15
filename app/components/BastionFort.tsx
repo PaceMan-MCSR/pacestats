@@ -5,9 +5,11 @@ import { useContext } from "react";
 import { UserColoursContext } from "@/app/contexts";
 import { colourVars, customClass } from "@/app/components/customColours";
 
-export default function BastionFort({bastionFort: controlledBastionFort, setBastionFort}: {
+export default function BastionFort({bastionFort: controlledBastionFort, setBastionFort, navigate = true}: {
     bastionFort?: boolean,
     setBastionFort?: (value: boolean) => void,
+    /** Pages that already hold both views can change the URL without a fetch. */
+    navigate?: boolean,
 } = {}) {
     const searchParams = useSearchParams()
     const router = useRouter()
@@ -30,7 +32,12 @@ export default function BastionFort({bastionFort: controlledBastionFort, setBast
                     params.set("bastionFort", "true")
                 }
                 setBastionFort?.(!bastionFort)
-                router.push("?" + params.toString(), {scroll: false})
+                if (navigate) {
+                    router.push("?" + params.toString(), {scroll: false})
+                } else {
+                    const query = params.toString()
+                    window.history.pushState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`)
+                }
             }}
         >{bastionFort ? "First/Second Structure" : "Bastion/Fortress"}
         </button>

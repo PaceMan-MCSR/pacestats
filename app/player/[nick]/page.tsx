@@ -50,7 +50,6 @@ export default async function Page(
 ) {
     const searchParams = await props.searchParams;
     const params = await props.params;
-    let bastionFort = searchParams["bastionFort"] === "true"
     let days: number = parseInt(searchParams["days"] || "30")
     if (isNaN(days)) {
         days = 30
@@ -89,5 +88,5 @@ export default async function Page(
     ]);
     // The profile only renders this player's customization. Search resolves
     // its own results, so other players do not need to cross the client boundary.
-    return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRunRows(recentRuns)} twitches={twitches} nph={nph} data={data} days={days} bf={bastionFort} users={playerUser ? [playerUser] : []} />
+    return <PlayerPage name={realNick} uuid={uuid} recentRuns={recentRunRows(recentRuns)} twitches={twitches} nph={nph} data={data} days={days} users={playerUser ? [playerUser] : []} />
 }

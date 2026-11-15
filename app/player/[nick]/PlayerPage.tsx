@@ -10,7 +10,7 @@ import { Stat } from "@/app/components/profile/Stat";
 import { TwitchEntry } from "@/app/components/profile/TwitchEntry";
 import { NPHStat } from "@/app/components/profile/NPHStat";
 import BastionFort from "@/app/components/BastionFort";
-import { useEffect, useState } from "react";
+import {useSearchParams} from "next/navigation";
 import { UserColoursContext, UsersContext } from "@/app/contexts";
 import { defaultNameColor, getDarkerColor, getDisplayName, getNameColor, getUserColours } from "@/app/utils";
 import { colourVars, customClass } from "@/app/components/customColours";
@@ -18,7 +18,7 @@ import { useIntentLink } from "@/app/components/useIntentLink";
 import { useDeferredPrefetch } from "@/app/components/useDeferredPrefetch";
 import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
 
-export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data, days, bf, users}: {
+export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data, days, users}: {
     name: string,
     uuid: string,
     recentRuns: RecentRunRow[],
@@ -26,12 +26,12 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
     nph: any,
     data: any,
     days: number,
-    bf: boolean,
     users: any
 }) {
     const skinUrl = "https://mc-api.io/render/FULL/" + uuid
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
-    const [bastionFort, setBastionFort] = useState(bf)
+    const searchParams = useSearchParams()
+    const bastionFort = searchParams.get("bastionFort") === "true"
     const nameColor = getNameColor(users, uuid)
     const colours : any = getUserColours(users, uuid)
     const playerUser = users?.find((user: any) => user.uuid === uuid)
@@ -68,7 +68,7 @@ export default function PlayerPage({name, uuid, recentRuns, twitches, nph, data,
                             } : {marginTop: "-5px"}} src={headUrl} alt={name}/>
                         </h1>
                         <div className="mb-2" style={{textAlign: "center"}}>
-                            <BastionFort bastionFort={bastionFort} setBastionFort={setBastionFort}/>
+                            <BastionFort bastionFort={bastionFort} navigate={false}/>
                         </div>
                         <div className="mb-2">
                             <RangeChange/>
