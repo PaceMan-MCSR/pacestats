@@ -15,7 +15,11 @@ for(const path of ['', 'player/NoFearr1337/', 'player/NoFearr1337/runs/', 'playe
     for(const [index,base]of servers.entries()) {
         const response=await fetch(new URL(path,base));assert.equal(response.status,200);
         const html=await response.text(),body=Buffer.from(html);
-        const scripts=[...new Set([...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match=>match[1]))];
+        // Chromium ignores nomodule fallbacks; counting them as downloads
+        // would add an unused 112 KB polyfill to every modern page.
+        const tags=[...html.matchAll(/<script\b[^>]*>/g)].map(match=>match[0]);
+        const scripts=[...new Set(tags.filter(tag=>!(/\bnomodule(?:\s|=|>)/i.test(tag)))
+            .map(tag=>tag.match(/\bsrc="([^"]+)"/)?.[1]).filter(Boolean))];
         const files=await Promise.all(scripts.map(async path=>{
             const url=new URL(path,base);assert.equal(url.origin,base.origin);
             let pending=assets.get(url.href);
@@ -26,10 +30,11 @@ for(const path of ['', 'player/NoFearr1337/', 'player/NoFearr1337/runs/', 'playe
             return pending;
         }));
         results.push({kind:index?'final':'baseline',path,documentBytes:body.length,documentBrotli5Bytes:compressed(body),
-            declaredScripts:files.length,declaredScriptBytes:files.reduce((sum,file)=>sum+file.bytes,0),
+            declaredScripts:files.length,excludedNomoduleScripts:tags.filter(tag=>/\bnomodule(?:\s|=|>)/i.test(tag)).length,
+            declaredScriptBytes:files.reduce((sum,file)=>sum+file.bytes,0),
             declaredScriptBrotli5Bytes:files.reduce((sum,file)=>sum+file.brotli5Bytes,0),files});
     }
 }
 await mkdir(dirname(output),{recursive:true});
-await writeFile(output,JSON.stringify({method:'Complete streamed HTML and unique declared script src assets. Brotli quality5 estimates, not measured production wire transfer. Excludes fonts, images, RSC navigations and subsequent dynamic/idle scripts.',results},null,2));
+await writeFile(output,JSON.stringify({method:'Complete streamed HTML and unique modern-browser declared script src assets; nomodule fallbacks excluded. Brotli quality5 estimates, not measured production wire transfer. Excludes fonts, images, RSC navigations and subsequent dynamic/idle scripts.',results},null,2));
 for(const row of results)console.log(JSON.stringify({...row,files:undefined}));
