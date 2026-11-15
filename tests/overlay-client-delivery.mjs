@@ -51,6 +51,7 @@ wss.on('connection', (socket, request) => {
     const connection = {socket, name, kind: url.searchParams.get('kind'), params: url.searchParams, sequence: 0};
     connections.push(connection);
     if (name === 'legacy') {socket.close(1008, 'Legacy server has no overlay protocol');return;}
+    if (name === 'seeded') return;
     const generation = connections.filter(item => item.name === name && item.kind === connection.kind).length;
     send(connection, name === 'reconnect' && generation > 1 ? 30 : 10);
 });
@@ -71,7 +72,8 @@ const bundle = await build({
                     showAvg:true,dynamic:false,nph:true,nphDp:0,nphRight:false,liveOnly:false,decimals:0,start:0,maxTime:99999999,
                     ...item.settings};
                 const Component={session:Session,nethers:Nethers,combinedStats:CombinedStats,combinedNethers:CombinedNethers}[item.kind];
-                return <section key={item.id} id={item.id}><Component name={item.name} names={item.name} settings={settings}/></section>;
+                return <section key={item.id} id={item.id}><Component name={item.name} names={item.name} settings={settings}
+                    initialData={item.initialData} initialDataAt={item.initialDataAt}/></section>;
             });
         }
         createRoot(document.getElementById('root')).render(<App/>);
@@ -193,8 +195,16 @@ try {
     await expectValue('r',30);
     for(const request of held.splice(0)) request.response.end(JSON.stringify(data('nethers',999)));
     await new Promise(done=>setTimeout(done,50));await expectValue('r',30);
+    const beforeSeedConnections=connections.length,beforeSeedRequests=requests.length;
+    await mount(['seed1','seed2'].map(id=>({id,kind:'nethers',name:'seeded',initialData:data('nethers',88),initialDataAt:1700000000000})));
+    await expectValue('seed1',88);await expectValue('seed2',88);
+    await waitUntil(()=>Boolean(latest('seeded')),'Seeded connection');
+    assert.equal(connections.length-beforeSeedConnections,1,'Identical SSR freshness hints preserve socket sharing');
+    assert.equal(latest('seeded').params.get('since'),'1700000000000');
+    assert.equal(requests.length,beforeSeedRequests,'SSR initial values need no browser API');
+    send(latest('seeded'),89);await expectValue('seed1',89);await expectValue('seed2',89);
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({checks:'four real overlays, shared socket, zero healthy API reads through70s/focus, pushed values, sequence/version rejection, key isolation, late HTTP fencing,503/429 retries, demo and legacy compatibility, reconnect sequence reset',connections:connections.length,apiRequests:requests.length}));
+    console.log(JSON.stringify({checks:'four real overlays, shared socket, zero healthy API reads through70s/focus, pushed values, sequence/version rejection, key isolation, late HTTP fencing,503/429 retries, demo and legacy compatibility, reconnect sequence reset, SSR seed and shared freshness hint',connections:connections.length,apiRequests:requests.length}));
     await mount([]);
 } finally {
     await browser.close();
