@@ -30,7 +30,38 @@ const addMonths = (date: Date, months: number) => {
  * in milliseconds, so month boundaries round the same way.
  */
 export const fromNow = (startSeconds: number, nowMs: number = Date.now()): string => {
-    const from = new Date(Math.min(startSeconds * 1_000, nowMs));
+    const startMs = Math.min(startSeconds * 1_000, nowMs);
+    // Date's TimeClip truncates fractional milliseconds and rejects values
+    // outside its range; preserve that behavior without constructing a Date.
+    let elapsedMs = Math.trunc(nowMs) - Math.trunc(startMs);
+    // A full calendar month cannot fit in this interval. Normalize the start
+    // through the same local setters as addMonths(0): during a repeated DST
+    // hour they can select the first occurrence, which affects legacy wording.
+    // Keep the legacy path for ancient years (Date's 0..99 constructor quirk)
+    // and the clipped calendar edge, where its month-end Date can be invalid.
+    if (startMs >= 0 && nowMs <= 8.64e15 - 35 * DAY_MS && elapsedMs < 25 * DAY_MS) {
+        const normalized = new Date(startMs);
+        const day = normalized.getDate();
+        normalized.setDate(1);
+        normalized.setMonth(normalized.getMonth());
+        normalized.setDate(day);
+        elapsedMs = Math.trunc(nowMs) - normalized.getTime();
+        if (elapsedMs >= 25 * DAY_MS) return calendarFromNow(startMs, nowMs);
+        const seconds = Math.round(elapsedMs / 1_000);
+        const minutes = Math.round(elapsedMs / 60_000);
+        const hours = Math.round(elapsedMs / 3_600_000);
+        const days = Math.round(elapsedMs / DAY_MS);
+        const text = seconds <= 44 ? 'a few seconds'
+            : minutes < 45 ? plural(minutes, 'a minute', 'minutes')
+                : hours < 22 ? plural(hours, 'an hour', 'hours')
+                    : plural(days, 'a day', 'days');
+        return `${text} ago`;
+    }
+    return calendarFromNow(startMs, nowMs);
+};
+
+const calendarFromNow = (startMs: number, nowMs: number): string => {
+    const from = new Date(startMs);
     const to = new Date(nowMs);
     let wholeMonths = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
     if (addMonths(from, wholeMonths).getTime() > to.getTime()) wholeMonths -= 1;
