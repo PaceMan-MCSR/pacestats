@@ -8,6 +8,9 @@
 .pnp.js
 .yarn/install-state.gz
 
+# Python logger bytecode
+__pycache__/
+
 # testing
 /coverage
 /test-artifacts/performance/

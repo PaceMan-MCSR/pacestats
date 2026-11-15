@@ -1,3 +1,4 @@
+import {observeApiRequest} from "@/app/telemetry.server";
 import {NextRequest} from "next/server";
 import {fetchAllUsersFromRedis, getCached, getPlayerInfoByNames} from "@/app/data";
 import {
@@ -23,7 +24,7 @@ let usersByNick = new Map<string, User>();
 
 // UUID, display name and colours for up to 20 players, keyed by the
 // lower-cased nick that was asked for. Unknown names map to null.
-export async function GET(request: NextRequest) {
+async function handleRequest(request: NextRequest) {
     const limited = rateLimit(request, {namespace: "getPlayerInfo", limit: 240, windowMs: 60_000});
     if (limited) return limited;
     try {
@@ -66,3 +67,5 @@ export async function GET(request: NextRequest) {
         throw error;
     }
 }
+
+export const GET = observeApiRequest("getPlayerInfo", handleRequest);

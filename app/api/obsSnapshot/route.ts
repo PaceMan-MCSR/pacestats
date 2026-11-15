@@ -1,3 +1,4 @@
+import {observeApiRequest} from "@/app/telemetry.server";
 import {NextRequest, NextResponse} from "next/server";
 import {ApiInputError, hasValidApiKey, validationErrorResponse} from "@/app/api/_utils";
 import {OverlaySnapshotError, readOverlaySnapshot} from "@/app/obs/snapshot.server";
@@ -10,7 +11,7 @@ const failure = (error: string, status: number, retry = false) => NextResponse.j
 });
 
 /** Internal WS broker projection. Browser clients never receive its credential. */
-export async function GET(request: NextRequest) {
+async function handleRequest(request: NextRequest) {
     // Authenticate before allocating rate-limit buckets or checking out SQL.
     if (!hasValidApiKey(request, process.env.WS_TOKEN)) return failure("Unauthorized", 401);
     try {
@@ -22,3 +23,5 @@ export async function GET(request: NextRequest) {
         return failure("Overlay data is temporarily unavailable", 503, true);
     }
 }
+
+export const GET = observeApiRequest("obsSnapshot", handleRequest);

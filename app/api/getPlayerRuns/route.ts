@@ -1,3 +1,4 @@
+import {observeApiRequest} from "@/app/telemetry.server";
 import {NextRequest} from "next/server";
 import {RUN_HISTORY_MAX_FILTERS, RUN_HISTORY_MAX_PAGE, RUN_HISTORY_PAGE_SIZES} from "@/app/player/runHistoryLimits";
 import {
@@ -75,7 +76,7 @@ const parseSort = (column: string | null, direction: string | null): PlayerRunSo
     };
 };
 
-export async function GET(request: NextRequest) {
+async function handleRequest(request: NextRequest) {
     const limited = rateLimit(request, {namespace: "getPlayerRuns", limit: 120, windowMs: 60_000});
     if (limited) return limited;
     try {
@@ -114,3 +115,5 @@ export async function GET(request: NextRequest) {
         throw error;
     }
 }
+
+export const GET = observeApiRequest("getPlayerRuns", handleRequest);

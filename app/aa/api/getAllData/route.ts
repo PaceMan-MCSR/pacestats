@@ -1,8 +1,9 @@
 import {NextRequest, NextResponse} from "next/server";
 import {jsonResponse} from "@/app/api/_utils";
 import { getAllAAData, getCached } from "@/app/data";
+import {observeApiRequest} from "@/app/telemetry.server";
 
-export async function GET(request: NextRequest) {
+async function handleRequest(request: NextRequest) {
     let days = parseInt(request.nextUrl.searchParams.get("days") || "30")
     if (isNaN(days)) {
         days = 30
@@ -18,3 +19,5 @@ export async function GET(request: NextRequest) {
     });
     return jsonResponse({data: filteredData}, {cacheSeconds: 60, staleSeconds: 120});
 }
+
+export const GET = observeApiRequest("getAllAAData", handleRequest);

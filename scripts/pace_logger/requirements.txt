@@ -1,0 +1,7 @@
+# Direct dependencies compatible with Python 3.10.12 and newer.
+aiohttp==3.14.5
+async-timeout==5.0.1; python_version < "3.11"
+mysql-connector-python==9.7.0
+python-dotenv==1.2.4
+websockets==16.1.1
+twitchAPI==4.5.0
