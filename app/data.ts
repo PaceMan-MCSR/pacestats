@@ -1112,14 +1112,16 @@ const combinedRowsCte = (lowerBound: unknown, players: CombinedPlayerRows[]): {s
     };
 };
 
-/** Split times collected from a streamed result, eight bytes per value. */
+const emptyTimeSeries = new Float64Array(0);
+
+/** Streamed split times; empty windows share a zero-length buffer. */
 class TimeSeries {
-    private values = new Float64Array(1_024);
+    private values = emptyTimeSeries;
     private length = 0;
 
     push(value: number) {
         if (this.length === this.values.length) {
-            const grown = new Float64Array(this.values.length * 2);
+            const grown = new Float64Array(this.values.length === 0 ? 1_024 : this.values.length * 2);
             grown.set(this.values);
             this.values = grown;
         }
