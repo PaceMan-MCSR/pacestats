@@ -10,7 +10,7 @@ import {
     roundNumber
 } from "@/app/utils";
 import mysql from 'mysql2/promise';
-import type {QueryResult} from 'mysql2';
+import type {QueryResult, RowDataPacket} from 'mysql2';
 import { Entry } from "@/app/types";
 import {calculateAvg, trimmedStats, type TrimmedStats} from "@/app/trimmedAverage";
 import {
@@ -871,6 +871,7 @@ const ttls = {
     getSessionStats: 10,
     getAllUserInfo: 60 * 10,
     getUserInfo: 60 * 10,
+    getPlayerInfoByNames: 60,
     getAllAARuns: 60 * 30,
     getAllPBs: 60,
     getPBs: 10,
@@ -2159,6 +2160,45 @@ export const getUserInfo = async (uuid: string) => {
     );
     return rows[0] ?? null;
 }
+
+export type PlayerInfoLookup = {
+    id: string;
+    nick: string;
+    displayName: string | null;
+    color: string | null;
+    bgColor: string | null;
+};
+
+/** Cold tooltip lookup: one bounded statement, including each player's current name. */
+export const getPlayerInfoByNames = async (names: string[]): Promise<Record<string, PlayerInfoLookup | null>> => {
+    if (names.length > 20) throw new RangeError("Player information is limited to 20 names");
+    const result: Record<string, PlayerInfoLookup | null> = Object.fromEntries(names.map(name => [name, null]));
+    if (names.length === 0) return result;
+    const bans = new Set<string>(await getCached(getBans, "getBans"));
+    // Keep each nickname lookup uncorrelated so both MySQL and MariaDB can
+    // stop at its newest (nickname,id) index entry. The UUID lookup then
+    // verifies the current nickname, preserving rejection of historical names.
+    const [rows] = await executeDb<(PlayerInfoLookup & RowDataPacket & {lookupOrder: number})[]>(
+        names.map((_, index) => `(SELECT ${index} AS lookupOrder,
+                currentPlayer.uuid AS id, currentPlayer.nickname AS nick,
+                users.displayName, users.color, users.bgColor
+            FROM (
+                SELECT uuid, nickname FROM pace
+                WHERE uuid=(SELECT uuid FROM pace WHERE nickname=? ORDER BY id DESC LIMIT 1)
+                ORDER BY id DESC LIMIT 1
+            ) currentPlayer
+            LEFT JOIN users ON users.uuid=currentPlayer.uuid)`
+        ).join(" UNION ALL ") + ";",
+        names
+    );
+    for (const row of rows) {
+        const name = names[Number(row.lookupOrder)];
+        if (bans.has(row.id) || row.nick.toLocaleLowerCase() !== name) continue;
+        result[name] = {id: row.id, nick: row.nick, displayName: row.displayName ?? null,
+            color: row.color ?? null, bgColor: row.bgColor ?? null};
+    }
+    return result;
+};
 
 export const getAllPlayerRunsOptimized = async (uuid: string) => {
     const [rows, fields] = await (await getConn()).execute(

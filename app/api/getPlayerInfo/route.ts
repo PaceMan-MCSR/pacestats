@@ -1,9 +1,8 @@
 import {NextRequest} from "next/server";
-import {fetchAllUsersFromRedis, getAllNamesByNick, getCached, getUserInfo} from "@/app/data";
+import {fetchAllUsersFromRedis, getCached, getPlayerInfoByNames} from "@/app/data";
 import {
     ApiInputError,
     jsonResponse,
-    mapWithConcurrency,
     rateLimit,
     stringParam,
     validationErrorResponse,
@@ -37,22 +36,10 @@ export async function GET(request: NextRequest) {
             return [];
         }) as User[];
         if (users.length === 0) {
-            // A tooltip requests at most20 players. An empty Redis must not
-            // enumerate the complete lifetime just to resolve those names.
-            const entries = await mapWithConcurrency(names, 4, async (name) => {
-                const identity = await getCached(getAllNamesByNick, "getAllNamesByNick", name);
-                // This endpoint accepts current nicknames, rather than every
-                // historical alias accepted by the identity resolver.
-                if (!identity || identity.nick.toLocaleLowerCase() !== name) return [name, null] as const;
-                const info = await getCached(getUserInfo, "getUserInfo", identity.uuid);
-                return [name, {
-                    id: identity.uuid, nick: identity.nick,
-                    displayName: info?.displayName ?? null,
-                    color: info?.color ?? null,
-                    bgColor: info?.bgColor ?? null,
-                }] as const;
-            });
-            return jsonResponse(Object.fromEntries(entries), {cacheSeconds: 60, staleSeconds: 120});
+            // Resolve the bounded batch in one indexed statement rather than
+            // three serial identity/name/customization reads for every name.
+            const result = await getCached(getPlayerInfoByNames, "getPlayerInfoByNames", names);
+            return jsonResponse(result, {cacheSeconds: 60, staleSeconds: 120});
         }
         // getCached returns the same array until its entry expires, so the
         // index is rebuilt only when the list changes.
