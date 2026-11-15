@@ -8,6 +8,8 @@ import BastionFort from "@/app/components/BastionFort";
 import RunFilters from "@/app/components/RunFilters";
 import {formatExactTime, fromNow} from "@/app/components/profile/relativeTime";
 import Link from "next/link";
+import {lastRunHistoryPage, normalizeRunHistoryPagination, RUN_HISTORY_MAX_PAGE, RUN_HISTORY_PAGE_SIZES} from "@/app/player/runHistoryLimits";
+import type {RunHistoryPaginationModel} from "@/app/player/runHistoryLimits";
 
 type RunFilter = {
     column: string;
@@ -29,9 +31,7 @@ type RunsPage = {
 
 const PAGE_CACHE_TTL_MS = 30_000;
 const MAX_CACHED_PAGES = 12;
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
-
-type GridPaginationModel = {page: number, pageSize: number};
+type GridPaginationModel = RunHistoryPaginationModel;
 
 const SMALL_SCREEN_QUERY = '(max-width: 768px)';
 const subscribeToSmallScreen = (onChange: () => void) => {
@@ -54,7 +54,7 @@ function RunsPagination({count, page, pageSize, onChange}: {
     pageSize: number,
     onChange: (model: GridPaginationModel) => void,
 }) {
-    const lastPage = Math.max(0, Math.ceil(count / pageSize) - 1);
+    const lastPage = lastRunHistoryPage(count, pageSize);
     const from = count === 0 ? 0 : page * pageSize + 1;
     const to = Math.min(count, (page + 1) * pageSize);
 
@@ -66,14 +66,15 @@ function RunsPagination({count, page, pageSize, onChange}: {
             aria-label={label}
             disabled={disabled}
             onPointerDown={(event) => {
-                if (!event.isPrimary || event.button !== 0) return;
+                // Disabled buttons can still dispatch pointer-down events.
+                if (disabled || !event.isPrimary || event.button !== 0) return;
                 event.preventDefault();
                 event.currentTarget.focus();
                 onChange({page: targetPage, pageSize});
             }}
             onClick={(event) => {
                 // Keyboard and assistive-technology activation only.
-                if (event.detail === 0) onChange({page: targetPage, pageSize});
+                if (!disabled && event.detail === 0) onChange({page: targetPage, pageSize});
             }}
         >
             <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24">
@@ -90,11 +91,11 @@ function RunsPagination({count, page, pageSize, onChange}: {
             value={pageSize}
             onChange={(event) => onChange({page: 0, pageSize: Number(event.target.value)})}
         >
-            {PAGE_SIZE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            {RUN_HISTORY_PAGE_SIZES.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
         <span className="fastRunsPageRange">{from}–{to} of {count}</span>
         <div className="fastRunsPaginationActions">
-            {pageButton('Go to previous page', page - 1, page === 0, 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z')}
+            {pageButton('Go to previous page', page - 1, page <= 0, 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z')}
             {pageButton('Go to next page', page + 1, page >= lastPage, 'M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z')}
         </div>
     </div>;
@@ -132,7 +133,7 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
 }) {
 
     const router = useRouter();
-    const [paginationModel, setPaginationModel] = useState<GridPaginationModel>(initialPaginationModel);
+    const [paginationModel, setPaginationModel] = useState<GridPaginationModel>(() => normalizeRunHistoryPagination(initialPaginationModel));
 
     useEffect(() => {
         const updateUrl = () => {
@@ -260,6 +261,8 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
     }, [cachedPage, pageKey, uuid]);
 
     const handlePaginationModelChange = useCallback((newModel: GridPaginationModel) => {
+        if (!RUN_HISTORY_PAGE_SIZES.includes(newModel.pageSize) || !Number.isSafeInteger(newModel.page)
+            || newModel.page < 0 || newModel.page > lastRunHistoryPage(rowCount, newModel.pageSize)) return;
         if (newModel.page === paginationModel.page && newModel.pageSize === paginationModel.pageSize) return;
 
         const cached = cachedPage(pageKey(newModel.page, newModel.pageSize, serializedFilters, serializedSort));
@@ -272,7 +275,7 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
             setIsLoading(true);
         }
         setPaginationModel(newModel);
-    }, [cachedPage, pageKey, paginationModel, serializedFilters, serializedSort]);
+    }, [cachedPage, pageKey, paginationModel, rowCount, serializedFilters, serializedSort]);
 
     // Runs once, before the loading effect below, so that effect finds the
     // server-rendered page in the cache and skips the request for it.
@@ -304,12 +307,21 @@ export default function RecentRuns({uuid, bf, initialPaginationModel, initialSor
         loadPage(page, pageSize, serializedFilters, sort)
             .then((loadedPage) => {
                 if (!active) return;
+                const lastPage = lastRunHistoryPage(loadedPage.rowCount, pageSize);
+                if (page > lastPage) {
+                    // A saved URL or deleted runs can leave this page past
+                    // the end. Load the last existing page instead of staying empty.
+                    setRowCount(loadedPage.rowCount);
+                    setIsLoading(true);
+                    setPaginationModel({page: lastPage, pageSize});
+                    return;
+                }
                 setRows(loadedPage.rows);
                 setRowCount(loadedPage.rowCount);
                 setIsLoading(false);
                 setLoadError(false);
 
-                if ((page + 1) * pageSize < loadedPage.rowCount) {
+                if (page < RUN_HISTORY_MAX_PAGE && (page + 1) * pageSize < loadedPage.rowCount) {
                     void loadPage(page + 1, pageSize, serializedFilters, sort).catch(() => {
                         // Prefetch failures are retried normally if the user visits the page.
                     });

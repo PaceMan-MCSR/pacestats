@@ -9,6 +9,7 @@ import RecentRuns from "@/app/player/[nick]/runs/RecentRuns";
 import {Suspense} from "react";
 import { defaultNameColor, getNameColor } from "@/app/utils";
 import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
+import {normalizeRunHistoryPagination} from "@/app/player/runHistoryLimits";
 
 export default async function Page(
     props: {
@@ -21,10 +22,7 @@ export default async function Page(
     let bastionFort = searchParams["bastionFort"] === "true"
     const requestedPage = Number(searchParams["page"] ?? 0);
     const requestedPageSize = Number(searchParams["pageSize"] ?? 25);
-    const initialPaginationModel = {
-        page: Number.isSafeInteger(requestedPage) && requestedPage >= 0 ? requestedPage : 0,
-        pageSize: [10, 25, 50, 100].includes(requestedPageSize) ? requestedPageSize : 25,
-    };
+    const initialPaginationModel = normalizeRunHistoryPagination({page: requestedPage, pageSize: requestedPageSize});
     const sortableColumns = new Set([
         "date", "nether", "bastion", "fortress", "first_structure", "second_structure",
         "first_portal", "stronghold", "end", "finish",

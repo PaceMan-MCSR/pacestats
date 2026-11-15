@@ -63,6 +63,7 @@
     cursor: pointer;
 }
 .runFilterIconButton:hover { background: rgba(25, 118, 210, .1); }
+.runFilterIconButton:disabled { opacity: .45; cursor: not-allowed; }
 .runFilterRemove { color: #d32f2f; }
 .runFilterRemove:hover { background: rgba(211, 47, 47, .1); }
 .runFilterIconButton:focus-visible, .runFilterPreset:focus-visible { outline: 2px solid #90caf9; outline-offset: 2px; }

@@ -1,4 +1,5 @@
 import {NextRequest} from "next/server";
+import {RUN_HISTORY_MAX_FILTERS, RUN_HISTORY_MAX_PAGE, RUN_HISTORY_PAGE_SIZES} from "@/app/player/runHistoryLimits";
 import {
     getCached,
     getPlayerRunsOffsetPage,
@@ -35,8 +36,8 @@ const parseFilters = (raw: string | null): PlayerRunFilter[] => {
     } catch {
         throw new ApiInputError("filters must be valid JSON");
     }
-    if (!Array.isArray(parsed) || parsed.length > 10) {
-        throw new ApiInputError("filters must be an array with at most 10 entries");
+    if (!Array.isArray(parsed) || parsed.length > RUN_HISTORY_MAX_FILTERS) {
+        throw new ApiInputError(`filters must be an array with at most ${RUN_HISTORY_MAX_FILTERS} entries`);
     }
 
     return parsed.map((candidate): PlayerRunFilter => {
@@ -80,10 +81,10 @@ export async function GET(request: NextRequest) {
     try {
         const uuid = stringParam(request.nextUrl.searchParams, "uuid", {required: true, maxLength: 64});
         if (request.nextUrl.searchParams.has("page")) {
-            const page = integerParam(request.nextUrl.searchParams, "page", {defaultValue: 0, min: 0, max: 1_000_000});
+            const page = integerParam(request.nextUrl.searchParams, "page", {defaultValue: 0, min: 0, max: RUN_HISTORY_MAX_PAGE});
             const pageSize = integerParam(request.nextUrl.searchParams, "pageSize", {
                 defaultValue: 25,
-                allowed: [10, 25, 50, 100],
+                allowed: RUN_HISTORY_PAGE_SIZES,
             });
             const filters = parseFilters(request.nextUrl.searchParams.get("filters"));
             const sort = parseSort(

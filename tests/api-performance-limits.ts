@@ -6,6 +6,13 @@ import {ApiInputError, withApiRequest} from "../app/api/_utils";
 async function main() {
     const cases = [
         ["getRunsPaginated", "page=NaN"], ["getRunsPaginated", "pageSize=10001"],
+        ["getRunsPaginated", "page=0"],
+        ["getPlayerRuns", "uuid=fixture&page=-1"],
+        ["getPlayerRuns", "uuid=fixture&page=1000001"],
+        ["getPlayerRuns", "uuid=fixture&page=0&pageSize=0"],
+        ["getPlayerRuns", new URLSearchParams({uuid: "fixture", page: "0", filters: JSON.stringify(
+            Array.from({length: 11}, () => ({column: "nether", operatorValue: "lessThan", value: 90000}))
+        )}).toString()],
         ["getRecentRuns", "name=NoFearr1337&limit=1001"],
         ["getRecentTimestamps", "name=NoFearr1337&limit=-1"],
         ["getNPH", "name=NoFearr1337&hours=0"],

@@ -14,6 +14,7 @@ import type {QueryResult, RowDataPacket} from 'mysql2';
 import { Entry } from "@/app/types";
 import {calculateAvg, trimmedStats, type TrimmedStats} from "@/app/trimmedAverage";
 import {AAPlayerStatProjectionError, aaPlayerStatBranches, aaPlayerStatsFromLeaderboard, aaPlayerStatsFromProjection, parseAAPlayerStatProjection} from "@/app/aa/playerStats";
+import {RUN_HISTORY_MAX_PAGE} from "@/app/player/runHistoryLimits";
 import {
     bucketStart,
     COMBINED_BUCKET_SECONDS,
@@ -3430,7 +3431,7 @@ export const getPlayerRunsOffsetPage = async (
     const bans = await getCached(getBans, "getBans");
     if (bans.includes(uuid)) return {rows: [], rowCount: 0};
 
-    const safePage = boundedInteger(page, 0, 0, 1_000_000);
+    const safePage = boundedInteger(page, 0, 0, RUN_HISTORY_MAX_PAGE);
     const safePageSize = boundedInteger(pageSize, 25, 1, 100);
     const where = playerRunWhere(uuid, filters);
     if (!Object.hasOwn(playerRunColumns, sort.column)) throw new Error("Unsupported run sort column");

@@ -2,6 +2,7 @@
 import "./runFilters.css";
 import RunDateFilter from "@/app/components/RunDateFilter";
 import MaterialIcon from "@/app/components/MaterialIcon";
+import {RUN_HISTORY_MAX_FILTERS} from "@/app/player/runHistoryLimits";
 
 const parseTime = (value: string) => {
     const parts = value.split(':');
@@ -86,7 +87,13 @@ export default function RunFiltersPanel({bf, filters, setFilters}: {bf: boolean,
                 <MaterialIcon icon="close"/>
             </button>
         </div>)}
-        <button type="button" className="runFilterIconButton" aria-label="Add filter" title="Add filter" onClick={() => setFilters([...filters, {column: "nether", operatorValue: "lessThan", value: "1:30", inMs: 90000}])}>
+        <button type="button" className="runFilterIconButton" aria-label="Add filter"
+            disabled={filters.length >= RUN_HISTORY_MAX_FILTERS}
+            title={filters.length >= RUN_HISTORY_MAX_FILTERS ? `Maximum ${RUN_HISTORY_MAX_FILTERS} filters` : "Add filter"}
+            onClick={() => {
+                if (filters.length >= RUN_HISTORY_MAX_FILTERS) return;
+                setFilters([...filters, {column: "nether", operatorValue: "lessThan", value: "1:30", inMs: 90000}]);
+            }}>
             <MaterialIcon icon="add"/>
         </button>
         <button type="button" className="runFilterIconButton runFilterRemove" aria-label="Reset all filters" title="Reset all filters" onClick={() => setFilters([])}>
