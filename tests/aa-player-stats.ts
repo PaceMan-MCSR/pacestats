@@ -5,9 +5,10 @@ import {mkdir, writeFile} from "node:fs/promises";
 import {dirname} from "node:path";
 import Redis from "ioredis";
 import type NodeCache from "node-cache";
+import type {Pool} from "mysql2/promise";
 import {CategoryType, getMinAAQty} from "../app/utils";
 import {
-    aaPlayerStatBranches, aaPlayerStatCategories, aaPlayerStatsFromLeaderboard,
+    AAPlayerStatProjectionError, aaPlayerStatBranches, aaPlayerStatCategories, aaPlayerStatsFromLeaderboard,
     aaPlayerStatsFromProjection, parseAAPlayerStatProjection,
 } from "../app/aa/playerStats";
 
@@ -49,11 +50,13 @@ function syntheticProjection(lb: Board) {
 async function main() {
     const data = await import("../app/data");
     const runtime = globalThis as typeof globalThis & {
-        __paceStatsRedis: Redis; __paceStatsCache: NodeCache; __paceStatsDbPool: {end: () => Promise<void>};
+        __paceStatsRedis: Redis; __paceStatsCache: NodeCache; __paceStatsDbPool: Pool;
     };
     const redis = runtime.__paceStatsRedis, cache = runtime.__paceStatsCache;
     assert.equal(await redis.dbsize(), 0, "Reserved Redis 15 must start empty");
     const originalPipeline = redis.pipeline.bind(redis);
+    const originalCall = redis.call.bind(redis);
+    const originalAcquire = runtime.__paceStatsDbPool.getConnection.bind(runtime.__paceStatsDbPool);
     const originalError = console.error;
     let pipelines = 0, failureMessages = 0;
     console.error = (...args: unknown[]) => {
@@ -137,6 +140,7 @@ async function main() {
         assert.throws(() => parseAAPlayerStatProjection(JSON.stringify(missingEntireRow), counts), /Incomplete AA/);
         assert.throws(() => parseAAPlayerStatProjection(JSON.stringify(projected), [...counts, 0]), /Incomplete AA/);
         assert.throws(() => parseAAPlayerStatProjection(JSON.stringify(projected), counts.map(() => null)), /Incomplete AA/);
+        assert.throws(() => parseAAPlayerStatProjection("not-json", counts), AAPlayerStatProjectionError);
 
         // 12,800 Entry rows were cacheable before this change. Their 38,400
         // scalar fields must not accidentally count as three times the rows.
@@ -158,31 +162,100 @@ async function main() {
         assert.equal(largePipelines, 1, "12,800 rows keep their previous cache coverage");
         assert.equal(cache.get<unknown[]>('["readAAPlayerStatProjection",30]') !== undefined, true);
 
-        // An existing fallback board keeps its expiration; failures never cache
-        // a derivative that could extend that board's maximum age.
+        // A complete board is preferred even when it is near expiration. This
+        // prevents each subsequent profile from probing an unavailable Redis.
         const fallbackKey = '["getAALB","30 day"]';
         const expected = legacyStats(reference, referenceUuid, 30);
-        for (const mode of ["missing", "command-error", "malformed"] as const) {
+        cache.flushAll();
+        cache.set(fallbackKey, reference, 1);
+        const expires = cache.getTtl(fallbackKey);
+        let unexpectedPipelines = 0;
+        redis.pipeline = (() => {unexpectedPipelines++; throw new Error("The existing full board must bypass Redis");}) as Redis["pipeline"];
+        assert.deepEqual(await data.getAAPlayerStats(referenceUuid, 30), expected);
+        assert.equal(cache.getTtl(fallbackKey), expires, "A near-expired complete board keeps its original expiration");
+        assert.equal(unexpectedPipelines, 0);
+
+        // An in-flight public getAALB read is shared too, including differently
+        // cased interval spellings that normalize to the same cache key.
+        cache.flushAll();
+        let releaseBoard!: (board: Board) => void;
+        let completeLoads = 0;
+        const pendingFull = data.getCached(async () => {
+            completeLoads++;
+            return new Promise<Board>(resolve => {releaseBoard = resolve;});
+        }, "getAALB", "30 day");
+        const pendingProfile = data.getAAPlayerStats(referenceUuid, 30);
+        await Promise.resolve();
+        releaseBoard(reference);
+        await pendingFull;
+        assert.deepEqual(await pendingProfile, expected);
+        assert.equal(completeLoads, 1);
+        assert.equal(unexpectedPipelines, 0);
+
+        // A malformed legacy projection requires exactly one complete-root
+        // compatibility read; later profiles use its original full-board TTL.
+        cache.flushAll();
+        let malformedPipelines = 0, compatibilityReads = 0;
+        redis.pipeline = (() => ({
+            call() {return this;},
+            async exec() {
+                malformedPipelines++;
+                return [[null, JSON.stringify(missingEntireRow)], [null, counts]];
+            },
+        })) as unknown as Redis["pipeline"];
+        redis.call = (async (...args: unknown[]) => {
+            assert.deepEqual(args, ["JSON.GET", "aa:leaderboards:30day", "$"]);
+            compatibilityReads++;
+            return JSON.stringify([reference]);
+        }) as Redis["call"];
+        assert.deepEqual(await data.getAAPlayerStats(referenceUuid, 30), expected);
+        const compatibilityExpires = cache.getTtl(fallbackKey);
+        assert.deepEqual(await data.getAAPlayerStats(referenceUuid, 30), expected);
+        assert.equal(compatibilityReads, 1);
+        assert.equal(malformedPipelines, 1);
+        assert.equal(cache.getTtl(fallbackKey), compatibilityExpires);
+        assert.equal(cache.get('["readAAPlayerStatProjection",30]'), undefined);
+
+        // I/O errors, rejected pipelines and missing documents go directly to
+        // the existing SQL implementation. They must not incur a second Redis
+        // command timeout, or another probe on the next profile.
+        let forbiddenRootReads = 0;
+        redis.call = (async () => {forbiddenRootReads++; throw new Error("Unexpected Redis fallback retry");}) as Redis["call"];
+        const outageResults: unknown[] = [];
+        for (const mode of ["missing", "command-error", "pipeline-reject"] as const) {
             cache.flushAll();
-            cache.set(fallbackKey, reference, 60);
-            const expires = cache.getTtl(fallbackKey);
+            let outagePipelines = 0, checkouts = 0;
+            runtime.__paceStatsDbPool.getConnection = async () => {checkouts++; return originalAcquire();};
             redis.pipeline = (() => ({
                 call() {return this;},
                 async exec() {
+                    outagePipelines++;
                     if (mode === "missing") return [[null, null], [null, null]];
                     if (mode === "command-error") return [[new Error("Injected Redis projection failure"), null], [null, counts]];
-                    return [[null, JSON.stringify(missingEntireRow)], [null, counts]];
+                    throw new Error("Injected pipeline rejection");
                 },
             })) as unknown as Redis["pipeline"];
-            assert.deepEqual(await data.getAAPlayerStats(referenceUuid, 30), expected);
-            assert.equal(cache.getTtl(fallbackKey), expires);
+            const actual = await data.getAAPlayerStats(referenceUuid, 30);
+            const fullSqlBoard = cache.get<Board>(fallbackKey)!;
+            assert.ok(fullSqlBoard, "The direct SQL result uses the existing getAALB cache key");
+            assert.deepEqual(actual, legacyStats(fullSqlBoard, referenceUuid, 30));
+            const outageExpires = cache.getTtl(fallbackKey);
+            assert.ok(outageExpires! - Date.now() > 590_000);
+            assert.deepEqual(await data.getAAPlayerStats(referenceUuid, 30), actual);
+            assert.equal(cache.getTtl(fallbackKey), outageExpires);
+            assert.equal(outagePipelines, 1);
+            assert.equal(checkouts, 1, "One SQL fallback serves both profiles");
+            assert.equal(forbiddenRootReads, 0, "No second Redis read occurs before SQL");
             assert.equal(cache.get('["readAAPlayerStatProjection",30]'), undefined);
+            outageResults.push({mode, projectionPipelines: outagePipelines, redisRootReads: forbiddenRootReads, sqlCheckouts: checkouts});
         }
-        assert.equal(failureMessages, 2);
+        assert.equal(failureMessages, 3);
 
         // The true empty-cache route retains the existing read-only SQL path.
         cache.flushAll();
         redis.pipeline = originalPipeline;
+        redis.call = originalCall;
+        runtime.__paceStatsDbPool.getConnection = originalAcquire;
         const legacySql = await data.getCached(data.getAALB, "getAALB", "9999 DAY");
         const actualSql = await data.getAAPlayerStats(referenceUuid, 9999);
         assert.deepEqual(actualSql, legacyStats(legacySql, referenceUuid, 9999));
@@ -191,10 +264,14 @@ async function main() {
         const output = process.env.PERF_OUTPUT ?? "/app/test-artifacts/performance/cold-round/aa-player-stats.json";
         await mkdir(dirname(output), {recursive: true});
         await writeFile(output, JSON.stringify({periods: results, syntheticTieProfiles: 6,
-            malformedProperties: 3, completelyMissingRow: true, cacheableRows: 12_800, fallbackCases: 4, reservedRedisKeys: 0}, null, 2));
-        console.log(JSON.stringify({periods: results, fallbackCases: 4, reservedRedisKeys: 0}));
+            malformedProperties: 3, completelyMissingRow: true, cacheableRows: 12_800,
+            fallbackCases: 7, outageResults, fullBoardInflightLoads: completeLoads, nearExpiredBoardRedisReads: unexpectedPipelines,
+            reservedRedisKeys: 0}, null, 2));
+        console.log(JSON.stringify({periods: results, fallbackCases: 7, outageResults, reservedRedisKeys: 0}));
     } finally {
         redis.pipeline = originalPipeline;
+        redis.call = originalCall;
+        runtime.__paceStatsDbPool.getConnection = originalAcquire;
         console.error = originalError;
         primary.disconnect();
         redis.disconnect();

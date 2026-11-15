@@ -12,23 +12,35 @@ export type AAPlayerStats = Record<string, Record<number, {ranking: number; valu
 export type AAPlayerStatProjection = Record<string, Array<[uuid: string, qty: number, value: number]>>;
 type Entry = {uuid: string; qty: number; value: number};
 
+export class AAPlayerStatProjectionError extends Error {
+    constructor() {
+        super("Incomplete AA leaderboard projection");
+        this.name = "AAPlayerStatProjectionError";
+    }
+}
+
 /** The row counts detect omitted properties, including completely empty rows. */
 export function parseAAPlayerStatProjection(raw: unknown, lengths: unknown): AAPlayerStatProjection {
-    const projection: unknown = JSON.parse(String(raw));
+    let projection: unknown;
+    try {
+        projection = JSON.parse(String(raw));
+    } catch {
+        throw new AAPlayerStatProjectionError();
+    }
     if (!projection || typeof projection !== "object" || Array.isArray(projection)
         || !Array.isArray(lengths) || lengths.length !== aaPlayerStatBranches.length
         || lengths.some(length => !Number.isSafeInteger(length) || length < 0)) {
-        throw new Error("Incomplete AA leaderboard projection");
+        throw new AAPlayerStatProjectionError();
     }
     let projectedValues = 0;
     const result: AAPlayerStatProjection = {};
     for (const {path} of aaPlayerStatBranches) {
         const rows: unknown = (projection as Record<string, unknown>)[path];
-        if (!Array.isArray(rows) || rows.length % 3 !== 0) throw new Error("Incomplete AA leaderboard projection");
+        if (!Array.isArray(rows) || rows.length % 3 !== 0) throw new AAPlayerStatProjectionError();
         const entries: AAPlayerStatProjection[string] = [];
         for (let index = 0; index < rows.length; index += 3) {
             if (typeof rows[index] !== "string" || typeof rows[index + 1] !== "number"
-                || typeof rows[index + 2] !== "number") throw new Error("Incomplete AA leaderboard projection");
+                || typeof rows[index + 2] !== "number") throw new AAPlayerStatProjectionError();
             entries.push([rows[index], rows[index + 1], rows[index + 2]]);
         }
         // One tuple remains one row under the existing cache retention budget,
@@ -38,7 +50,7 @@ export function parseAAPlayerStatProjection(raw: unknown, lengths: unknown): AAP
         projectedValues += rows.length;
     }
     if (projectedValues !== lengths.reduce((total, length) => total + length, 0) * 3) {
-        throw new Error("Incomplete AA leaderboard projection");
+        throw new AAPlayerStatProjectionError();
     }
     return result;
 }

@@ -13,7 +13,7 @@ import mysql from 'mysql2/promise';
 import type {QueryResult, RowDataPacket} from 'mysql2';
 import { Entry } from "@/app/types";
 import {calculateAvg, trimmedStats, type TrimmedStats} from "@/app/trimmedAverage";
-import {aaPlayerStatBranches, aaPlayerStatsFromLeaderboard, aaPlayerStatsFromProjection, parseAAPlayerStatProjection} from "@/app/aa/playerStats";
+import {AAPlayerStatProjectionError, aaPlayerStatBranches, aaPlayerStatsFromLeaderboard, aaPlayerStatsFromProjection, parseAAPlayerStatProjection} from "@/app/aa/playerStats";
 import {
     bucketStart,
     COMBINED_BUCKET_SECONDS,
@@ -2821,15 +2821,27 @@ const readAAPlayerStatProjection = async (days: number) => {
 /** A profile needs exact ranks and values, not the complete public AA board. */
 export const getAAPlayerStats = async (uuid: string, days: number) => {
     const safeDays = leaderboardPeriods.has(days) ? days : 30;
+    const interval = `${safeDays} DAY`;
+    const fullKey = makeCacheKey("getAALB", [interval]);
+    // Public AA requests or a previous projection fallback may already hold
+    // this board. Reuse that work without probing Redis again or extending TTL.
+    if (cache.has(fullKey) || promiseCache.has(fullKey)) {
+        return aaPlayerStatsFromLeaderboard(await getCached(getAALB, "getAALB", interval), uuid, safeDays);
+    }
+    let fallback = calculateAALeaderboardsFromDatabase;
     try {
         const projection = await getCached(readAAPlayerStatProjection, "readAAPlayerStatProjection", safeDays);
         return aaPlayerStatsFromProjection(projection, uuid, safeDays);
     } catch (error) {
         if (!(error instanceof CacheNotReadyError)) console.error("Unable to read AA player statistics projection; falling back to the complete board:", error);
+        // A legacy/malformed shape still needs the complete JSON document.
+        // An I/O failure or absent document goes straight to SQL: retrying the
+        // same Redis connection here could add another command timeout.
+        if (error instanceof AAPlayerStatProjectionError) fallback = getAALB;
     }
     // Do not cache a fallback projection: that would add a second ten-minute
     // TTL to a complete board that may already be near its own expiration.
-    const leaderboards = await getCached(getAALB, "getAALB", `${safeDays} DAY`);
+    const leaderboards = await getCached(fallback, "getAALB", interval);
     return aaPlayerStatsFromLeaderboard(leaderboards, uuid, safeDays);
 };
 
