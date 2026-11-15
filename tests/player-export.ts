@@ -417,11 +417,12 @@ async function verifyRouteValidationAndIdentity() {
     assert.deepEqual(body.range, {from: "2023-01-01", to: "2025-02-01", timezone: "UTC", toExclusive: true});
     assert.equal(body.mode, "daily");
     assert.deepEqual(body.rows, fixture.daily.rows);
-    assert.ok(body.notes.some((note: string) => note.includes("Only submitted reset stats records")));
+    assert.equal(Object.hasOwn(body, "notes"), false, "Reset stats responses contain data without explanatory notes");
     assert.equal(body.dataset, "resetStats");
     assert.deepEqual(fixture.cacheCalls.at(-1), {name: "getResetDailyExport", args: [fixture.uuid,
         Date.parse("2023-01-01T00:00:00Z") / 1000, Date.parse("2025-02-01T00:00:00Z") / 1000]});
-    assert.match(response.headers.get("content-disposition")!, /^attachment; filename="paceman-resetStats-[a-f0-9-]+-2023-01-01-2025-02-01-daily\.json"$/);
+    assert.equal(response.headers.get("content-disposition"), null, "JSON data is displayed inline instead of forced into a download");
+    assert.match(response.headers.get("content-type")!, /^application\/json/);
     assert.equal(response.headers.get("cache-control"), "public, max-age=0, s-maxage=60, stale-while-revalidate=120");
 }
 
@@ -430,7 +431,7 @@ async function verifyCsvAndPagination() {
     const dailyResponse = await fixture.GET(fixture.request("name=KnownPlayer&from=2024-01-01&to=2024-01-02&format=csv"));
     assert.equal(dailyResponse.status, 200);
     assert.equal(dailyResponse.headers.get("content-type"), "text/csv; charset=utf-8");
-    assert.match(dailyResponse.headers.get("content-disposition")!, /-daily\.csv"$/);
+    assert.equal(dailyResponse.headers.get("content-disposition"), null);
     const dailyText = await dailyResponse.text();
     assert.ok(dailyText.startsWith("date,netherEnters,previewsPlayed,resets,resetRecords,accurateRecords,wallTimeMs,playTimeMs,rnph,lnph,resetsPerEnter\r\n"));
     assert.ok(dailyText.includes("2024-01-01,2,12,5,1,2,1800000,1800000,2,4,2.5"));
@@ -447,7 +448,7 @@ async function verifyCsvAndPagination() {
     for (const [key, value] of new URLSearchParams(query)) assert.equal(next.searchParams.get(key), value);
     const text = await response.text();
     assert.ok(text.includes('"world,""quoted""\nsecond line"'), "CSV escapes quotes, commas and embedded newlines");
-    assert.match(response.headers.get("content-disposition")!, /-records\.csv"$/);
+    assert.equal(response.headers.get("content-disposition"), null);
     assert.deepEqual(plain(fixture.cacheCalls.at(-1)), {name: "getResetRecordExportPage", args: [fixture.uuid,
         1704067200, 1704153600, null, 2]});
     const page = await fixture.GET(new NextRequest(next, {headers: {"x-forwarded-for": "next-page"}}));
@@ -456,6 +457,9 @@ async function verifyCsvAndPagination() {
         {time: 1704110400, id: 3}, 2]);
     const json = await fixture.GET(fixture.request(query.replace("format=csv", "format=json")));
     const jsonBody = await json.json();
+    assert.equal(json.headers.get("content-disposition"), null);
+    assert.match(json.headers.get("content-type")!, /^application\/json/);
+    assert.equal(Object.hasOwn(jsonBody, "notes"), false);
     assert.equal(jsonBody.limit, 2);
     assert.equal(jsonBody.nextCursor, fixture.nextCursor);
     assert.deepEqual(jsonBody.rows, [fixture.record]);
@@ -535,7 +539,8 @@ async function verifyStatsRouteAndDatasetSeparation() {
     assert.equal(resetBody.dataset, "resetStats");
     assert.deepEqual(resetBody.rows, fixture.daily.rows);
     assert.deepEqual(plain(fixture.cacheCalls.at(-1)), {name: "getResetDailyExport", args: [fixture.uuid, 1704067200, 1704153600]});
-    assert.notEqual(reset.headers.get("content-disposition"), response.headers.get("content-disposition"));
+    assert.equal(reset.headers.get("content-disposition"), null);
+    assert.equal(Object.hasOwn(resetBody, "notes"), false);
 }
 
 async function verifyUuidRoutesAndNameCompatibility() {
@@ -560,13 +565,13 @@ async function verifyUuidRoutesAndNameCompatibility() {
             assert.equal(response.status, 200, `${kind}/${mode}/${format}`);
             assert.ok(fixture.cacheCalls.some(call => call.name === "getExportPlayerByUuid" && call.args[0] === canonicalUuid));
             assert.equal(fixture.cacheCalls.at(-1)!.args[0], storedUuid, "Dataset cache keys retain the UUID stored in the database");
-            if (kind === "stats") assert.equal(response.headers.get("content-disposition"), null);
-            else assert.match(response.headers.get("content-disposition")!, new RegExp(`paceman-${kind}-${storedUuid}-2024-01-01-2024-01-02-${mode}\\.${format}`));
+            assert.equal(response.headers.get("content-disposition"), null);
             if (format === "json") {
                 const body = await response.json();
                 assert.deepEqual(body.player, {uuid: storedUuid, name: null}, "A known UUID can export data even when its current nickname is null");
                 assert.equal(body.dataset, kind);
-                assert.equal(Object.hasOwn(body, "notes"), kind === "resetStats");
+                assert.equal(Object.hasOwn(body, "notes"), false);
+                assert.match(response.headers.get("content-type")!, /^application\/json/);
             } else assert.equal(response.headers.get("content-type"), "text/csv; charset=utf-8");
             if (mode === "records") {
                 const next = new URL(response.headers.get("link")!.match(/^<([^>]+)>; rel="next"$/)![1]);
@@ -605,7 +610,7 @@ async function main() {
     await verifyStatsRouteAndDatasetSeparation();
     await verifyUuidRoutesAndNameCompatibility();
     await verifyUuidIdentitySqlAndSharedNameCache();
-    console.log("Player exports: date/cursor validation, historical ranges, weighted daily summaries, scoped SQL/pages, identity resolution, CSV downloads/pagination and request limits passed");
+    console.log("Player exports: date/cursor validation, historical ranges, weighted daily summaries, scoped SQL/pages, identity resolution, JSON/CSV responses, pagination and request limits passed");
 }
 
 main().catch(error => {console.error(error); process.exitCode = 1;});

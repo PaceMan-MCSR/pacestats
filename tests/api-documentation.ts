@@ -31,6 +31,7 @@ assert.equal(new URL(exampleRequestUrl("getPBs")).searchParams.get("names"), "jo
 assert.equal(new URL(exampleRequestUrl("exportStats")).searchParams.get("format"), "json");
 assert.equal(new URL(exampleRequestUrl("exportResetStats")).searchParams.get("format"), "json");
 assert.equal(Object.hasOwn(apiExamples.exportStats.response, "notes"), false);
+assert.equal(Object.hasOwn(apiExamples.exportResetStats.response, "notes"), false);
 
 const small = {count: 24, avg: "3:00", empty: [], nullable: null};
 const smallPreview = exampleResponsePreview(small);

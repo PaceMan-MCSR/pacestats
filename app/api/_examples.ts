@@ -50,11 +50,6 @@ const resetTotals = {
 };
 const exportQuery = {name, from: "2024-01-01", to: "2024-01-02", format: "json"};
 const exportRange = {from: "2024-01-01", to: "2024-01-02", timezone: "UTC", toExclusive: true};
-const exportNotes = [
-    "Dates use UTC. The from date is inclusive and the to date is exclusive.",
-    "Daily rows include only dates with stored records. Historical exports are not restricted to a 90-day window.",
-    "Records are paginated from oldest to newest by timestamp and ID. Durations and splits are in milliseconds; timestamps use ISO 8601 UTC.",
-];
 
 export const apiExamples = {
     getLeaderboard: {
@@ -139,7 +134,7 @@ export const apiExamples = {
     exportResetStats: {
         query: exportQuery,
         response: {dataset: "resetStats", player: {name, uuid}, range: exportRange, mode: "daily",
-            rows: [{date: "2024-01-01", ...resetTotals}], summary: resetTotals, notes: exportNotes},
+            rows: [{date: "2024-01-01", ...resetTotals}], summary: resetTotals},
     },
     searchPlayers: {
         query: {q: name, limit: "8"},

@@ -13,14 +13,7 @@ type ExportConfig = {
     recordsCacheKey: string;
     dailyColumns: readonly string[];
     recordColumns: readonly string[];
-    notes?: readonly string[];
 };
-
-const sharedNotes = [
-    "Dates use UTC. The from date is inclusive and the to date is exclusive.",
-    "Daily rows include only dates with stored records. Historical exports are not restricted to a 90-day window.",
-    "Records are paginated from oldest to newest by timestamp and ID. Durations and splits are in milliseconds; timestamps use ISO 8601 UTC.",
-];
 
 const configurations: Record<ExportKind, ExportConfig> = {
     stats: {
@@ -40,18 +33,6 @@ const configurations: Record<ExportKind, ExportConfig> = {
         recordsCacheKey: "getResetRecordExportPage",
         dailyColumns: dailyExportColumns,
         recordColumns: recordExportColumns,
-        notes: [
-            ...sharedNotes,
-            "Only submitted reset stats records are available; missing days do not establish that no games were played.",
-            "Dates and daily groups use the reset stats record submission time.",
-            "Reported play and wall time cover intervals since the previous nether entry, so an interval can cross a daily or selected date boundary.",
-            "netherEnters counts submitted records; previewsPlayed is separate. resetRecords reports how many records include reset data; unavailable reset data is not zero.",
-            "Daily totals and the summary sum the available resets; resets is null when none are available, and resetsPerEnter is null unless every submitted record has a reset count. Raw negative reset counters indicate unavailable historical values and are preserved.",
-            "RNPH = netherEnters * 3600000 / (wallTimeMs + playTimeMs); LNPH = netherEnters * 3600000 / playTimeMs. Rates are null when their denominator is zero.",
-            "totalResets is a lifetime counter at the time of a submission and must not be summed across records.",
-            "accurateRecords counts submissions marked isAccurate; all submitted records are included in the totals, regardless of that flag.",
-            "In records mode, netherTimeMs is the pace run's in-game nether-entry time; trackerNetherTimeMs is the separate, possibly unavailable submitted nether time.",
-        ],
     },
 };
 
@@ -78,11 +59,6 @@ export function createPlayerExportHandler(kind: ExportKind) {
         const headers = new Headers({
             "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=120",
         });
-        if (kind === "resetStats") {
-            const safeUuid = String(player.uuid).replace(/[^a-zA-Z0-9-]/g, "");
-            const filename = `paceman-${kind}-${safeUuid}-${options.fromDate}-${options.toDate}-${options.mode}.${options.format}`;
-            headers.set("Content-Disposition", `attachment; filename="${filename}"`);
-        }
         if (options.mode === "records") {
             headers.set("X-Has-More", String(result.hasMore));
             if (result.nextCursor !== null) {
@@ -105,7 +81,6 @@ export function createPlayerExportHandler(kind: ExportKind) {
             mode: options.mode,
             ...result,
             ...(options.mode === "records" ? {limit: options.limit} : {}),
-            ...(config.notes ? {notes: config.notes} : {}),
         }, {headers});
     }, {limit: 6, concurrent: 2});
 }
