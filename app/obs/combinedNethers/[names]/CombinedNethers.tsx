@@ -15,13 +15,14 @@ export interface CombinedNethersSettings {
     maxTime: number
 }
 
-export default function CombinedNethers({names, settings, initialData}: {
+export default function CombinedNethers({names, settings, initialData, initialDataAt}: {
     names: string,
     settings: CombinedNethersSettings,
-    initialData?: any
+    initialData?: any,
+    initialDataAt?: number
 }) {
     const { data } = useOverlayData(`/stats/api/getCombinedNethers/?names=${overlayNameQuery(names)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}&maxTime=${settings.maxTime}`,
-        {demo: settings.demo, refreshInterval: refresh * 1000, initialData}
+        {demo: settings.demo, refreshInterval: refresh * 1000, initialData, initialDataAt}
     )
 
     if(data && data.error) {

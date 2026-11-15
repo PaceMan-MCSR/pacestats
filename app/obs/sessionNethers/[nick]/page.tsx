@@ -29,7 +29,7 @@ export default async function Page(
     let nphRight : boolean = searchParams["nphRight"] === "true"
     let nick = params.nick
     const initialData = await initialOverlayData('nethers', nick, {hours, hoursBetween, nph, liveOnly, dp}, demo);
-    return <SessionNethers name={nick} initialData={initialData} settings={{
+    return <SessionNethers name={nick} initialData={initialData?.data} initialDataAt={initialData?.at} settings={{
             hours: hours, hoursBetween: hoursBetween, color: `#${color}`, demo: demo, font: font,
             nph: nph, liveOnly: liveOnly, decimals: dp, nphDp: nphDp, nphRight: nphRight
         }}/>

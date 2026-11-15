@@ -25,3 +25,4 @@ assert.equal(overlayNameQuery('One,Two'), 'One%2CTwo');
 assert.equal(overlayNameQuery('One%2CTwo'), 'One%2CTwo');
 assert.equal(overlayNameQuery('One&Two'), 'One%26Two');
 assert.equal(overlayNameQuery('invalid%name'), 'invalid%25name');
+assert.equal(new URL(overlaySocketUrl('ws://localhost:8080','/stats/api/getSessionStats/?name=Player',12345)!).searchParams.get('since'),'12345');

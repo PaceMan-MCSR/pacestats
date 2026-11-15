@@ -26,7 +26,7 @@ export default async function Page(
 
     const initialData = await initialOverlayData('combinedNethers', params.names, {hours, hoursBetween, start, maxTime}, demo);
     return <div>
-        <CombinedNethers names={params.names} initialData={initialData} settings={{
+        <CombinedNethers names={params.names} initialData={initialData?.data} initialDataAt={initialData?.at} settings={{
         hours: hours, hoursBetween: hoursBetween, color: `#${color}`,
         demo: demo, font: font, start: start, maxTime
         }}/>

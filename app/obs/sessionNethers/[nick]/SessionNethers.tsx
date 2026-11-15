@@ -18,15 +18,16 @@ export interface SessionNethersSettings {
     nphRight: boolean
 }
 
-export default function SessionNethers({name, settings, initialData}: {
+export default function SessionNethers({name, settings, initialData, initialDataAt}: {
     name: string,
     settings: SessionNethersSettings,
-    initialData?: any
+    initialData?: any,
+    initialDataAt?: number
 }) {
 
     const key = `/stats/api/getSessionNethers/?name=${overlayNameQuery(name)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&nph=${settings.nph}&liveOnly=${settings.liveOnly}&dp=${settings.decimals}`
     const { data } = useOverlayData(key,
-        {demo: settings.demo, refreshInterval: refresh * 1000, initialData}
+        {demo: settings.demo, refreshInterval: refresh * 1000, initialData, initialDataAt}
     )
 
     if(data && data.error) {

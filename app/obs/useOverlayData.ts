@@ -27,8 +27,8 @@ const fetcher = (url: string): Promise<any> => {
 };
 
 /** Live sockets own freshness; HTTP is an initial demo/compatibility/recovery path. */
-export function useOverlayData(key: string, {demo, refreshInterval, initialData}: {demo: boolean; refreshInterval: number; initialData?: any}) {
-    const socketUrl = demo ? null : overlaySocketUrl(process.env.NEXT_PUBLIC_WS_ENDPOINT, key);
+export function useOverlayData(key: string, {demo, refreshInterval, initialData, initialDataAt}: {demo: boolean; refreshInterval: number; initialData?: any; initialDataAt?: number}) {
+    const socketUrl = demo ? null : overlaySocketUrl(process.env.NEXT_PUBLIC_WS_ENDPOINT, key, initialDataAt);
     const [fallback, setFallback] = useState<string | null>(null);
     const polling = !socketUrl || fallback === key;
     const state = useRef({key, socketUrl, sequence: 0, lastDataAt: 0, hasData: false, polling});

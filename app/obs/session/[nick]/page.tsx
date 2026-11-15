@@ -27,7 +27,7 @@ export default async function Page(
     const initialData = await initialOverlayData('session', nick, {hours, hoursBetween}, demo);
 
     return <div>
-        <Session name={nick} initialData={initialData} settings={{
+        <Session name={nick} initialData={initialData?.data} initialDataAt={initialData?.at} settings={{
         hours: hours, hoursBetween: hoursBetween, color: `#${color}`,
         demo: demo, showAvg: showAvg, dynamic: dynamic, font: font
         }}/>

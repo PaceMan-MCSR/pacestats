@@ -32,8 +32,11 @@ export async function initialOverlayData(kind: string, name: string,
         // This short seed cache absorbs page-load bursts. The subsequent live
         // snapshot always reads fresh data and never consumes this cache.
         if (recent.size >= 64) recent.delete(recent.keys().next().value!);
-        recent.set(key, {data: snapshot.data, expiresAt: Date.now() + 2000});
-        return snapshot.data;
+        // A socket read must begin after this seed finished, rather than
+        // overlap it, before it may replace the HTML's initial value.
+        const seed = {data: snapshot.data, at: Date.now()};
+        recent.set(key, {data: seed, expiresAt: Date.now() + 2000});
+        return seed;
     }).catch(() => undefined)
         .finally(() => {if (pending.get(key) === request) pending.delete(key);});
     pending.set(key, request);

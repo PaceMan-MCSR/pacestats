@@ -27,7 +27,7 @@ export default async function Page(
 
     const initialData = await initialOverlayData('combinedStats', params.names, {hours, hoursBetween, start}, demo);
     return <div>
-        <CombinedStats names={params.names} initialData={initialData} settings={{
+        <CombinedStats names={params.names} initialData={initialData?.data} initialDataAt={initialData?.at} settings={{
         hours: hours, hoursBetween: hoursBetween, color: `#${color}`,
         demo: demo, showAvg: showAvg, dynamic: dynamic, font: font, start: start
         }}/>

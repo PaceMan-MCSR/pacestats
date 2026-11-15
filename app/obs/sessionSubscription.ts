@@ -26,7 +26,7 @@ export function overlayNameQuery(value: string): string {
 }
 
 /** Preserve reverse-proxy prefixes; do not expose the internal snapshot secret. */
-export function overlaySocketUrl(endpoint: string | undefined, apiKey: string): string | null {
+export function overlaySocketUrl(endpoint: string | undefined, apiKey: string, initialDataAt?: number): string | null {
     if (!endpoint) return null;
     try {
         const url = new URL(endpoint);
@@ -41,6 +41,7 @@ export function overlaySocketUrl(endpoint: string | undefined, apiKey: string): 
         for (const [name, value] of [...api.searchParams].sort(([a], [b]) => a.localeCompare(b))) {
             url.searchParams.set(name, value);
         }
+        if (initialDataAt && Number.isSafeInteger(initialDataAt) && initialDataAt > 0) url.searchParams.set('since', String(initialDataAt));
         return url.href;
     } catch {return null;}
 }
