@@ -1,4 +1,5 @@
 import ObsWrapper from "@/app/obs/ObsWrapper";
+import '../styles/obsSetup.css';
 
 export const dynamic = "force-dynamic"
 

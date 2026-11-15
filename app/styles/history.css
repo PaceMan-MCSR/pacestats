@@ -1,0 +1,254 @@
+/* Run history styles, loaded by the matching route layout. */
+.fastRunsGrid {
+    overflow: hidden;
+    border: 2px solid #26262a;
+    background: #181819;
+    color: rgb(230, 230, 230);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.fastRunsGridHeader, .fastRunsGridRow {
+    display: grid;
+    grid-template-columns: minmax(130px, 1.4fr) repeat(7, minmax(0, 1fr));
+}
+
+.fastRunsGridHeader {
+    min-height: 40px;
+    align-items: center;
+    background: #181819;
+}
+
+.fastRunsGridRow {
+    min-height: 32px;
+    align-items: stretch;
+    background: #212529;
+    color: white;
+    text-decoration: none;
+    content-visibility: auto;
+    contain-intrinsic-size: 32px;
+}
+
+.fastRunsGridRow:hover {
+    background: #181819;
+    color: white;
+    text-decoration: none;
+}
+
+.fastRunsGridCell {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 5px 0 3px;
+    border-top: 1px solid #16161a;
+    border-right: 1px solid #16161a;
+    white-space: nowrap;
+}
+
+.fastRunsGridCell:first-child {
+    justify-content: flex-start;
+}
+
+.fastRunsGridCell:last-child {
+    border-right: 0;
+}
+
+.fastRunsGridHeader .fastRunsGridCell {
+    border-top: 0;
+    color: rgba(230, 230, 230);
+    justify-content: flex-end;
+    padding: 0 7px 0 3px;
+    font-size: 14px;
+    user-select: none;
+}
+
+.fastRunsGridHeader .fastRunsGridCell:first-child {
+    justify-content: flex-start;
+    padding-left: 10px;
+}
+
+.fastRunsSortButton {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.fastRunsGridHeader .fastRunsGridCell:first-child .fastRunsSortButton {
+    justify-content: flex-start;
+}
+
+.fastRunsSortButton:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid #8ab4f8;
+    outline-offset: 1px;
+}
+
+.fastRunsSortIndicator {
+    color: rgba(230, 230, 230, 0.35);
+    font-size: 8px;
+    line-height: 1;
+}
+
+.fastRunsSortIndicator.active {
+    color: #90caf9;
+}
+
+.fastRunsGridDate .liveIndicator {
+    flex: 0 0 auto;
+}
+
+.fastRunsGridEmpty {
+    padding: 48px 12px;
+    border-top: 1px solid #16161a;
+    text-align: center;
+}
+
+.fastRunsGridPagination {
+    border-top: 1px solid #16161a;
+    background: #181819;
+    color: rgb(230, 230, 230) !important;
+}
+
+.fastRunsGridPagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: 52px;
+    padding: 0 2px 0 16px;
+    font-size: 0.875rem;
+}
+
+.fastRunsPageSize {
+    margin: 0 32px 0 8px;
+    padding: 4px 2px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.fastRunsPageSize option {
+    background: #212529;
+    color: rgb(230, 230, 230);
+}
+
+.fastRunsPageButton {
+    display: inline-flex;
+    padding: 8px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: rgb(230, 230, 230);
+    cursor: pointer;
+}
+
+.fastRunsPageButton:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.fastRunsPageButton:disabled {
+    color: rgba(230, 230, 230, 0.3);
+    cursor: default;
+}
+
+/* Indeterminate loading bar above the runs table. */
+.fastRunsProgress {
+    position: relative;
+    height: 3px;
+    overflow: hidden;
+    background: rgba(25, 118, 210, 0.35);
+}
+
+.fastRunsProgress::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 40%;
+    background: #1976d2;
+    animation: fastRunsProgress 1.2s ease-in-out infinite;
+}
+
+@keyframes fastRunsProgress {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(250%); }
+}
+
+/* Back arrow beside the run history title. */
+.runsBackButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    margin-top: -5px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    color: #0288d1;
+    vertical-align: middle;
+}
+
+.runsBackButton:hover {
+    background: rgba(2, 136, 209, 0.08);
+    color: #0288d1;
+}
+
+.fastRunsPaginationActions {
+    display: flex;
+    margin-left: 20px;
+}
+
+/* Native date field in the run filters, sized to sit beside the MUI selects. */
+.runDateFilter {
+    position: relative;
+    display: inline-block;
+    margin-right: 10px;
+    vertical-align: top;
+}
+
+.runDateFilter input {
+    width: 150px;
+    height: 48px;
+    padding: 0 10px;
+    border: 1px solid rgba(0, 0, 0, 0.23);
+    border-radius: 3px;
+    background-color: rgb(18, 18, 21);
+    color: rgb(230, 230, 230);
+    color-scheme: dark;
+    font: inherit;
+}
+
+.runDateFilter input:hover {
+    border-color: rgba(0, 0, 0, 0.87);
+}
+
+.runDateFilter input:focus {
+    border-color: #1976d2;
+    outline: 1px solid #1976d2;
+}
+
+.runDateFilterLabel {
+    position: absolute;
+    top: -9px;
+    left: 9px;
+    padding: 0 5px;
+    /* Upper half over the panel, lower half over the field. */
+    background: linear-gradient(rgb(29, 29, 33) 50%, rgb(18, 18, 21) 50%);
+    color: rgb(170, 170, 180);
+    font-size: 0.75rem;
+    line-height: 18px;
+    pointer-events: none;
+}

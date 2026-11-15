@@ -1,0 +1,214 @@
+/* Player profiles, sessions and tracker styles, loaded by the matching route layout. */
+.playerStats .goBack {
+    text-align: center !important;
+}
+
+.playerStats .goBack button {
+    padding: 8px 24px;
+}
+
+.playerStats .header {
+    margin-top: 40px;
+    margin-bottom: 50px;
+}
+
+.playerStats .twitch {
+    background-color: rgb(37, 25, 52);
+    margin-bottom: 10px;
+    padding: 10px 10px 1px 10px;
+    border-color: rgb(30, 20, 42);
+    border-width: 2px;
+    border-radius: 6px;
+}
+
+.playerStats .twitch a {
+    text-decoration: none;
+}
+
+.playerStats .twitch .liveNow {
+    color: rgb(230, 230, 230);
+}
+
+.playerStats .stat {
+    background-color: rgb(29, 29, 33);
+    padding: 15px;
+    border: 2px solid rgb(20, 20, 30);
+    border-radius: 6px;
+}
+
+.playerStats .stat h4 {
+    margin-bottom: 18px;
+}
+
+.playerStats .twitch a {
+    color: #4e4ef5;
+}
+
+.playerStats .stat p {
+    line-height: 0.8em;
+}
+
+.playerStats .thumb {
+    width: 100%;
+    border: 1px solid rgb(20, 16, 28);
+    border-radius: 3px;
+    margin-bottom: 10px;
+}
+
+.playerStats .playerSkin {
+    width: 0;
+}
+
+@media only screen and (min-width: 992px) {
+    .playerStats .playerSkin {
+        width: 96px;
+        margin-bottom: 10px;
+        margin-left: 16px;
+    }
+}
+
+@media only screen and (min-width: 1400px) {
+    .playerStats .playerSkin {
+        width: 96px;
+        margin-top: 60px;
+        margin-left: 100px;
+    }
+}
+
+@media only screen and (min-width: 576px) and (max-width: 767px) {
+    .playerStats .playerSkin {
+        margin-top: -40px;
+        margin-bottom: 6px;
+        margin-right: 10px;
+        width: 76px;
+        float: right;
+        transform: scaleX(-1);
+    }
+
+    .playerStats .playerSkin-tall {
+        margin-top: 20px;
+        margin-bottom: 6px;
+        margin-right: 10px;
+        width: 90px;
+        float: right;
+        transform: scaleX(-1);
+    }
+}
+
+@media only screen and (min-width: 768px) and (max-width: 991px) {
+    .playerStats .playerSkin {
+        margin-top: -92px;
+        margin-bottom: 8px;
+        margin-right: 16px;
+        width: 64px;
+        float: right;
+        transform: scaleX(-1);
+    }
+
+    .playerStats .playerSkin-tall {
+        margin-top: -30px;
+        margin-bottom: 10px;
+        margin-right: 10px;
+        width: 90px;
+        float: right;
+        transform: scaleX(-1);
+    }
+}
+
+.nphOptions {
+    background-color: rgb(29, 29, 33);
+    border-radius: 10px;
+    border: 1px solid rgb(10, 10, 10);
+}
+
+/*
+ * Bootstrap's dark theme makes its default tooltip light with dark text. These
+ * tooltips use a custom dark background, so restore a high-contrast foreground.
+ */
+.nphTooltip {
+    --bs-tooltip-color: rgb(230, 230, 230);
+}
+
+.recentRuns .runsHeader {
+    text-align: center;
+}
+
+.recentRuns td {
+    padding-left: 5px;
+}
+
+.recentRuns {
+    max-width: 635px;
+}
+
+
+@media only screen and (min-width: 1400px) {
+    .recentContainer {
+        margin-left: 110px;
+    }
+}
+
+.recentRunsFull table:not(.noHover) tr:hover td, .recentRuns table:not(.noHover) tr:hover td {
+    cursor: pointer;
+    background-color: rgb(25, 25, 28);
+}
+
+.nphTooltip .tooltip-inner {
+    text-align: center;
+    max-width: 500px;
+    padding: 4px 10px;
+    background-color: rgb(10, 10, 14);
+    border: 1px solid rgb(5, 5, 6);
+}
+
+.nphTooltip {
+    margin-bottom: 5px;
+}
+
+.nphTooltip p {
+    margin: 0;
+}
+
+.openHistory {
+    position: relative;
+    margin-top: -48px;
+    margin-right: -10px;
+    margin-bottom: 15px;
+    text-align: right;
+}
+
+.openHistory button {
+    background-color: #121215;
+    border-color: rgb(5, 5, 5);
+    padding: 4px 10px;
+}
+
+.recentNethers .runsHeader {
+    text-align: center;
+}
+
+.recentNethers td {
+    padding-left: 5px;
+}
+
+.recentNethers {
+    max-width: 920px;
+}
+
+.statHeader div {
+    text-align: right;
+}
+
+.statHeader div p {
+    margin-top: -21px;
+    margin-right: -6px;
+    font-size: 0.75em;
+}
+
+.nphOptions {
+    padding: 10px;
+}
+
+.nphOptions div span .MuiSlider-markLabel{
+    color: rgb(230, 230, 230);
+}
