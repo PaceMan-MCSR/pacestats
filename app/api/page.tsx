@@ -1,5 +1,3 @@
-'use client'
-
 import "@/app/styles/api.css"
 
 type Endpoint = {path: string; method?: string; summary: string; params?: string; returns: string; notes?: string; rateLimit?: string}
