@@ -39,6 +39,60 @@ comparing the whole setup-page download. The telemetry browser test loads the
 real SDK from local assets and blocks outbound ingest. See
 `ops/performance/2026-11-15-bundles.md` for results and tradeoffs.
 
+## Website request and rendering round
+
+This round uses baseline `23fd231`, exported to
+`/tmp/pacestats-site-baseline`, and local production servers on **5111**
+(baseline) and **5112** (candidate). Run all commands below **inside Docker**,
+from `/app`; from the host, open `docker exec -it pacestats-dev bash`.
+Use the same dependencies, generated data and local upstream preload for both
+builds. Keep browser checks, builds and timing runs separate.
+
+The focused fixtures cover Bootstrap source scanning, identity batching and
+cancellation, search failure recovery and request deadlines, bounded speculative
+prefetching, meaningful run updates, relative-time formatting and AA row reuse:
+
+```sh
+node scripts/trim-bootstrap.mjs
+node tests/css-source-words.mjs
+node --import tsx tests/player-info-requests.ts
+node --import tsx tests/shared-loader.ts
+node --import tsx tests/player-prefetch.ts
+node tests/search-player-lifecycle.mjs
+node --import tsx tests/run-snapshot.ts
+node tests/run-data-updates.mjs
+PERF_REFERENCE_ROOT=/tmp/pacestats-site-baseline node --import tsx tests/relative-time-recent.mjs
+node tests/aa-history-row-work.mjs
+```
+
+The React fixtures use private HTTP listeners and controlled providers. Their
+work counts are structural checks, not production CPU or page-latency results.
+The relative-time fixture compares the frozen helper, retaining its existing
+DST-fold and clipped-calendar behavior; Moment alone is not an exact reference.
+For optional before/after work counts, these fixtures also accept a source root:
+
+```sh
+PERF_SOURCE_ROOT=/tmp/pacestats-site-baseline node tests/run-data-updates.mjs
+PERF_SOURCE_ROOT=/tmp/pacestats-site-baseline node --import tsx tests/relative-time-recent.mjs
+PERF_SOURCE_ROOT=/tmp/pacestats-site-baseline node tests/aa-history-row-work.mjs
+```
+
+Run production style and functional checks first, then the paired bundle probe
+alone. Save this round's artifacts under `test-artifacts/performance/site-round/`:
+
+```sh
+PERF_BASELINE_URL=http://127.0.0.1:5111/stats/ PERF_BASE_URL=http://127.0.0.1:5112/stats/ PERF_OUTPUT=/app/test-artifacts/performance/site-round/route-css-parity.json node tests/route-css-parity.mjs
+PERF_BASE_URL=http://127.0.0.1:5112/stats/ node tests/frontend-navigation.mjs
+PERF_BASE_URL=http://127.0.0.1:5112/stats/ node tests/search-dismissal.mjs
+PERF_BASELINE_URL=http://127.0.0.1:5111/stats/ PERF_BASE_URL=http://127.0.0.1:5112/stats/ PERF_OUTPUT=/app/test-artifacts/performance/site-round/pages.json node scripts/perf-bundles.mjs
+```
+
+The bundle probe and the CSS fixture's navigation trace use **300 ms** network
+latency and **4×** CPU slowdown. CSS parity includes stabilization waits and
+should not replace the bundle probe's readiness measurements. The production
+checks exercise real routing; focused search/row fixtures do not measure that
+network path.
+
 ## OBS snapshot delivery
 
 The OBS regression fixtures run inside the local Docker container. They use
