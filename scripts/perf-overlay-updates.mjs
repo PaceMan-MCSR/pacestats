@@ -65,6 +65,9 @@ try {
             const initialDataMs=performance.now()-begin;
             await page.waitForFunction(()=>window.overlaySockets.some(socket=>socket.readyState===WebSocket.OPEN));
             const initialDataAndSubscriptionMs=performance.now()-begin;
+            // Server-rendered values can appear before the first socket read
+            // completes. Drain that initial response before timing an event.
+            if(index)await page.waitForFunction(()=>window.overlaySnapshotTimes.length>0);
             const initial=await page.evaluate(()=>({apiRequests:window.overlayApiTimes.length,snapshots:window.overlaySnapshotTimes.length}));
             assert.equal(initial.apiRequests,index?0:1);
             const updates=[];
