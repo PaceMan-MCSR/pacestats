@@ -1,12 +1,67 @@
 .apiBlock {
-    background-color: rgb(12, 12, 14);
-    padding: 10px;
-    border: 1px solid rgb(5, 5, 5);
+    background: #17191f;
+    border: 1px solid #383c48;
     border-radius: 8px;
+    padding: 0 25px 8px;
+    margin-block: 22px;
+    font-size: 14px;
+    line-height: 1.65;
 }
 
-.apiBlock h2 {
-    color: rgb(7, 121, 231);
+.apiBlock h3 {
+    background: #21252f;
+    margin: 0 -25px;
+    padding: 17px 25px;
+    border-radius: 7px 7px 0 0;
+    border-bottom: 1px solid #383c48;
+    font-size: 19px;
+    font-weight: 550;
+    line-height: 1.4;
+    letter-spacing: -0.025em;
+}
+
+.apiBlock code {
+    font-family: Consolas, monospace;
+    font-size: 0.96em;
+}
+
+.apiBlock h3 code {
+    color: #b8d3ff;
+    font-size: 1em;
+    overflow-wrap: anywhere;
+}
+
+.apiBlock p {
+    padding: 12px 0;
+    margin: 0;
+    color: #bec5d5;
+    overflow-wrap: anywhere;
+}
+
+.apiBlock p:has(b) {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 14px;
+    border-top: 1px solid #2b303c;
+}
+
+.apiBlock b {
+    color: #909eb5;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-top: 2px;
+}
+
+.apiBlock p code {
+    color: #d5def0;
+}
+
+@media (max-width: 700px) {
+    .apiBlock p:has(b) {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 4px;
+    }
 }
 
 .output {
