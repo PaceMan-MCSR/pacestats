@@ -1,7 +1,7 @@
 import {
     getCached,
     getAllNamesByNick,
-    getAllNamesByTwitch, getAllUserInfo, getPlayerRunsOffsetPage,
+    getAllNamesByTwitch, getUserInfo, getPlayerRunsOffsetPage,
 } from "@/app/data";
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
@@ -61,8 +61,8 @@ export default async function Page(
 
     // Send the first page of runs with the page itself. The table used to
     // fetch it after rendering, which cost a second round trip.
-    const [userInfo, initialRuns] = await Promise.all([
-        getCached(getAllUserInfo, "getAllUserInfo"),
+    const [playerUser, initialRuns] = await Promise.all([
+        getCached(getUserInfo, "getUserInfo", uuid),
         getCached(
             getPlayerRunsOffsetPage,
             "getPlayerRunsOffsetPage",
@@ -75,8 +75,7 @@ export default async function Page(
     ])
 
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
-    const nameColor = getNameColor(userInfo, uuid)
-    const playerUser = (userInfo as any[])?.find((user) => user.uuid === uuid)
+    const nameColor = getNameColor(playerUser ? [playerUser] : [], uuid)
 
     return (<main className="main allRuns">
         <div className="container">
