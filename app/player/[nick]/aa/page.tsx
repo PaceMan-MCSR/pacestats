@@ -3,11 +3,12 @@ import {
     getCached,
     getAllNamesByNick,
     getAllNamesByTwitch,
-    getAALB, getRecentAARuns,
+    getAALB, getRecentAARuns, getUserInfo,
 } from "@/app/data";
 import Link from "next/link";
 import {CategoryType, fixDisplayName, getMinAAQty} from "@/app/utils";
 import AAPlayerPage from "@/app/player/[nick]/aa/AAPlayerPage";
+import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
 
 export async function generateMetadata(props: { params: Promise<{ nick: string }> }) {
     const params = await props.params;
@@ -77,9 +78,12 @@ export default async function Page(
     let realNick = fixDisplayName(names.nick)
     const uuid = names.uuid
     // Independent reads: start them together instead of one after another.
-    const [lb, recentRuns] = await Promise.all([
+    const [lb, recentRuns, playerUser] = await Promise.all([
         getCached(getAALB, "getAALB", days + " day"),
         getCached(getRecentAARuns, "getRecentAARuns", uuid, 4),
+        // Customization is optional; a failed read leaves the header's normal
+        // browser lookup available rather than failing the statistics page.
+        getCached(getUserInfo, "getUserInfo", uuid).catch(() => undefined),
     ])
     const filters = [
         CategoryType.AVG,
@@ -122,5 +126,13 @@ export default async function Page(
         }
     }
 
-    return <AAPlayerPage name={realNick} uuid={uuid} recentRuns={recentRunRows(recentRuns, true)} data={data} days={days} />
+    return <>
+        {playerUser !== undefined && <PlayerInfoSeed nick={names.nick} info={{
+            id: uuid,
+            displayName: playerUser?.displayName ?? null,
+            color: playerUser?.color ?? null,
+            bgColor: playerUser?.bgColor ?? null,
+        }}/>}
+        <AAPlayerPage name={realNick} uuid={uuid} recentRuns={recentRunRows(recentRuns, true)} data={data} days={days}/>
+    </>
 }

@@ -1,13 +1,14 @@
 import {
     getCached,
     getAllNamesByNick,
-    getAllNamesByTwitch, getAAPlayerRunsPage,
+    getAllNamesByTwitch, getAAPlayerRunsPage, getUserInfo,
 } from "@/app/data";
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
 import {Suspense} from "react";
 import AARecentRuns from "@/app/player/[nick]/runs/aa/AARecentRuns";
 import {recentRunRows} from "@/app/components/profile/recentRunPresentation";
+import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
 
 export default async function Page(
     props: {
@@ -39,13 +40,22 @@ export default async function Page(
     const uuid = names.uuid
 
     // First page only; AARecentRuns fetches older runs on demand.
-    const initialPage = await getCached(getAAPlayerRunsPage, "getAAPlayerRunsPage", uuid, null, 100)
+    const [initialPage, playerUser] = await Promise.all([
+        getCached(getAAPlayerRunsPage, "getAAPlayerRunsPage", uuid, null, 100),
+        getCached(getUserInfo, "getUserInfo", uuid).catch(() => undefined),
+    ]);
 
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
 
     return (<main className="main allRuns">
         <div className="container">
             <ResetScroll/>
+            {playerUser !== undefined && <PlayerInfoSeed nick={names.nick} info={{
+                id: uuid,
+                displayName: playerUser?.displayName ?? null,
+                color: playerUser?.color ?? null,
+                bgColor: playerUser?.bgColor ?? null,
+            }}/>}
             <div className="row justify-content-center">
                 <div className="col-lg-8 col-xl-7">
                     <h1 className="header mb-4">

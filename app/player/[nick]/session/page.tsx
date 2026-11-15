@@ -2,11 +2,12 @@ import {
     getCached,
     getAllNamesByNick,
     getAllNamesByTwitch,
-    getNPH, getSessionStats,
+    getNPH, getSessionStats, getUserInfo,
 } from "@/app/data";
 import Link from "next/link";
 import {fixDisplayName} from "@/app/utils";
 import SessionPage from "@/app/player/[nick]/session/SessionPage";
+import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
 
 export async function generateMetadata(props: { params: Promise<{ nick: string }> }) {
     const params = await props.params;
@@ -71,9 +72,18 @@ export default async function Page(
     const uuid = names.uuid
 
     // Independent reads: start them together instead of one after another.
-    const [session, nph] = await Promise.all([
+    const [session, nph, playerUser] = await Promise.all([
         getCached(getSessionStats, "getSessionStats", uuid, hours, hoursBetween),
         getCached(getNPH, "getNPH", uuid, hours, hoursBetween),
+        getCached(getUserInfo, "getUserInfo", uuid).catch(() => undefined),
     ])
-    return <SessionPage name={realNick} uuid={uuid} nph={nph} data={session} hours={hours} hoursBetween={hoursBetween} />
+    return <>
+        {playerUser !== undefined && <PlayerInfoSeed nick={names.nick} info={{
+            id: uuid,
+            displayName: playerUser?.displayName ?? null,
+            color: playerUser?.color ?? null,
+            bgColor: playerUser?.bgColor ?? null,
+        }}/>}
+        <SessionPage name={realNick} uuid={uuid} nph={nph} data={session} hours={hours} hoursBetween={hoursBetween}/>
+    </>
 }

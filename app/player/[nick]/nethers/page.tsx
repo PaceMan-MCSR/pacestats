@@ -1,12 +1,13 @@
 import {
     getCached,
     getAllNamesByNick,
-    getAllNamesByTwitch, getRecentNethers,
+    getAllNamesByTwitch, getRecentNethers, getUserInfo,
 } from "@/app/data";
 import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
 import {Nethers} from "@/app/player/[nick]/nethers/Nethers";
 import {trackerRows} from "./presentation";
+import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
 
 export default async function Page(
     props: {
@@ -37,13 +38,22 @@ export default async function Page(
     }
     const uuid = names.uuid
 
-    const nethers = await getCached(getRecentNethers, "getRecentNethers", uuid, 100)
+    const [nethers, playerUser] = await Promise.all([
+        getCached(getRecentNethers, "getRecentNethers", uuid, 100),
+        getCached(getUserInfo, "getUserInfo", uuid).catch(() => undefined),
+    ]);
 
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"
 
     return (<main className="main">
         <div className="container">
             <ResetScroll/>
+            {playerUser !== undefined && <PlayerInfoSeed nick={names.nick} info={{
+                id: uuid,
+                displayName: playerUser?.displayName ?? null,
+                color: playerUser?.color ?? null,
+                bgColor: playerUser?.bgColor ?? null,
+            }}/>}
             <div className="row justify-content-center">
                 <div className="col-lg-10 col-xl-8">
                     <h1 className="header mb-4">
