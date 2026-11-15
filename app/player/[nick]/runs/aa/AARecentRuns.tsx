@@ -1,6 +1,6 @@
 'use client'
 
-import {useEffect, useRef, useState} from "react";
+import {memo, useEffect, useRef, useState} from "react";
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
 import {recentRunRows} from "@/app/components/profile/recentRunPresentation";
 import type {RecentRunRow} from "@/app/components/profile/recentRunPresentation";
@@ -26,6 +26,16 @@ type AARunsPage = {
     nextCursor: number | null;
     hasMore: boolean;
 };
+
+const AARunRow = memo(function AARunRow({run}: {run: RecentRunRow}) {
+    return <tr>
+        <td>
+            {run.live && <span className="liveIndicator"/>}
+            <RelativeTimer start={run.time} compactBelow="sm"/>
+        </td>
+        {run.cells.map((cell, index) => <td key={index}>{cell}</td>)}
+    </tr>;
+});
 
 /**
  * Some players have thousands of AA runs. The server renders the first page
@@ -112,13 +122,7 @@ export default function AARecentRuns({uuid, initialPage}: {
             </tr>
             </thead>
             <tbody>
-            {runs.map((run) => <tr key={run.id}>
-                <td>
-                    {run.live && <span className="liveIndicator"/>}
-                    <RelativeTimer start={run.time} compactBelow="sm"/>
-                </td>
-                {run.cells.map((cell, index) => <td key={index}>{cell}</td>)}
-            </tr>)}
+            {runs.map((run) => <AARunRow key={run.id} run={run}/>)}
             </tbody>
         </table>
         {nextCursor !== null && <div style={{textAlign: "center"}} className="mb-4">
