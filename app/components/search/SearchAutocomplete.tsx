@@ -44,6 +44,7 @@ import {
 } from "react";
 import "./searchAutocomplete.css";
 import {defaultFuseOptions, sharedSearchIndex} from './searchIndex';
+import {createSharedLoader} from '../sharedLoader';
 
 export const DEFAULT_INPUT_DEBOUNCE = 200;
 export const MAX_RESULTS = 10;
@@ -51,15 +52,7 @@ export const MAX_RESULTS = 10;
 // Fuse.js (about 15 KB) loads the first time someone focuses or types in a
 // search box, so pages that never search do not download it.
 type FuseConstructor = typeof Fuse;
-let loadedFuse: FuseConstructor | null = null;
-let fuseRequest: Promise<FuseConstructor> | undefined;
-const loadFuse = () => {
-    fuseRequest ??= import("fuse.js").then((module) => {
-        loadedFuse = module.default;
-        return loadedFuse;
-    });
-    return fuseRequest;
-};
+const fuseLoader = createSharedLoader(() => import("fuse.js").then(module => module.default));
 
 type Item = Record<string, any>;
 type SearchStringEvent = ChangeEvent<HTMLInputElement> | { target: { value: string } };
@@ -303,7 +296,8 @@ export default function SearchAutocomplete<T extends Item>({
     maxLength = 0,
     className,
 }: SearchAutocompleteProps<T>) {
-    const [FuseClass, setFuseClass] = useState<FuseConstructor | null>(() => loadedFuse);
+    const [FuseClass, setFuseClass] = useState<FuseConstructor | null>(() => fuseLoader.current ?? null);
+    const requestingFuse = useRef(false);
     // Building an index walks the entire player list. Reuse it while typing,
     // highlighting results and opening/closing the menu.
     const fuse = useMemo(
@@ -312,8 +306,15 @@ export default function SearchAutocomplete<T extends Item>({
     );
 
     const requestFuse = () => {
-        if (FuseClass) return;
-        void loadFuse().then((loaded) => setFuseClass(() => loaded));
+        if (FuseClass || requestingFuse.current) return;
+        requestingFuse.current = true;
+        void fuseLoader.load()
+            .then(loaded => setFuseClass(() => loaded))
+            .catch(() => {
+                // A failed chunk must not poison every search box until reload.
+                // Another focus or keystroke can retry it.
+            })
+            .finally(() => { requestingFuse.current = false; });
     };
 
     const [searchString, setSearchString] = useState(inputSearchString);

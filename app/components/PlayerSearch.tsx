@@ -9,6 +9,7 @@ import { UserColoursContext, UsersContext } from "@/app/contexts";
 import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 import { schedulePlayerPrefetch } from "@/app/components/playerPrefetch";
 import { usePlayerInfo } from "@/app/components/playerInfoStore";
+import { createSharedLoader } from "@/app/components/sharedLoader";
 
 type SearchItem = SearchName & { color?: string | null };
 
@@ -23,19 +24,16 @@ const PLAYER_SEARCH_OPTIONS = {
 const fullyPrefetchedPlayers = new Map<string, number>();
 const MAX_FULL_PREFETCHES = 64;
 
-let playerNamesRequest: Promise<SearchItem[]> | undefined;
-// Shared by every search box on the page and kept across client navigations.
-let loadedPlayerNames: SearchItem[] | null = null;
-
 // A blank image keeps the row's layout until the player's UUID is known.
 const BLANK_AVATAR = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
 
-function loadPlayerNames() {
+// Shared by every search box on the page and kept across client navigations.
+const playerNamesLoader = createSharedLoader(() => {
     // Names and Twitch handles only (about 45 KB compressed, against 155 KB
     // for the full list with UUIDs). Each entry is a nick or
     // [nick, ...twitchHandles]. SearchResult asks for the UUID and colour of
     // the few players that reach the screen.
-    playerNamesRequest ??= fetch("/stats/api/getPlayerNames/")
+    return fetch("/stats/api/getPlayerNames/", {signal: AbortSignal.timeout(8_000)})
         .then((response) => {
             if (!response.ok) throw new Error(`Unable to load player names (${response.status})`);
             return response.json() as Promise<Array<string | string[]>>;
@@ -46,15 +44,9 @@ function loadPlayerNames() {
                 // The nick stands in as the id; it is unique in the list.
                 return {id: nick, nick, twitches};
             });
-            loadedPlayerNames = players;
             return players;
-        })
-        .catch((error) => {
-            playerNamesRequest = undefined;
-            throw error;
         });
-    return playerNamesRequest;
-}
+});
 
 function SearchResult({item, colourUsers}: {item: SearchItem, colourUsers: any}) {
     // Items from the name list carry no UUID; items from a per-query search do.
@@ -120,11 +112,11 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
     // someone shows intent to search; per-query search covers the gap.
     const requestPlayerNames = () => {
         if (data !== undefined || loadedItems !== null) return;
-        if (loadedPlayerNames !== null) {
-            setLoadedItems(loadedPlayerNames);
+        if (playerNamesLoader.current !== undefined) {
+            setLoadedItems(playerNamesLoader.current);
             return;
         }
-        loadPlayerNames()
+        playerNamesLoader.load()
             .then((players) => {
                 if (mounted.current) {
                     // The reusable index now covers this query; a slower
@@ -155,6 +147,7 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
 
         const controller = new AbortController();
         searchController.current = controller;
+        const timeout = setTimeout(() => controller.abort(), 8_000);
         fetch(`/stats/api/searchPlayers/?q=${encodeURIComponent(query)}&limit=8`, {
             signal: controller.signal,
         })
@@ -176,7 +169,8 @@ export default function PlayerSearch({data, input, setOutput, userInfo}: {
             })
             .catch((error) => {
                 if (!controller.signal.aborted && mounted.current && error.name !== "AbortError") setRemoteItems([]);
-            });
+            })
+            .finally(() => clearTimeout(timeout));
     };
 
     const handleOnSelect = (item: any) => {
