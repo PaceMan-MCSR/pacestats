@@ -12,7 +12,7 @@ publishing generation and health metadata for operations.
 - `npm run cache:runs:full` streams histories in UUID/id order, staging and releasing one player at a time, and removes stale history keys.
 - `npm run cache:profile` reports cache metadata, Redis memory/slowlog data, MySQL plans, and page timings.
 - `npm run cache:benchmark:incremental` marks the busiest player dirty and times its cache-only history rebuild.
-- `npm run ws:start` starts the WebSocket invalidation service.
+- `npm run ws:start` starts shared OBS snapshot delivery and legacy WebSocket invalidations.
 
 For read-only producer profiling inside Docker, run:
 
@@ -182,7 +182,64 @@ All settings are optional unless noted:
 | `RECENT_WATERMARK_OVERLAP_SECONDS` | 2 | Protection against timestamp precision races |
 | `RECENT_CACHE_TTL_SECONDS` | 0 | Optional history-key TTL; if nonzero it must exceed the full-rebuild interval because unchanged keys renew only on a full rebuild |
 
-The WebSocket server subscribes to `pacestats:run-updates` by default
+## WebSocket overlay delivery
+
+The four OBS overlays (`session`, `sessionNethers`, `combinedStats`, and
+`combinedNethers`) receive their initial values and later values over the
+WebSocket. Their browser-source URLs stay the same. The socket subscribes to
+`/overlay?kind=session|nethers|combinedStats|combinedNethers&...`, using the
+existing name/names and session settings. A healthy connection applies pushed
+JSON directly; it does not refetch a browser API after each run notification.
+Display settings such as colour and font do not create separate server reads.
+
+The server shares one snapshot and one pending refresh per active parameter
+set. A run notification refreshes only groups containing that player's resolved
+UUID. A notification arriving during a read schedules one follow-up read.
+Identical viewers share that work, and joining an already loaded group reuses
+its latest snapshot. A shared 30-second refresh also updates rolling windows
+and picks up pace changes from writers that do not publish notifications.
+Groups disappear and pending work is cancelled when their last viewer leaves.
+
+Each WS process allows up to 512 snapshot groups, 100 clients per group, and
+two concurrent snapshot requests. Snapshot bodies and outgoing snapshot frames
+are capped at 32 KiB; sends are drained in batches of 256 with the existing
+socket backpressure checks. The internal Next.js endpoint allows four active
+snapshot reads per process. These bounds are separate from the legacy
+per-UUID client limit. The snapshot provider has an eight-second request timeout
+and retries failed groups after five seconds. The last successful value stays
+visible while recovery is in progress.
+
+Snapshot reads go to `WS_SNAPSHOT_ENDPOINT`, which defaults to
+`http://127.0.0.1:5050/stats/api/obsSnapshot/`. Keep the trailing slash: Next.js
+redirects the noncanonical path, and the internal client rejects redirects.
+Point this at the Next.js service directly, including the `/stats` base path,
+instead of a public HTTP cache. The WS process authenticates with
+`Authorization: Bearer <WS_TOKEN>`; configure the same private `WS_TOKEN` in
+both Next.js and the WS service. It is never sent to an OBS browser source.
+Snapshots have `private, no-store` responses and bypass the public session
+result/row caches, so a committed update is not hidden by their short TTLs.
+Combined snapshots keep the existing summary validation and authoritative SQL
+tail checks. An overlay that hides NPH skips its extra tracker query.
+
+If sockets are unavailable, an initial stream times out, or the snapshot
+provider fails, the browser falls back to its existing public API with bounded,
+jittered retries. That compatibility path retains the public API's caching
+semantics. A healthy pushed snapshot stops browser polling again. Demo previews
+use their existing HTTP path.
+
+For production, configure `NEXT_PUBLIC_WS_ENDPOINT` to the public WebSocket
+base URL (for example, `wss://paceman.gg/ws2`), and rebuild the site when changing
+this `NEXT_PUBLIC_` value. Its proxy must pass `/ws2/overlay` as well as the
+existing pull/push paths. Configure `WS_ALLOWED_ORIGINS` to a comma-separated
+list of permitted browser origins, such as `https://paceman.gg`.
+
+Deploy the Next.js snapshot endpoint and public fallback APIs before upgrading
+the WS process, then restart the WS process with its internal endpoint and
+matching credential. Older overlays continue to use legacy pull notifications.
+New overlays opened against an older WS process use HTTP fallback; reload those
+OBS browser sources after the WS upgrade to establish the new subscription.
+
+The WebSocket server still subscribes to `pacestats:run-updates` by default
 (`WS_REDIS_CHANNEL` overrides it). Publishers send JSON
 `{"uuid":"...","type":"refresh"}`; omitted `type` means `refresh`. The
 authenticated legacy `/push/{uuid}/{token}` endpoint remains available during
@@ -191,4 +248,8 @@ mistake cannot silently accept pull clients without delivering updates; set
 `WS_ALLOW_LEGACY_WITHOUT_REDIS=true` only for an intentional legacy-only
 deployment. Capacity/backpressure controls are `WS_MAX_CLIENTS`,
 `WS_MAX_CLIENTS_PER_UUID`, `WS_MAX_BUFFERED_BYTES`, and `WS_COALESCE_MS`.
+Committed stats inserts and successful run deletions publish a best-effort
+UUID refresh after the authoritative SQL write; duplicate inserts and rolled
+back deletions do not publish. `reloadPage` messages retain their existing
+reload behaviour for both subscription types.
 Local startup reads `.env.local`; set `DOTENV_CONFIG_PATH` to use another env file.
