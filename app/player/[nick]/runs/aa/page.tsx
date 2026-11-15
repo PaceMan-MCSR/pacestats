@@ -9,6 +9,7 @@ import {Suspense} from "react";
 import AARecentRuns from "@/app/player/[nick]/runs/aa/AARecentRuns";
 import {recentRunRows} from "@/app/components/profile/recentRunPresentation";
 import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
+import {optionalPlayerInfo} from "@/app/player/optionalPlayerInfo";
 
 export default async function Page(
     props: {
@@ -42,7 +43,7 @@ export default async function Page(
     // First page only; AARecentRuns fetches older runs on demand.
     const [initialPage, playerUser] = await Promise.all([
         getCached(getAAPlayerRunsPage, "getAAPlayerRunsPage", uuid, null, 100),
-        getCached(getUserInfo, "getUserInfo", uuid).catch(() => undefined),
+        optionalPlayerInfo(getCached(getUserInfo, "getUserInfo", uuid)),
     ]);
 
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"

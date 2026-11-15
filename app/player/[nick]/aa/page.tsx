@@ -9,6 +9,7 @@ import Link from "next/link";
 import {fixDisplayName} from "@/app/utils";
 import AAPlayerPage from "@/app/player/[nick]/aa/AAPlayerPage";
 import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
+import {optionalPlayerInfo} from "@/app/player/optionalPlayerInfo";
 
 export async function generateMetadata(props: { params: Promise<{ nick: string }> }) {
     const params = await props.params;
@@ -83,7 +84,7 @@ export default async function Page(
         getCached(getRecentAARuns, "getRecentAARuns", uuid, 4),
         // Customization is optional; a failed read leaves the header's normal
         // browser lookup available rather than failing the statistics page.
-        getCached(getUserInfo, "getUserInfo", uuid).catch(() => undefined),
+        optionalPlayerInfo(getCached(getUserInfo, "getUserInfo", uuid)),
     ])
 
     return <>

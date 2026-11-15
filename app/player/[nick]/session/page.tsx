@@ -8,6 +8,7 @@ import Link from "next/link";
 import {fixDisplayName} from "@/app/utils";
 import SessionPage from "@/app/player/[nick]/session/SessionPage";
 import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
+import {optionalPlayerInfo} from "@/app/player/optionalPlayerInfo";
 
 export async function generateMetadata(props: { params: Promise<{ nick: string }> }) {
     const params = await props.params;
@@ -75,7 +76,7 @@ export default async function Page(
     const [session, nph, playerUser] = await Promise.all([
         getCached(getSessionStats, "getSessionStats", uuid, hours, hoursBetween),
         getCached(getNPH, "getNPH", uuid, hours, hoursBetween),
-        getCached(getUserInfo, "getUserInfo", uuid).catch(() => undefined),
+        optionalPlayerInfo(getCached(getUserInfo, "getUserInfo", uuid)),
     ])
     return <>
         {playerUser !== undefined && <PlayerInfoSeed nick={names.nick} info={{

@@ -8,6 +8,7 @@ import ResetScroll from "@/app/components/ResetScroll";
 import {Nethers} from "@/app/player/[nick]/nethers/Nethers";
 import {trackerRows} from "./presentation";
 import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
+import {optionalPlayerInfo} from "@/app/player/optionalPlayerInfo";
 
 export default async function Page(
     props: {
@@ -40,7 +41,7 @@ export default async function Page(
 
     const [nethers, playerUser] = await Promise.all([
         getCached(getRecentNethers, "getRecentNethers", uuid, 100),
-        getCached(getUserInfo, "getUserInfo", uuid).catch(() => undefined),
+        optionalPlayerInfo(getCached(getUserInfo, "getUserInfo", uuid)),
     ]);
 
     const headUrl = "https://mc-api.io/render/FACE/" + uuid + "?size=8"

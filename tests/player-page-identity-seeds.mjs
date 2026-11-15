@@ -78,12 +78,12 @@ function normalize(node, seeds = []) {
 let checked = 0;
 for (const item of cases) {
     const oldPage = await loadPage(baseline, item), newPage = await loadPage(root, item);
-    for (const mode of ['custom', 'default', 'unavailable', 'alias', 'unknown']) {
+    for (const mode of ['custom', 'default', 'unavailable', 'slow', 'alias', 'unknown']) {
         const pair = [];
         for (const [index, page] of [oldPage, newPage].entries()) {
             const bodyReads = index ? item.currentBody ?? item.body : item.body;
             const calls = [];
-            let release;
+            let release, rejectOptional;
             const gate = new Promise(done => {release = done;});
             globalThis.__pageSeedFixture = {invoke: async (name, args) => {
                 calls.push({name, args});
@@ -94,6 +94,7 @@ for (const item of cases) {
                 if (name === 'getUserInfo') {
                     assert.deepEqual(args, [uuid]);
                     if (mode === 'unavailable') throw new Error('Injected optional customization outage');
+                    if (mode === 'slow') return new Promise((_, reject) => {rejectOptional = reject;});
                     return mode === 'default' ? null : custom;
                 }
                 if (name === 'getAALB') return lb;
@@ -113,7 +114,7 @@ for (const item of cases) {
             release();
             const tree = await pending, seeds = [];
             const body = normalize(tree, seeds);
-            if (index && !['unknown', 'unavailable'].includes(mode)) {
+            if (index && !['unknown', 'unavailable', 'slow'].includes(mode)) {
                 assert.deepEqual(seeds, [{nick: names.nick, info: {id: uuid,
                     displayName: mode === 'default' ? null : custom.displayName,
                     color: mode === 'default' ? null : custom.color,
@@ -121,10 +122,12 @@ for (const item of cases) {
             } else assert.deepEqual(seeds, [], 'Failed customization leaves the normal client fallback available');
             const metadata = item.metadata ? await page.generateMetadata(props) : undefined;
             pair.push({body, metadata});
+            rejectOptional?.(new Error('Late optional customization failure after page delivery'));
+            await new Promise(setImmediate);
         }
         assert.deepEqual(pair[1], pair[0], `Body/metadata changed: ${item.path}/${mode}`);
         checked++;
     }
 }
 delete globalThis.__pageSeedFixture;
-console.log(`PASS: ${checked} frozen-page comparisons preserve body/metadata; canonical/default identity seeds are scoped and parallel; unknown/outage cases retain fallback`);
+console.log(`PASS: ${checked} frozen-page comparisons preserve body/metadata; canonical/default identity seeds are scoped and parallel; unknown/outage/stalled cases retain fallback without an unhandled late rejection`);
