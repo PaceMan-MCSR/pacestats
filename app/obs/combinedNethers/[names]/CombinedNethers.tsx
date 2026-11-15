@@ -1,8 +1,7 @@
 'use client'
 
-import useSWR from 'swr'
+import {useOverlayData} from '@/app/obs/useOverlayData';
 
-const fetcher = (url: string) => fetch(url).then(r => r.json())
 const refresh = 20
 
 export interface CombinedNethersSettings {
@@ -19,8 +18,8 @@ export default function CombinedNethers({names, settings}: {
     names: string,
     settings: CombinedNethersSettings
 }) {
-    const { data } = useSWR(`/stats/api/getCombinedNethers/?names=${names}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}&maxTime=${settings.maxTime}`,
-        fetcher, { refreshInterval: settings.demo ? 999999999 : refresh * 1000 }
+    const { data } = useOverlayData(`/stats/api/getCombinedNethers/?names=${encodeURIComponent(names)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}&maxTime=${settings.maxTime}`,
+        {demo: settings.demo, refreshInterval: refresh * 1000}
     )
 
     if(data && data.error) {

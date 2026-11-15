@@ -1,10 +1,7 @@
 'use client'
 
-import useSWR, {useSWRConfig} from 'swr'
-import useWebSocket from "react-use-websocket";
-import {sessionSocketUrl} from "@/app/obs/sessionSubscription";
+import {useOverlayData} from '@/app/obs/useOverlayData';
 
-const fetcher = (url: string) => fetch(url).then(r => r.json())
 const refresh = 60
 
 export interface SessionNethersSettings {
@@ -25,27 +22,10 @@ export default function SessionNethers({name, settings}: {
     settings: SessionNethersSettings
 }) {
 
-    const key = `/stats/api/getSessionNethers/?name=${name}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&nph=${settings.nph}&liveOnly=${settings.liveOnly}&dp=${settings.decimals}`
-    const { data } = useSWR(key,
-        fetcher, { refreshInterval: settings.demo ? 999999999 : refresh * 1000 }
+    const key = `/stats/api/getSessionNethers/?name=${encodeURIComponent(name)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&nph=${settings.nph}&liveOnly=${settings.liveOnly}&dp=${settings.decimals}`
+    const { data } = useOverlayData(key,
+        {demo: settings.demo, refreshInterval: refresh * 1000}
     )
-
-    const { mutate } = useSWRConfig()
-
-    const baseUrl = process.env.NEXT_PUBLIC_WS_ENDPOINT as string
-
-    useWebSocket(sessionSocketUrl(baseUrl, data?.uuid), {
-        share: true,
-        shouldReconnect: (closeEvent) => true,
-        reconnectInterval: 5000,
-        // Control messages can refresh SWR directly. Retaining every message
-        // in component state adds a render before that data update.
-        filter: () => false,
-        onMessage: (message) => {
-            if (message.data === "refresh") void mutate(key);
-            if (message.data === "reloadPage") window.location.reload();
-        },
-    });
 
     if(data && data.error) {
         return <main className="main obs sessionNethers">

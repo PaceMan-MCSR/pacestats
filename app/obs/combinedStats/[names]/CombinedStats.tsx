@@ -1,9 +1,8 @@
 'use client'
 
-import useSWR from 'swr'
+import {useOverlayData} from '@/app/obs/useOverlayData';
 import {useOverlaySize} from '@/app/components/useOverlaySize';
 
-const fetcher = (url: string) => fetch(url).then(r => r.json())
 const refresh = 30
 
 export interface CombinedSessionSettings {
@@ -49,8 +48,8 @@ export default function CombinedStats({names, settings, setWidth, setHeight}: {
     setWidth?: any,
     setHeight?: any
 }) {
-    const { data } = useSWR(`/stats/api/getCombinedStats/?names=${names}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}`,
-        fetcher, { refreshInterval: settings.demo ? 999999999 : refresh * 1000 }
+    const { data } = useOverlayData(`/stats/api/getCombinedStats/?names=${encodeURIComponent(names)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}`,
+        {demo: settings.demo, refreshInterval: refresh * 1000}
     )
 
     const ref = useOverlaySize(setWidth, setHeight);
