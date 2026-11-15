@@ -5,6 +5,7 @@ import {useEffect, useRef} from "react";
 import {useRunStoreApi} from "@/app/run/[worldid]/RunStore";
 import type {WorldSnapshot} from "@/app/run/[worldid]/RunStore";
 import {getLastSplit} from "@/app/utils";
+import {sameRunSnapshot} from './snapshot';
 
 const fetcher = async (url: string): Promise<WorldSnapshot> => {
     const response = await fetch(url);
@@ -27,6 +28,7 @@ export default function RunData({params, initialWorld}: {
         fetcher,
         {
             fallbackData: initialWorld,
+            compare: sameRunSnapshot,
             revalidateOnMount: false,
             // SWR passes its cache value (undefined before the first fetch),
             // rather than fallbackData, when choosing the first interval.
@@ -45,7 +47,10 @@ export default function RunData({params, initialWorld}: {
             store.setState({data: null, isLive: false, dying: false, isLoading: false});
             return;
         }
-        window.history.replaceState(null, "", `/stats/run/${data.data.id}/`);
+        const canonicalPath = `/stats/run/${data.data.id}/`;
+        if (window.location.href !== new URL(canonicalPath, window.location.origin).href) {
+            window.history.replaceState(null, "", canonicalPath);
+        }
         if (data.liveStatusUnknown) return; // Keep the last confirmed live state during an upstream outage.
         clearTimeout(deathTimer.current);
         const wasLive = store.getState().isLive;
@@ -58,7 +63,8 @@ export default function RunData({params, initialWorld}: {
             store.setState({data: data.data, isLive: Boolean(data.isLive), dying: false, isLoading: false});
         }
         if (data.isLive) {
-            document.title = `${getLastSplit(data.data, false).full} by ${data.data.nickname}`;
+            const title = `${getLastSplit(data.data, false).full} by ${data.data.nickname}`;
+            if (document.title !== title) document.title = title;
         }
         return () => clearTimeout(deathTimer.current);
     }, [data, store]);
