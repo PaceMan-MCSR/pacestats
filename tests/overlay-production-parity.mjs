@@ -91,8 +91,19 @@ try {
                 });
                 const playerPath=item.pathEncoding==='literal'?item.player:encodeURIComponent(item.player);
                 const target=`${origin}/stats/obs/${routes[item.kind][0]}/${playerPath}/?${query(item,demo)}`;
-                await page.goto(target,{waitUntil:'domcontentloaded'});
+                const navigation=await page.goto(target,{waitUntil:'domcontentloaded'});
                 const selector=item.kind==='session'||item.kind==='combinedStats'?'.main .split-name':'.main h1';
+                let initialHtmlValues=false;
+                if(label==='candidate'&&!demo) {
+                    const html=await navigation.text();
+                    const serverTexts=await page.evaluate(({html,selector})=>{
+                        const document=new DOMParser().parseFromString(html,'text/html');
+                        return [...document.querySelectorAll(selector)].map(node=>node.textContent.replaceAll(/\s/g,''));
+                    },{html,selector});
+                    assert.deepEqual(serverTexts,expectedTexts(item,expected).map(compact),
+                        'The first server HTML contains overlay values before client fetch or WebSocket setup');
+                    initialHtmlValues=true;
+                }
                 await page.waitForFunction(({selector,texts})=>{
                     const nodes=[...document.querySelectorAll(selector)];
                     const normalize=text=>text.replaceAll(/\s/g,'');
@@ -106,8 +117,18 @@ try {
                 }));
                 assert.deepEqual(visible.map(node=>node.text),expectedTexts(item,expected).map(compact));
                 assert.ok(visible.every(node=>node.color==='rgb(18, 58, 188)'&&node.font.includes('Arial')));
-                // Let hydration, SWR and socket effects settle before counting requests.
-                await page.waitForTimeout(100);
+                if(label==='candidate'&&!demo) {
+                    // SSR values can be visible before hydration opens the
+                    // stream. Require its real initial frame before checking
+                    // that healthy client delivery made no browser API call.
+                    const deadline=Date.now()+30_000;
+                    while(!messages.some(message=>{
+                        try{return JSON.parse(message).type==='snapshot';}catch{return false;}
+                    })) {
+                        if(Date.now()>deadline) throw new Error(`No live snapshot after SSR seed: ${item.kind}`);
+                        await new Promise(done=>setTimeout(done,20));
+                    }
+                } else await page.waitForTimeout(100);
                 if(demo) {
                     assert.equal(apiRequests.length,1,`${label}: each demo fetches once`);
                     assert.equal(sockets.length,label==='baseline'&&item.kind==='nethers'?1:0,
@@ -122,7 +143,7 @@ try {
                     assert.equal(apiRequests.length,1,'The frozen overlay fetches its initial API value');
                 }
                 assert.deepEqual(errors,[]);
-                pages.push({label,visible,apiRequests:apiRequests.length,sockets:sockets.length,
+                pages.push({label,visible,initialHtmlValues,apiRequests:apiRequests.length,sockets:sockets.length,
                     snapshotMessages:messages.filter(message=>message.startsWith('{')).length});
                 await context.close();
             }
