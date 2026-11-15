@@ -1,5 +1,9 @@
 import "@/app/styles/api.css"
 
+// Keep the prebuilt docs inexpensive without advertising a one-year HTML TTL
+// to shared caches. Deployment also rotates nginx's cache namespace.
+export const revalidate = 60;
+
 type Endpoint = {path: string; method?: string; summary: string; params?: string; returns: string; notes?: string; rateLimit?: string}
 
 const exportParams = 'Exactly one player selector is required: name (Minecraft nickname or Twitch name) OR uuid (32 hexadecimal characters, or the 36-character hyphenated form; case-insensitive). Both selectors, neither selector, or a blank selector return HTTP 400. from: inclusive UTC date YYYY-MM-DD (1970-01-01); to: exclusive UTC date YYYY-MM-DD (tomorrow, also the maximum); mode: daily or records (daily); format: json or csv (json). Records mode only: limit (1000, max 5000); cursor from the previous page. Dates must be on or after 1970-01-01, and from must be before to.'

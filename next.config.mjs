@@ -1,7 +1,17 @@
 import {withSentryConfig} from '@sentry/nextjs';
+import {randomUUID} from 'node:crypto';
+
+// Next calls generateBuildId before headers during a production build. The
+// header is saved in routes-manifest.json, so a running old process retains its
+// old ID even while another build is being prepared on disk.
+let cacheBuildId = 'development';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     basePath: '/stats',
+    async generateBuildId() {
+        cacheBuildId = randomUUID();
+        return cacheBuildId;
+    },
     // Docker's loopback URL needs HMR access: Next's React debug channel
     // carries data required for development hydration over this socket.
     allowedDevOrigins: ['127.0.0.1'],
@@ -35,6 +45,7 @@ const nextConfig = {
             },
         ];
         return [
+            {source: '/:path*', headers: [{key: 'X-PaceStats-Build', value: cacheBuildId}]},
             // Icons, backgrounds and fonts in public/. Their names carry no
             // content hash, so cache for a day and refresh in the background.
             {

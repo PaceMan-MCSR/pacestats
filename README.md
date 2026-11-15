@@ -2,6 +2,9 @@
 
 https://paceman.gg/stats/
 
+See [nginx build cache setup](ops/nginx/README.md) for automatic page/API cache
+invalidation on deployment and the one-time production configuration change.
+
 ## Startup cache warming
 
 Every Node web server process starts warming the website's shared data cache

@@ -10,7 +10,7 @@
     "css:bootstrap": "node scripts/trim-bootstrap.mjs",
     "prebuild": "node scripts/trim-bootstrap.mjs",
     "build": "next build",
-    "postbuild": "node scripts/precompress.mjs",
+    "postbuild": "node scripts/precompress.mjs && node scripts/refresh-nginx-cache.mjs",
     "start": "next start -p 5050",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --incremental false",

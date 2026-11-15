@@ -11,8 +11,11 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import {fileURLToPath} from "node:url";
+import dotenv from "dotenv";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// Match Next's production environment and the cache namespace publisher.
+dotenv.config({path: [".env.production.local", ".env.local", ".env.production", ".env"].map(name => path.join(root, name)), quiet: true});
 const staticDir = path.join(root, ".next", "static");
 const compressible = new Set([".js", ".css", ".json", ".svg", ".txt", ".map"]);
 const MIN_BYTES = 1024;
@@ -76,7 +79,11 @@ function removeOldFiles(dir) {
         if (entry.isDirectory()) {
             removeOldFiles(full);
             if (fs.readdirSync(full).length === 0) fs.rmdirSync(full);
-        } else if (Date.now() - fs.statSync(full).mtimeMs > KEEP_OLD_BUILDS_MS) {
+            continue;
+        }
+        // This is active nginx configuration, not an old asset. Keep it even
+        // when builds are more than 30 days apart or a later build step fails.
+        if (entry.name !== "nginx-cache-version.conf" && Date.now() - fs.statSync(full).mtimeMs > KEEP_OLD_BUILDS_MS) {
             fs.unlinkSync(full);
         }
     }
