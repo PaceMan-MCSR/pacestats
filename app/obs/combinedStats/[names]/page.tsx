@@ -1,18 +1,15 @@
-'use client';
-import { use } from "react";
+import {initialOverlayData} from '@/app/obs/initialData.server';
 
 import '../../../styles/obs.css'
-import Session from "@/app/obs/session/[nick]/Session";
 import CombinedStats from "@/app/obs/combinedStats/[names]/CombinedStats";
 
-export default function Page(
+export default async function Page(
     props: {
         params: Promise<{ names: string }>,
         searchParams: Promise<{ [key: string]: string | undefined }>
     }
 ) {
-    const searchParams = use(props.searchParams);
-    const params = use(props.params);
+    const [searchParams, params] = await Promise.all([props.searchParams, props.params]);
     let hours: number = parseInt(searchParams["hours"] || "24")
     let showAvg: boolean = searchParams["showAvg"] === "true"
     let dynamic: boolean = searchParams["dynamic"] === "true"
@@ -28,8 +25,9 @@ export default function Page(
         hoursBetween = 2
     }
 
+    const initialData = await initialOverlayData('combinedStats', params.names, {hours, hoursBetween, start}, demo);
     return <div>
-        <CombinedStats names={params.names} settings={{
+        <CombinedStats names={params.names} initialData={initialData} settings={{
         hours: hours, hoursBetween: hoursBetween, color: `#${color}`,
         demo: demo, showAvg: showAvg, dynamic: dynamic, font: font, start: start
         }}/>

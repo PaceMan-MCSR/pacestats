@@ -43,14 +43,15 @@ function StatLine({data, settings, split}: { data: any, settings: CombinedSessio
     </div>
 }
 
-export default function CombinedStats({names, settings, setWidth, setHeight}: {
+export default function CombinedStats({names, settings, setWidth, setHeight, initialData}: {
     names: string,
     settings: CombinedSessionSettings,
     setWidth?: any,
-    setHeight?: any
+    setHeight?: any,
+    initialData?: any
 }) {
     const { data } = useOverlayData(`/stats/api/getCombinedStats/?names=${overlayNameQuery(names)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}`,
-        {demo: settings.demo, refreshInterval: refresh * 1000}
+        {demo: settings.demo, refreshInterval: refresh * 1000, initialData}
     )
 
     const ref = useOverlaySize(setWidth, setHeight);

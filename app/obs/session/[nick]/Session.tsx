@@ -42,14 +42,15 @@ function StatLine({data, settings, split}: { data: any, settings: SessionSetting
     </div>
 }
 
-export default function Session({name, settings, setWidth, setHeight}: {
+export default function Session({name, settings, setWidth, setHeight, initialData}: {
     name: string,
     settings: SessionSettings,
     setWidth?: any,
-    setHeight?: any
+    setHeight?: any,
+    initialData?: any
 }) {
     const { data } = useOverlayData(`/stats/api/getSessionStats/?name=${overlayNameQuery(name)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}`,
-        {demo: settings.demo, refreshInterval: refresh * 1000}
+        {demo: settings.demo, refreshInterval: refresh * 1000, initialData}
     )
 
     const ref = useOverlaySize(setWidth, setHeight);

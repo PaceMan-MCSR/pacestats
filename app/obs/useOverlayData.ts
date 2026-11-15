@@ -27,7 +27,7 @@ const fetcher = (url: string): Promise<any> => {
 };
 
 /** Live sockets own freshness; HTTP is an initial demo/compatibility/recovery path. */
-export function useOverlayData(key: string, {demo, refreshInterval}: {demo: boolean; refreshInterval: number}) {
+export function useOverlayData(key: string, {demo, refreshInterval, initialData}: {demo: boolean; refreshInterval: number; initialData?: any}) {
     const socketUrl = demo ? null : overlaySocketUrl(process.env.NEXT_PUBLIC_WS_ENDPOINT, key);
     const [fallback, setFallback] = useState<string | null>(null);
     const polling = !socketUrl || fallback === key;
@@ -43,6 +43,7 @@ export function useOverlayData(key: string, {demo, refreshInterval}: {demo: bool
     const retry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const [jitter] = useState(() => Math.random() * 5000);
     const {data, mutate} = useSWR(key, fetcher, {
+        fallbackData: initialData,
         // Starting a socket must not also start an API request. Recovery is
         // explicit so focus/reconnect events cannot fetch behind a live stream.
         revalidateOnMount: false,

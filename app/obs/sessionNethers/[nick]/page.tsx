@@ -1,18 +1,16 @@
-'use client';
-import { use } from "react";
+import {initialOverlayData} from '@/app/obs/initialData.server';
 
 import '../../../styles/obs.css'
 
 import SessionNethers from "@/app/obs/sessionNethers/[nick]/SessionNethers";
 
-export default function Page(
+export default async function Page(
     props: {
         params: Promise<{ nick: string }>,
         searchParams: Promise<{ [key: string]: string | undefined }>
     }
 ) {
-    const searchParams = use(props.searchParams);
-    const params = use(props.params);
+    const [searchParams, params] = await Promise.all([props.searchParams, props.params]);
     let hours: number = parseInt(searchParams["hours"] || "24")
     if (isNaN(hours)) {
         hours = 24
@@ -30,7 +28,8 @@ export default function Page(
     let nphDp : number = parseInt(searchParams["nphDp"] || "0")
     let nphRight : boolean = searchParams["nphRight"] === "true"
     let nick = params.nick
-    return <SessionNethers name={nick} settings={{
+    const initialData = await initialOverlayData('nethers', nick, {hours, hoursBetween, nph, liveOnly, dp}, demo);
+    return <SessionNethers name={nick} initialData={initialData} settings={{
             hours: hours, hoursBetween: hoursBetween, color: `#${color}`, demo: demo, font: font,
             nph: nph, liveOnly: liveOnly, decimals: dp, nphDp: nphDp, nphRight: nphRight
         }}/>

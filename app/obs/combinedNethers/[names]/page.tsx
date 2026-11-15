@@ -1,18 +1,15 @@
-'use client';
-import { use } from "react";
+import {initialOverlayData} from '@/app/obs/initialData.server';
 
 import '../../../styles/obs.css'
-import Session from "@/app/obs/session/[nick]/Session";
 import CombinedNethers from "@/app/obs/combinedNethers/[names]/CombinedNethers";
 
-export default function Page(
+export default async function Page(
     props: {
         params: Promise<{ names: string }>,
         searchParams: Promise<{ [key: string]: string | undefined }>
     }
 ) {
-    const searchParams = use(props.searchParams);
-    const params = use(props.params);
+    const [searchParams, params] = await Promise.all([props.searchParams, props.params]);
     let hours: number = parseInt(searchParams["hours"] || "24")
     let demo: boolean = searchParams["demo"] === "true"
     let font: string = searchParams["font"] || "Minecraft"
@@ -27,8 +24,9 @@ export default function Page(
         hoursBetween = 2
     }
 
+    const initialData = await initialOverlayData('combinedNethers', params.names, {hours, hoursBetween, start, maxTime}, demo);
     return <div>
-        <CombinedNethers names={params.names} settings={{
+        <CombinedNethers names={params.names} initialData={initialData} settings={{
         hours: hours, hoursBetween: hoursBetween, color: `#${color}`,
         demo: demo, font: font, start: start, maxTime
         }}/>
