@@ -5,6 +5,41 @@ Do not point the tools at production. Browser scripts reject non-local URLs.
 Use a production Next build for timing; development compilation and HMR
 distort page latency, CPU, and memory results.
 
+## OBS snapshot delivery
+
+The OBS regression fixtures run inside the local Docker container. They use
+mock SQL for changing data, private HTTP/WS listeners and isolated Pub/Sub
+channels; they do not insert or delete stored runs:
+
+```sh
+docker exec pacestats-dev sh -c 'cd /app && node --import tsx tests/obs-snapshot-data.ts && node --import tsx tests/obs-snapshot-route.ts && node --import tsx tests/obs-snapshot-shared-budget.ts && node --import tsx tests/obs-mutation-notifications.ts && node --import tsx tests/overlay-initial-data.ts && node --import tsx tests/session-subscription.ts'
+docker exec pacestats-dev sh -c 'cd /app && node tests/websocket-snapshots.mjs && node tests/websocket-snapshot-delivery.mjs && node tests/overlay-client-delivery.mjs'
+```
+
+For production parity and timing, build baseline and candidate copies with
+`NEXT_PUBLIC_WS_ENDPOINT` pointing to their separate WS services (8091/8092 in
+this example). Start their Next.js builds on 5095/5096 and both WS services on
+a private `WS_REDIS_CHANNEL=pacestats:obs-perf-local`. The candidate broker's
+`WS_SNAPSHOT_ENDPOINT` must point directly to
+`http://127.0.0.1:5096/stats/api/obsSnapshot/`, with the same private `WS_TOKEN`
+as Next.js. Allow both local web origins through `WS_ALLOWED_ORIGINS`.
+Use the same database, dependencies and local upstream fixture for both
+revisions. Run browser checks separately from timing, with cron paused:
+
+```sh
+docker exec pacestats-dev sh -c 'cd /app && PERF_BASELINE_URL=http://127.0.0.1:5095 PERF_BASE_URL=http://127.0.0.1:5096 node tests/overlay-production-parity.mjs'
+docker exec pacestats-dev sh -c 'cd /app && PERF_BASELINE_URL=http://127.0.0.1:5095/stats/ PERF_BASE_URL=http://127.0.0.1:5096/stats/ PERF_WS_CHANNEL=pacestats:obs-perf-local node scripts/perf-overlay-updates.mjs'
+```
+
+The delivery probe alternates three fresh contexts per revision, with three
+notifications each, 300 ms HTTP latency and 4× CPU slowdown. It explicitly
+relays real WS frames with 150 ms downlink delay; HTTP CDP throttling alone
+does not establish socket-frame latency. Initial visible values, subscription
+readiness and subsequent data arrival are distinct measurements. The dataset
+is static: changed-value DOM rendering is covered by the React fixture, not
+the notification timing result. Restore cron and stop the isolated servers
+afterward. See `ops/performance/2026-11-15-obs-live.md` for results and limits.
+
 ## Browser setup
 
 The browser tooling is deliberately separate from application dependencies:

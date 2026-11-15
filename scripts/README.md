@@ -204,11 +204,17 @@ normal socket path available. Live socket updates always read fresh data and
 never consume the seed cache. Demo pages skip SSR data work and fetch once
 through their public API, without a socket or background polling.
 
+Seeded pages include the seed's completion time as a per-viewer `since` hint.
+It does not split the shared parameter group. A retained or in-flight read
+that began before that seed completed cannot replace it; the broker shares a
+new read among viewers requiring fresher data. Future hints are clamped.
+
 The server shares one snapshot and one pending refresh per active parameter
 set. A run notification refreshes only groups containing that player's resolved
 UUID. A notification arriving during a read schedules one follow-up read.
 Identical viewers share that work, and joining an already loaded group reuses
-its latest snapshot. A shared 30-second refresh also updates rolling windows
+its latest snapshot when it meets that viewer's freshness minimum. A shared
+30-second refresh also updates rolling windows
 and picks up pace changes from writers that do not publish notifications.
 Groups disappear and pending work is cancelled when their last viewer leaves.
 
