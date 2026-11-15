@@ -1,7 +1,6 @@
 'use client'
 
-// Loaded after the OBS page renders (see ObsWrapper), which keeps
-// react-colorful out of the page's first JavaScript.
+// Shared controls are part of the OBS editor's first render.
 import {HexColorInput, HexColorPicker} from "react-colorful";
 
 export function ColorPicker({color, onChange}: {color: string, onChange: (color: string) => void}) {

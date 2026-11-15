@@ -2,27 +2,19 @@
 import ResetScroll from "@/app/components/ResetScroll";
 import PlayerSearch from "@/app/components/PlayerSearch";
 import {ChangeEvent, memo, useMemo, useState} from "react";
-import lazyLoad from "next/dynamic";
 import { OverlayTrigger, Tooltip } from "@/app/components/HoverTooltip";
 import SessionNethers from "@/app/obs/sessionNethers/[nick]/SessionNethers";
 import Session from "@/app/obs/session/[nick]/Session";
 import MaterialIcon from "@/app/components/MaterialIcon";
 import FontPicker from "@/app/obs/FontPicker";
 import {useFrameState} from './useFrameState';
+import {ColorInput, ColorPicker} from '@/app/obs/ObsColorPicker';
 
 const SessionPreview = memo(Session);
 const NethersPreview = memo(SessionNethers);
 
-// Colour controls load after the page renders. The native font select is
-// small enough to render immediately without a separate code request.
-const ColorPicker = lazyLoad(() => import("@/app/obs/ObsColorPicker").then((module) => module.ColorPicker), {
-    ssr: false,
-    loading: () => <div style={{width: 200, height: 200}}/>,
-});
-const ColorInput = lazyLoad(() => import("@/app/obs/ObsColorPicker").then((module) => module.ColorInput), {
-    ssr: false,
-    loading: () => <input disabled aria-label="Colour"/>,
-});
+// Both controls are always visible. Include their small module in this route
+// so the browser does not discover another required script after hydration.
 
 export default function ObsWrapper() {
     const [search, setSearch] = useState("")
