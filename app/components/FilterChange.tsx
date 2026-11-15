@@ -46,51 +46,72 @@ export default function FilterChange() {
             <button
                 className={"btn btn-dark filterToggle" + (toggled ? " active" : "")}
                 type="button"
+                aria-expanded={toggled}
+                aria-controls="filterButtons"
                 onMouseDown={(e) => {
                     if (e.button !== 0) return; // Only handle left mouse button
-                    setToggled(!toggled)
+                    setToggled(current => !current)
                 }}
-                // Also disable the toggle button during navigation
+                onClick={(event) => {
+                    if (event.detail === 0) setToggled(current => !current);
+                }}
             >
                 Toggle category
             </button>
             <Collapse in={toggled}>
                 <div className="filterButtons" id="filterButtons">
                     <button
+                        type="button"
                         className={"btn mt-3 " + (category === "count_avg" ? "btn-primary" : "btn-dark")}
                         onMouseDown={(e) => {
                             if (e.button !== 0) return; // Only handle left mouse button
                             handleCategoryChange("")
                         }}
+                        onClick={(event) => {
+                            if (event.detail === 0) handleCategoryChange("");
+                        }}
+                        disabled={isPending}
                     >
                         Qty + Average
                     </button>
                     <br />
                     <button
+                        type="button"
                         className={"btn my-3 mx-1 " + (category === "conversion" ? "btn-primary" : "btn-dark")}
                         onMouseDown={(e) => {
                             if (e.button !== 0) return; // Only handle left mouse button
                             handleCategoryChange("conversion")
+                        }}
+                        onClick={(event) => {
+                            if (event.detail === 0) handleCategoryChange("conversion");
                         }}
                         disabled={isPending}
                     >
                         Conversion
                     </button>
                     <button
+                        type="button"
                         className={"btn my-3 mx-1 " + (category === "fastest" ? "btn-primary" : "btn-dark")}
                         onMouseDown={(e) => {
                             if (e.button !== 0) return; // Only handle left mouse button
                             handleCategoryChange("fastest")
+                        }}
+                        onClick={(event) => {
+                            if (event.detail === 0) handleCategoryChange("fastest");
                         }}
                         disabled={isPending}
                     >
                         Fastest
                     </button>
                     <button
+                        type="button"
                         className={"btn my-3 mx-1 " + (category === "average" ? "btn-primary" : "btn-dark")}
                         onMouseDown={(e) => {
                             if (e.button !== 0) return; // Only handle left mouse button
                             handleCategoryChange("average")
+                        }}
+                        onClick={(event) => {
+                            if (event.detail === 0) handleCategoryChange("average");
                         }}
                         disabled={isPending}
                     >
