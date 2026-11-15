@@ -13,6 +13,7 @@ import mysql from 'mysql2/promise';
 import type {QueryResult, RowDataPacket} from 'mysql2';
 import { Entry } from "@/app/types";
 import {calculateAvg, trimmedStats, type TrimmedStats} from "@/app/trimmedAverage";
+import {aaPlayerStatBranches, aaPlayerStatsFromLeaderboard, aaPlayerStatsFromProjection, parseAAPlayerStatProjection} from "@/app/aa/playerStats";
 import {
     bucketStart,
     COMBINED_BUCKET_SECONDS,
@@ -865,6 +866,7 @@ const ttls = {
     getUUIDByAccessKey: 60 * 30,
     getRunId: 60 * 30,
     getAALB: 60 * 10,
+    readAAPlayerStatProjection: 60 * 10,
     getTrimmedAALB: 60 * 10,
     jude: 30,
     getNethersByPeriod: 5,
@@ -2800,6 +2802,35 @@ export const getAALB = async (interval: string = "30 DAY") => {
         console.error(`Unable to read AA leaderboards for ${days} days from Redis:`, error);
     }
     return calculateAALeaderboardsFromDatabase(`${days} DAY`);
+};
+
+const readAAPlayerStatProjection = async (days: number) => {
+    const key = `aa:leaderboards:${days}day`;
+    // Keep the ordering needed for exact ranks without downloading every
+    // player's name and average. Both reads share one network round trip.
+    const result = await redis.pipeline()
+        .call("JSON.GET", key, ...aaPlayerStatBranches.map(({path}) => path))
+        .call("JSON.ARRLEN", key, "$.*.*")
+        .exec();
+    if (!result) throw new Error("AA leaderboard projection pipeline failed");
+    for (const [error] of result) if (error) throw error;
+    if (!result[0][1]) throw new CacheNotReadyError();
+    return parseAAPlayerStatProjection(result[0][1], result[1][1]);
+};
+
+/** A profile needs exact ranks and values, not the complete public AA board. */
+export const getAAPlayerStats = async (uuid: string, days: number) => {
+    const safeDays = leaderboardPeriods.has(days) ? days : 30;
+    try {
+        const projection = await getCached(readAAPlayerStatProjection, "readAAPlayerStatProjection", safeDays);
+        return aaPlayerStatsFromProjection(projection, uuid, safeDays);
+    } catch (error) {
+        if (!(error instanceof CacheNotReadyError)) console.error("Unable to read AA player statistics projection; falling back to the complete board:", error);
+    }
+    // Do not cache a fallback projection: that would add a second ten-minute
+    // TTL to a complete board that may already be near its own expiration.
+    const leaderboards = await getCached(getAALB, "getAALB", `${safeDays} DAY`);
+    return aaPlayerStatsFromLeaderboard(leaderboards, uuid, safeDays);
 };
 
 export const getRecentNethers = async (uuid: string, limit: number = 100, liveOnly: boolean = false) => {

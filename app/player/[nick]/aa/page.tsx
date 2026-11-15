@@ -3,10 +3,10 @@ import {
     getCached,
     getAllNamesByNick,
     getAllNamesByTwitch,
-    getAALB, getRecentAARuns, getUserInfo,
+    getAAPlayerStats, getRecentAARuns, getUserInfo,
 } from "@/app/data";
 import Link from "next/link";
-import {CategoryType, fixDisplayName, getMinAAQty} from "@/app/utils";
+import {fixDisplayName} from "@/app/utils";
 import AAPlayerPage from "@/app/player/[nick]/aa/AAPlayerPage";
 import PlayerInfoSeed from "@/app/components/PlayerInfoSeed";
 
@@ -78,53 +78,13 @@ export default async function Page(
     let realNick = fixDisplayName(names.nick)
     const uuid = names.uuid
     // Independent reads: start them together instead of one after another.
-    const [lb, recentRuns, playerUser] = await Promise.all([
-        getCached(getAALB, "getAALB", days + " day"),
+    const [data, recentRuns, playerUser] = await Promise.all([
+        getAAPlayerStats(uuid, days),
         getCached(getRecentAARuns, "getRecentAARuns", uuid, 4),
         // Customization is optional; a failed read leaves the header's normal
         // browser lookup available rather than failing the statistics page.
         getCached(getUserInfo, "getUserInfo", uuid).catch(() => undefined),
     ])
-    const filters = [
-        CategoryType.AVG,
-        CategoryType.COUNT,
-        CategoryType.FASTEST,
-        CategoryType.CONVERSION
-    ]
-
-    // Define stats categories
-    const categories = [
-        "nether",
-        "bastion",
-        "fortress",
-        "stronghold",
-        "end",
-        "elytra",
-        "credits",
-        "finish"
-    ]
-
-    const data: { [category: string]: { [filter: number]: { ranking: number, value: number } } } = {}
-    for (const category of categories) {
-        data[category] = {}
-    }
-
-    for(const filter of filters) {
-        for (const category of categories) {
-            const minQty = getMinAAQty(category, days)
-            const board = lb[filter][category]
-            let i = 0
-            for (const entry of board) {
-                if (entry.qty === 0) continue;
-                if (entry.qty < minQty && entry.uuid !== uuid) continue;
-                i++;
-                if (entry.uuid === uuid) {
-                    data[category][filter] = {ranking: entry.qty < minQty ? -1 : i, value: entry.value}
-                    break
-                }
-            }
-        }
-    }
 
     return <>
         {playerUser !== undefined && <PlayerInfoSeed nick={names.nick} info={{
