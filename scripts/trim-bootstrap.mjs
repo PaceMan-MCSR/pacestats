@@ -1,9 +1,10 @@
 // Writes app/styles/bootstrap.trimmed.css: Bootstrap's stylesheet without the
-// rules for classes this app never mentions. The full file is about 230 KB and
-// blocks rendering; most of it styles components the site does not use.
+// rules for classes this app never mentions in a literal or template. Most of
+// the full 230 KB stylesheet styles components the site does not use. Initial
+// CSS is inlined, so unused rules also add to every HTML response.
 //
 // A rule stays when every class in one of its selectors appears somewhere in
-// the app's source as a whole word, so class names built by concatenation
+// a source literal as a whole word, so class names built by concatenation
 // ("btn " + variant) are still found. Runs before `npm run dev` and
 // `npm run build`; run `npm run css:bootstrap` after adding a Bootstrap class
 // if a dev server is already running.
@@ -11,6 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
+import {collectCssSourceWords} from './css-source-words.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceFile = path.join(root, "node_modules/bootstrap/dist/css/bootstrap.min.css");
@@ -28,7 +30,7 @@ function collectWords(dir, words) {
         if (entry.isDirectory()) {
             collectWords(full, words);
         } else if (scanExtensions.has(path.extname(entry.name))) {
-            for (const word of fs.readFileSync(full, "utf8").match(/[A-Za-z][\w-]*/g) ?? []) words.add(word);
+            collectCssSourceWords(fs.readFileSync(full, "utf8"), full, words);
         }
     }
 }
