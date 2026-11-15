@@ -2,6 +2,36 @@
 
 https://paceman.gg/stats/
 
+## Startup cache warming
+
+Every Node web server process starts warming the website's shared data cache
+from Next.js instrumentation, in development and production. It runs once per
+process in the background, so the server can accept requests while it warms.
+Requests for the same data share the existing in-flight reads.
+
+Warming covers users/search identities and customization, main and AA boards
+for 1, 7, 30 and all-time periods, default public leaderboard/fastest branches,
+and PBs. It also selects up to 12 players across those boards and warms their
+profiles, recent runs and run details, first history pages, and default session,
+NPH and single-player combined API variants. Arbitrary player combinations,
+custom filters and search queries continue to populate on demand. Live OBS
+snapshots keep their existing fresh-read behavior.
+
+Two jobs run at a time, using the same cache keys, TTLs and memory limits as
+normal requests. After 60 seconds no further warm-up reads are started; active
+reads keep their normal database/Redis timeouts. Failures leave the server
+running and a `[cache-warmup]` console summary reports successful, failed and
+skipped reads. Cache producer jobs still maintain the Redis aggregates.
+
+Optional environment settings (restart the web server after changing them):
+
+- `DATA_CACHE_WARMUP_ENABLED=false` disables startup warming.
+- `DATA_CACHE_WARMUP_PLAYERS=12` controls the player sample (0–50).
+- `DATA_CACHE_WARMUP_MAX_MS=60000` sets the scheduling budget (1–300000 ms).
+
+Run `node --import tsx tests/startup-cache-warmup.ts` for isolated startup,
+coverage, concurrency and failure tests without database or network access.
+
 ## Sentry metrics and logs
 
 Server telemetry runs in production with `@sentry/nextjs` 10.71.0 or newer.

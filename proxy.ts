@@ -6,7 +6,7 @@ const buckets = runtime.__paceStatsApiLimits ?? new Map<string, Bucket>();
 runtime.__paceStatsApiLimits = buckets;
 
 const tiers: Array<{match: RegExp; limit: number}> = [
-    {match: /\/aa\/api\/getAllData\/?$/, limit: 6},
+    {match: /\/(?:aa\/api\/getAllData|api\/(?:exportStats|exportResetStats))\/?$/, limit: 6},
     {match: /\/api\/getRunsPaginated\/?$/, limit: 12},
     {match: /\/api\/deleteRun\/?$/, limit: 30},
     {match: /\/api\/(?:getCombinedStats|getCombinedNethers)\/?$/, limit: 60},
