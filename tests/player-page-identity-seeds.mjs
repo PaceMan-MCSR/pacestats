@@ -17,12 +17,12 @@ const custom = {uuid, displayName: 'Displayed name', color: '12abcd', bgColor: '
 const categories = ['nether', 'bastion', 'fortress', 'stronghold', 'end', 'elytra', 'credits', 'finish'];
 const lb = Object.fromEntries([0, 1, 2, 3].map(filter => [filter, Object.fromEntries(categories.map(category => [category, []]))]));
 const cases = [
-    {path: 'aa', body: ['getAALB', 'getRecentAARuns'], metadata: true},
+    {path: 'aa', body: ['getAALB', 'getRecentAARuns'], currentBody: ['getAAPlayerStats', 'getRecentAARuns'], metadata: true},
     {path: 'runs/aa', body: ['getAAPlayerRunsPage']},
     {path: 'session', body: ['getSessionStats', 'getNPH'], metadata: true},
     {path: 'nethers', body: ['getRecentNethers']},
 ];
-const dataFunctions = ['getAllNamesByNick', 'getAllNamesByTwitch', 'getAALB', 'getRecentAARuns', 'getUserInfo',
+const dataFunctions = ['getAllNamesByNick', 'getAllNamesByTwitch', 'getAALB', 'getAAPlayerStats', 'getRecentAARuns', 'getUserInfo',
     'getAAPlayerRunsPage', 'getNPH', 'getSessionStats', 'getRecentNethers'];
 
 async function loadPage(sourceRoot, item) {
@@ -37,7 +37,7 @@ async function loadPage(sourceRoot, item) {
             });
             api.onLoad({filter: /^data$/, namespace: 'fixture'}, () => ({contents: `
                 export const getCached=(fn,name,...args)=>globalThis.__pageSeedFixture.invoke(name,args);
-                ${dataFunctions.map(name => `export const ${name}=()=>{};`).join('\n')}
+                ${dataFunctions.map(name => `export const ${name}=(...args)=>globalThis.__pageSeedFixture.invoke(${JSON.stringify(name)},args);`).join('\n')}
             `}));
             api.onResolve({filter: /^next\/link$/}, () => ({path: 'Link', namespace: 'component'}));
             api.onLoad({filter: /(?:AAPlayerPage|SessionPage|AARecentRuns|PlayerInfoSeed|ResetScroll|Nethers)\.tsx$/}, args => {
@@ -81,6 +81,7 @@ for (const item of cases) {
     for (const mode of ['custom', 'default', 'unavailable', 'alias', 'unknown']) {
         const pair = [];
         for (const [index, page] of [oldPage, newPage].entries()) {
+            const bodyReads = index ? item.currentBody ?? item.body : item.body;
             const calls = [];
             let release;
             const gate = new Promise(done => {release = done;});
@@ -88,7 +89,7 @@ for (const item of cases) {
                 calls.push({name, args});
                 if (name === 'getAllNamesByNick') return ['alias', 'unknown'].includes(mode) ? null : names;
                 if (name === 'getAllNamesByTwitch') return mode === 'unknown' ? null : names;
-                assert.ok([...item.body, 'getUserInfo'].includes(name), `Unexpected/global read: ${name}`);
+                assert.ok([...bodyReads, 'getUserInfo'].includes(name), `Unexpected/global read: ${name}`);
                 await gate;
                 if (name === 'getUserInfo') {
                     assert.deepEqual(args, [uuid]);
@@ -96,6 +97,7 @@ for (const item of cases) {
                     return mode === 'default' ? null : custom;
                 }
                 if (name === 'getAALB') return lb;
+                if (name === 'getAAPlayerStats') return Object.fromEntries(categories.map(category => [category, {}]));
                 if (name === 'getAAPlayerRunsPage') return {rows: [], nextCursor: null, hasMore: false};
                 if (name === 'getNPH') return {count: 0};
                 if (name === 'getSessionStats') return {};
@@ -106,7 +108,7 @@ for (const item of cases) {
             for (let tick = 0; tick < 16; tick++) await Promise.resolve();
             if (mode !== 'unknown') {
                 assert.deepEqual(calls.filter(call => !call.name.startsWith('getAllNames')).map(call => call.name).sort(),
-                    [...item.body, ...(index ? ['getUserInfo'] : [])].sort(), 'All independent reads start before any body read resolves');
+                    [...bodyReads, ...(index ? ['getUserInfo'] : [])].sort(), 'All independent reads start before any body read resolves');
             }
             release();
             const tree = await pending, seeds = [];
