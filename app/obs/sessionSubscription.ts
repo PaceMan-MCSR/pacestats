@@ -18,6 +18,13 @@ const overlayKinds: Record<string, string> = {
     getCombinedNethers: 'combinedNethers',
 };
 
+/** Dynamic route names can still contain escaped commas. Decode once before
+ * quoting them as a query value, matching the existing overlay URL semantics. */
+export function overlayNameQuery(value: string): string {
+    try {return encodeURIComponent(decodeURIComponent(value));}
+    catch {return encodeURIComponent(value);}
+}
+
 /** Preserve reverse-proxy prefixes; do not expose the internal snapshot secret. */
 export function overlaySocketUrl(endpoint: string | undefined, apiKey: string): string | null {
     if (!endpoint) return null;

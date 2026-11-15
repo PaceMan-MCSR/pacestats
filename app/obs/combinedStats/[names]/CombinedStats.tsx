@@ -1,6 +1,7 @@
 'use client'
 
 import {useOverlayData} from '@/app/obs/useOverlayData';
+import {overlayNameQuery} from '@/app/obs/sessionSubscription';
 import {useOverlaySize} from '@/app/components/useOverlaySize';
 
 const refresh = 30
@@ -48,7 +49,7 @@ export default function CombinedStats({names, settings, setWidth, setHeight}: {
     setWidth?: any,
     setHeight?: any
 }) {
-    const { data } = useOverlayData(`/stats/api/getCombinedStats/?names=${encodeURIComponent(names)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}`,
+    const { data } = useOverlayData(`/stats/api/getCombinedStats/?names=${overlayNameQuery(names)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}`,
         {demo: settings.demo, refreshInterval: refresh * 1000}
     )
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {overlaySocketUrl, sessionSocketUrl} from "../app/obs/sessionSubscription";
+import {overlayNameQuery, overlaySocketUrl, sessionSocketUrl} from "../app/obs/sessionSubscription";
 
 for (const uuid of [undefined, null, "", "undefined", "null", 42]) {
     assert.equal(sessionSocketUrl("ws://localhost:8080", uuid), null, "Unresolved/error overlays must not consume WebSocket subscriptions");
@@ -21,3 +21,7 @@ assert.equal(overlaySocketUrl('ws://localhost:8080', '/stats/api/getCombinedNeth
 assert.equal(overlaySocketUrl('ws://localhost:8080', '/stats/api/getSessionNethers/?nph=false&name=Player&hours=24'),
     overlaySocketUrl('ws://localhost:8080', '/stats/api/getSessionNethers/?hours=24&name=Player&nph=false'));
 console.log('PASS: snapshot URLs cover four overlay APIs, stable ordering, name encoding and reverse-proxy prefixes');
+assert.equal(overlayNameQuery('One,Two'), 'One%2CTwo');
+assert.equal(overlayNameQuery('One%2CTwo'), 'One%2CTwo');
+assert.equal(overlayNameQuery('One&Two'), 'One%26Two');
+assert.equal(overlayNameQuery('invalid%name'), 'invalid%25name');

@@ -1,6 +1,7 @@
 'use client'
 
 import {useOverlayData} from '@/app/obs/useOverlayData';
+import {overlayNameQuery} from '@/app/obs/sessionSubscription';
 
 const refresh = 20
 
@@ -18,7 +19,7 @@ export default function CombinedNethers({names, settings}: {
     names: string,
     settings: CombinedNethersSettings
 }) {
-    const { data } = useOverlayData(`/stats/api/getCombinedNethers/?names=${encodeURIComponent(names)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}&maxTime=${settings.maxTime}`,
+    const { data } = useOverlayData(`/stats/api/getCombinedNethers/?names=${overlayNameQuery(names)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&start=${settings.start}&maxTime=${settings.maxTime}`,
         {demo: settings.demo, refreshInterval: refresh * 1000}
     )
 

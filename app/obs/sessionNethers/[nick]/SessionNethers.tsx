@@ -1,6 +1,7 @@
 'use client'
 
 import {useOverlayData} from '@/app/obs/useOverlayData';
+import {overlayNameQuery} from '@/app/obs/sessionSubscription';
 
 const refresh = 60
 
@@ -22,7 +23,7 @@ export default function SessionNethers({name, settings}: {
     settings: SessionNethersSettings
 }) {
 
-    const key = `/stats/api/getSessionNethers/?name=${encodeURIComponent(name)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&nph=${settings.nph}&liveOnly=${settings.liveOnly}&dp=${settings.decimals}`
+    const key = `/stats/api/getSessionNethers/?name=${overlayNameQuery(name)}&hours=${settings.hours}&hoursBetween=${settings.hoursBetween}&nph=${settings.nph}&liveOnly=${settings.liveOnly}&dp=${settings.decimals}`
     const { data } = useOverlayData(key,
         {demo: settings.demo, refreshInterval: refresh * 1000}
     )
