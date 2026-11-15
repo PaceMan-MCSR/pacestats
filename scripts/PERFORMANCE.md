@@ -59,6 +59,28 @@ fresh-process/empty-Redis benchmark. The structure fixture checks request
 elimination, Back/Forward and all four ranges; its fixed observation waits are
 functional checks, not timing results.
 
+## Control boundaries and keyboard navigation
+
+Use a local production build for the control audit. These checks use real mouse
+and touch presses on disabled buttons; Playwright's ordinary click refuses
+disabled controls and would miss the pointer-down pagination regression.
+History and category checks retain 300 ms browser latency and 4× CPU emulation.
+Run the browser jobs sequentially, using the current local port:
+
+```sh
+PERF_BASE_URL=http://127.0.0.1:5142/stats/ node tests/run-history-boundaries.mjs
+PERF_BASE_URL=http://127.0.0.1:5142/stats/ node tests/category-control-boundaries.mjs
+PERF_BASE_URL=http://127.0.0.1:5142/stats/ node tests/obs-control-boundaries.mjs
+PERF_BASE_URL=http://127.0.0.1:5142/stats/ node tests/run-history-navigation.mjs
+node --import tsx tests/api-performance-limits.ts
+```
+
+Coverage includes first/last/empty pages, enabled keyboard navigation, malformed
+and expired page URLs, page-size resets, the ten-filter API limit, pending
+category controls and OBS input/precision bounds. The OBS fixture stubs local
+API responses to exercise positive and zero NPH formatting without SQL writes;
+it retains valid four-decimal NPH display and tests oversized direct URLs.
+
 ## CSS, HTML and JavaScript loading
 
 `scripts/perf-bundles.mjs` alternates three fresh browser contexts per revision

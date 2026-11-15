@@ -9,6 +9,7 @@ import MaterialIcon from "@/app/components/MaterialIcon";
 import FontPicker from "@/app/obs/FontPicker";
 import {useFrameState} from './useFrameState';
 import {ColorInput, ColorPicker} from '@/app/obs/ObsColorPicker';
+import {MAX_OVERLAY_AVERAGE_DECIMALS, MAX_OVERLAY_HOURS, MAX_OVERLAY_NPH_DECIMALS, overlayInteger} from './numericSettings';
 
 const SessionPreview = memo(Session);
 const NethersPreview = memo(SessionNethers);
@@ -59,14 +60,12 @@ export default function ObsWrapper() {
         `${process.env.NEXT_PUBLIC_HOSTNAME}/stats/obs/session/${search}/?hours=${hours}&hoursBetween=${hoursBetween}&color=${color.replace("#", "")}&font=${font}&dynamic=${dynamic}`,
     ], [search, hours, hoursBetween, color, font, nph, nphRight, avgDp, nphDp, wallScene, playingScene, dynamic]);
 
-    const changeHours = (event: ChangeEvent<{ value: string }>) => {
-        // @ts-ignore
-        setHours(event?.currentTarget?.value || 24);
+    const changeHours = (event: ChangeEvent<HTMLInputElement>) => {
+        setHours(overlayInteger(event.currentTarget.value, 24, 1, MAX_OVERLAY_HOURS));
     }
 
-    const changeHoursBetween = (event: ChangeEvent<{ value: string }>) => {
-        // @ts-ignore
-        setHoursBetween(event?.currentTarget?.value || 2);
+    const changeHoursBetween = (event: ChangeEvent<HTMLInputElement>) => {
+        setHoursBetween(overlayInteger(event.currentTarget.value, 2, 0, MAX_OVERLAY_HOURS));
     }
 
     const pushHours = () => {
@@ -108,7 +107,9 @@ export default function ObsWrapper() {
                             } delay={{ show: 100, hide: 50 }}>
                                 <label>Time period:</label>
                             </OverlayTrigger>
-                            <input type="number" defaultValue={24} placeholder="24" className="form-control hours" onChange={changeHours} />
+                            <input type="number" defaultValue={24} placeholder="24" className="form-control hours"
+                                aria-label="Time period (hours)" min={1} max={MAX_OVERLAY_HOURS} step={1}
+                                onChange={changeHours} onBlur={event => {event.currentTarget.value = String(hours);}} />
                             <br/>
                             <OverlayTrigger overlay={
                                 <Tooltip className="hoursTooltip">
@@ -117,7 +118,9 @@ export default function ObsWrapper() {
                             } delay={{ show: 100, hide: 50 }}>
                                 <label>Max session break:</label>
                             </OverlayTrigger>
-                            <input type="number" defaultValue={2} placeholder="2" className="form-control hours" onChange={changeHoursBetween} />
+                            <input type="number" defaultValue={2} placeholder="2" className="form-control hours"
+                                aria-label="Max session break (hours)" min={0} max={MAX_OVERLAY_HOURS} step={1}
+                                onChange={changeHoursBetween} onBlur={event => {event.currentTarget.value = String(hoursBetween);}} />
                             <br/>
                             <button style={{display: hours !== bufferedHours || hoursBetween !== bufferedHoursBetween ? "block" : "none"}} className="btn btn-primary" onClick={pushHours}>Preview updated hours</button>
                             <FontPicker output={setFont}/>
@@ -155,17 +158,17 @@ export default function ObsWrapper() {
                             <p style={{marginBottom: 0}}>Decimal precision:</p>
                             <label>
                                 Avg
-                                <input type="number" defaultValue={avgDp} placeholder="0" className="form-control avgDp" onChange={(e) => {
-                                    // @ts-ignore
-                                    setAvgDp(e.target.value)}
-                                } />
+                                <input type="number" defaultValue={avgDp} placeholder="0" className="form-control avgDp"
+                                    min={0} max={MAX_OVERLAY_AVERAGE_DECIMALS} step={1}
+                                    onChange={event => setAvgDp(overlayInteger(event.currentTarget.value, 0, 0, MAX_OVERLAY_AVERAGE_DECIMALS))}
+                                    onBlur={event => {event.currentTarget.value = String(avgDp);}} />
                             </label>
                             <label>
                                 NPH
-                                <input type="number" defaultValue={nphDp} placeholder="0" className="form-control nphDp" onChange={(e) => {
-                                    // @ts-ignore
-                                    setNphDp(e.target.value)}
-                                } />
+                                <input type="number" defaultValue={nphDp} placeholder="0" className="form-control nphDp"
+                                    min={0} max={MAX_OVERLAY_NPH_DECIMALS} step={1}
+                                    onChange={event => setNphDp(overlayInteger(event.currentTarget.value, 0, 0, MAX_OVERLAY_NPH_DECIMALS))}
+                                    onBlur={event => {event.currentTarget.value = String(nphDp);}} />
                             </label>
                             <br/>
                         </div>

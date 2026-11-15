@@ -2,6 +2,7 @@
 
 import {useOverlayData} from '@/app/obs/useOverlayData';
 import {overlayNameQuery} from '@/app/obs/sessionSubscription';
+import {MAX_OVERLAY_NPH_DECIMALS, overlayInteger} from '@/app/obs/numericSettings';
 
 const refresh = 60
 
@@ -39,12 +40,13 @@ export default function SessionNethers({name, settings, initialData, initialData
     }
 
     let nph = ""
+    const nphDp = overlayInteger(settings.nphDp, 0, 0, MAX_OVERLAY_NPH_DECIMALS);
     if(data) {
         const rnph = data.rnph || 0
         if (rnph === 0) {
-            nph = (settings.nphDp > 0 ? "0." + ("0".repeat(settings.nphDp)) : "0")
+            nph = (nphDp > 0 ? "0." + ("0".repeat(nphDp)) : "0")
         } else {
-            nph = rnph.toFixed(Math.max(0, settings.nphDp))
+            nph = rnph.toFixed(nphDp)
         }
     }
 
