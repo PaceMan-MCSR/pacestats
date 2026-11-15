@@ -49,13 +49,15 @@
     filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000);
 }
 
-.ccOpenHistory button {
+/* Profile defaults can load after this shared sheet. The base and custom
+ * classes are emitted together, so keep the player's colours more specific. */
+.openHistory.ccOpenHistory button {
     background-color: var(--cc-fg-90);
     color: var(--cc-bg-text);
     filter: var(--cc-bg-text-filter);
 }
 
-.ccOpenHistory button:hover {
+.openHistory.ccOpenHistory button:hover {
     background-color: var(--cc-fg-80);
     color: var(--cc-fg-text);
     filter: var(--cc-fg-text-filter);
