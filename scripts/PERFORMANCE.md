@@ -5,6 +5,40 @@ Do not point the tools at production. Browser scripts reject non-local URLs.
 Use a production Next build for timing; development compilation and HMR
 distort page latency, CPU, and memory results.
 
+## CSS, HTML and JavaScript loading
+
+`scripts/perf-bundles.mjs` alternates three fresh browser contexts per revision
+for the front page, profile, pace/AA histories, OBS setup and API documentation.
+It uses 300 ms HTTP latency, 10/5 Mbps and 4× CPU slowdown. Each case records
+content and control readiness, inline CSS, completed resource sizes and request
+initiators. The direct Next servers send uncompressed bodies; decoded byte
+counts are not production compressed transfer sizes. Later idle SDK downloads
+are outside the initial-interactivity measurement.
+
+Build baseline and candidate copies with the same dependencies and upstream
+fixture as described below, then start them on separate local ports. Run
+functional browser checks before timing, and keep timing runs separate from
+other builds or browser jobs. With baseline on 5101 and candidate on 5102:
+
+```sh
+docker exec pacestats-dev sh -c 'cd /app && PERF_BASELINE_URL=http://127.0.0.1:5101/stats/ PERF_BASE_URL=http://127.0.0.1:5102/stats/ node tests/route-css-parity.mjs'
+docker exec pacestats-dev sh -c 'cd /app && PERF_BASE_URL=http://127.0.0.1:5102/stats/ node tests/sentry-production-delivery.mjs'
+docker exec pacestats-dev sh -c 'cd /app && PERF_BASELINE_URL=http://127.0.0.1:5101/stats/ PERF_BASE_URL=http://127.0.0.1:5102/stats/ node scripts/perf-bundles.mjs'
+docker exec pacestats-dev sh -c 'cd /app && PERF_BASELINE_URL=http://127.0.0.1:5101/stats/ PERF_BASE_URL=http://127.0.0.1:5102/stats/ node scripts/perf-document-payloads.mjs'
+docker exec pacestats-dev sh -c 'cd /app && node --import tsx tests/history-scoped-customization.ts && node --import tsx tests/aa-history-presentation.ts && node --import tsx tests/sentry-loading.mjs && node tests/frontend-workloads.mjs'
+```
+
+The CSS fixture compares desktop/mobile computed styles, custom colours,
+filters, navigation and selected OBS previews. Its navigation diagnostics
+include font/stabilization waits and are not the primary timing benchmark.
+The document probe includes complete streamed HTML and declared modern script
+assets, including pending downloads but excluding unused `nomodule` fallbacks.
+Its Brotli quality-5 estimates are not measured production wire sizes. It
+excludes later dynamic assets; OBS's old colour chunk must be added when
+comparing the whole setup-page download. The telemetry browser test loads the
+real SDK from local assets and blocks outbound ingest. See
+`ops/performance/2026-11-15-bundles.md` for results and tradeoffs.
+
 ## OBS snapshot delivery
 
 The OBS regression fixtures run inside the local Docker container. They use
