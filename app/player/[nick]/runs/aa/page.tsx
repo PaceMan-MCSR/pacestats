@@ -7,6 +7,7 @@ import Link from "next/link";
 import ResetScroll from "@/app/components/ResetScroll";
 import {Suspense} from "react";
 import AARecentRuns from "@/app/player/[nick]/runs/aa/AARecentRuns";
+import {recentRunRows} from "@/app/components/profile/recentRunPresentation";
 
 export default async function Page(
     props: {
@@ -57,7 +58,11 @@ export default async function Page(
                         </Link>
                     </div>
                     <Suspense fallback={<div>Loading...</div>}>
-                    <AARecentRuns key={uuid} uuid={uuid} initialPage={initialPage}/>
+                    <AARecentRuns key={uuid} uuid={uuid} initialPage={{
+                        rows: recentRunRows(initialPage.rows, true),
+                        nextCursor: initialPage.nextCursor,
+                        hasMore: initialPage.hasMore,
+                    }}/>
                     </Suspense>
                 </div>
             </div>

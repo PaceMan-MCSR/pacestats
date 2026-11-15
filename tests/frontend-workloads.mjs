@@ -31,6 +31,7 @@ const result = await build({
         import {flushSync} from 'react-dom';
         import ObsWrapper from './app/obs/ObsWrapper';
         import AARecentRuns from './app/player/[nick]/runs/aa/AARecentRuns';
+        import {recentRunRows} from './app/components/profile/recentRunPresentation';
         import SearchAutocomplete from './app/components/search/SearchAutocomplete';
         import RelativeTimer from './app/components/profile/RelativeTimer';
         window.sessionRenders=0; window.nethersRenders=0; window.obsCommits=0;
@@ -41,7 +42,7 @@ const result = await build({
         });
         const run=id=>({id,twitch:null,lastUpdated:1700000000000,nether:id*100000,
             bastion:null,fortress:null,stronghold:null,end:null,elytra:null,credits:null,finish:null});
-        window.pageWith=(id,hasMore=false)=>({rows:[run(id)],nextCursor:hasMore?id:null,hasMore});
+        window.pageWith=(id,hasMore=false)=>({rows:[{...run(id),...recentRunRows([run(id)],true)[0]}],nextCursor:hasMore?id:null,hasMore});
         const searchItems=[{id:1,name:'Fixture'}];
         function App(){
             const [mode,setMode]=useState('obs'); const [uuid,setUuid]=useState('A');
@@ -72,6 +73,7 @@ const result = await build({
             return {path:resolved??path};
         });
         api.onResolve({filter:/^next\/dynamic$/},()=>({path:'dynamic',namespace:'stub'}));
+        api.onResolve({filter:/^\.\/ObsColorPicker$/},()=>({path:'ObsColorPicker',namespace:'stub'}));
         api.onLoad({filter:/.*/,namespace:'stub'},args=>({contents:stubs[args.path],loader:'jsx',resolveDir:root}));
     }}],
 });

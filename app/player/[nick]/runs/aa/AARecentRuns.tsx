@@ -2,7 +2,8 @@
 
 import {useEffect, useRef, useState} from "react";
 import RelativeTimer from "@/app/components/profile/RelativeTimer";
-import {formatIfNotNull} from "@/app/utils";
+import {recentRunRows} from "@/app/components/profile/recentRunPresentation";
+import type {RecentRunRow} from "@/app/components/profile/recentRunPresentation";
 
 const PAGE_SIZE = 100;
 
@@ -30,8 +31,11 @@ type AARunsPage = {
  * Some players have thousands of AA runs. The server renders the first page
  * and the rest load on demand, instead of shipping every run in the HTML.
  */
-export default function AARecentRuns({uuid, initialPage}: { uuid: string, initialPage: AARunsPage }) {
-    const [runs, setRuns] = useState<AARun[]>(initialPage.rows);
+export default function AARecentRuns({uuid, initialPage}: {
+    uuid: string,
+    initialPage: Omit<AARunsPage, "rows"> & {rows: RecentRunRow[]},
+}) {
+    const [runs, setRuns] = useState<RecentRunRow[]>(initialPage.rows);
     const [nextCursor, setNextCursor] = useState<number | null>(initialPage.nextCursor);
     const [loading, setLoading] = useState(false);
     const [failed, setFailed] = useState(false);
@@ -56,7 +60,8 @@ export default function AARecentRuns({uuid, initialPage}: { uuid: string, initia
             if (!response.ok) throw new Error(`Unable to load AA runs (${response.status})`);
             const page = await response.json() as AARunsPage;
             if (controller.signal.aborted) return;
-            setRuns((current) => [...current, ...page.rows]);
+            const additions = recentRunRows(page.rows, true);
+            setRuns((current) => [...current, ...additions]);
             setNextCursor(page.hasMore ? page.nextCursor : null);
         } catch {
             if (!controller.signal.aborted) setFailed(true);
@@ -107,38 +112,13 @@ export default function AARecentRuns({uuid, initialPage}: { uuid: string, initia
             </tr>
             </thead>
             <tbody>
-            {runs.map((run) => {
-                if(run.twitch === null){
-                    return <tr key={run.id}>
-                        <td>
-                            <RelativeTimer start={Number(run.lastUpdated) / 1000} compactBelow="sm"/>
-                        </td>
-                        <td>{formatIfNotNull(run.nether)}</td>
-                        <td>{formatIfNotNull(run.bastion)}</td>
-                        <td>{formatIfNotNull(run.fortress)}</td>
-                        <td>{formatIfNotNull(run.stronghold)}</td>
-                        <td>{formatIfNotNull(run.end)}</td>
-                        <td>{formatIfNotNull(run.elytra)}</td>
-                        <td>{formatIfNotNull(run.credits)}</td>
-                        <td>{formatIfNotNull(run.finish)}</td>
-                    </tr>
-                } else {
-                    return <tr key={run.id}>
-                        <td>
-                            <span className="liveIndicator"/>
-                            <RelativeTimer start={Number(run.lastUpdated) / 1000} compactBelow="sm"/>
-                        </td>
-                        <td>{formatIfNotNull(run.nether)}</td>
-                        <td>{formatIfNotNull(run.bastion)}</td>
-                        <td>{formatIfNotNull(run.fortress)}</td>
-                        <td>{formatIfNotNull(run.stronghold)}</td>
-                        <td>{formatIfNotNull(run.end)}</td>
-                        <td>{formatIfNotNull(run.elytra)}</td>
-                        <td>{formatIfNotNull(run.credits)}</td>
-                        <td>{formatIfNotNull(run.finish)}</td>
-                    </tr>
-                }
-            })}
+            {runs.map((run) => <tr key={run.id}>
+                <td>
+                    {run.live && <span className="liveIndicator"/>}
+                    <RelativeTimer start={run.time} compactBelow="sm"/>
+                </td>
+                {run.cells.map((cell, index) => <td key={index}>{cell}</td>)}
+            </tr>)}
             </tbody>
         </table>
         {nextCursor !== null && <div style={{textAlign: "center"}} className="mb-4">
