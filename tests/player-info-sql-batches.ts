@@ -1,6 +1,8 @@
 /** Read-only local Docker fixture; Redis 15 stays empty and SQL rows are not changed. */
 import assert from "node:assert/strict";
 import {existsSync} from "node:fs";
+import {mkdir, writeFile} from "node:fs/promises";
+import {dirname} from "node:path";
 import Redis from "ioredis";
 import {NextRequest} from "next/server";
 import type NodeCache from "node-cache";
@@ -11,6 +13,7 @@ const primary = new Redis("redis://127.0.0.1:6379/0");
 
 async function main() {
     const data = await import("../app/data");
+    const {mapWithConcurrency} = await import("../app/api/_utils");
     const {GET} = await import("../app/api/getPlayerInfo/route");
     const runtime = globalThis as typeof globalThis & {
         __paceStatsRedis: Redis; __paceStatsCache: NodeCache; __paceStatsDbPool: any;
@@ -31,21 +34,23 @@ async function main() {
     runtime.__paceStatsCache.set('["getBans"]', bans);
     const pool = runtime.__paceStatsDbPool, acquire = pool.getConnection.bind(pool);
 
-    const legacyLookup = async (requested: string[]) => Object.fromEntries(await Promise.all(requested.map(async name => {
+    const legacyLookup = async (requested: string[]) => Object.fromEntries(await mapWithConcurrency(requested, 4, async name => {
         const identity = await data.getCached(data.getAllNamesByNick, "getAllNamesByNick", name);
-        if (!identity || identity.nick.toLocaleLowerCase() !== name) return [name, null];
+        if (!identity || identity.nick.toLocaleLowerCase() !== name) return [name, null] as const;
         const info = await data.getCached(data.getUserInfo, "getUserInfo", identity.uuid);
         return [name, {id: identity.uuid, nick: identity.nick, displayName: info?.displayName ?? null,
-            color: info?.color ?? null, bgColor: info?.bgColor ?? null}];
-    })));
+            color: info?.color ?? null, bgColor: info?.bgColor ?? null}] as const;
+    }));
     // Exact legacy fallback, including current-name-only behavior and a banned
     // real UUID. Reference work is outside the measured production statement.
     let legacyStatements = 0;
+    const legacySql = new Map<string, {sql: string; values: unknown[]}>();
     pool.getConnection = async () => {
         const connection = await acquire(), execute = connection.execute.bind(connection);
         connection.execute = async (options: {sql: string}, values: unknown[]) => {
             connection.execute = execute;
             legacyStatements++;
+            if (!legacySql.has(options.sql)) legacySql.set(options.sql, {sql: options.sql, values});
             return execute(options, values);
         };
         return connection;
@@ -70,6 +75,7 @@ async function main() {
         return connection;
     };
     try {
+        const measurements: {round: number; kind: string; ms: number; statements: number}[] = [];
         const started = performance.now();
         const response = await GET(new NextRequest(`http://localhost:5050/stats/api/getPlayerInfo?names=${encodeURIComponent(names.join(","))}`));
         const ms = performance.now() - started;
@@ -97,9 +103,38 @@ async function main() {
         assert.deepEqual(await data.getPlayerInfoByNames([]), {});
         await assert.rejects(data.getPlayerInfoByNames(Array(21).fill("name")), RangeError);
         assert.equal(await runtime.__paceStatsRedis.dbsize(), 0);
+        // Reference requests already prepared their three small SQL shapes.
+        // Prime both variants equally on four pool connections before comparing
+        // value-cache misses, without mistaking preparation for ongoing work.
+        const preparation = await Promise.all(Array.from({length: 4}, () => acquire()));
+        try {
+            await Promise.all(preparation.map(async connection => {
+                for (const query of [...legacySql.values(), statements[0]]) await connection.execute({sql: query.sql}, query.values);
+            }));
+        } finally {for (const connection of preparation) connection.release();}
+        for (let round = 0; round < 9; round++) {
+            for (const kind of round % 2 ? ["optimized", "legacy"] : ["legacy", "optimized"]) {
+                runtime.__paceStatsCache.flushAll();
+                runtime.__paceStatsCache.set('["getBans"]', bans);
+                const issued = statements.length, start = performance.now();
+                let actual;
+                if (kind === "legacy") actual = await legacyLookup(names);
+                else {
+                    const measuredResponse = await GET(new NextRequest(`http://localhost:5050/stats/api/getPlayerInfo?names=${encodeURIComponent(names.join(","))}`));
+                    actual = await measuredResponse.json();
+                }
+                measurements.push({round, kind, ms: performance.now() - start, statements: statements.length - issued});
+                assert.deepEqual(actual, reference);
+            }
+        }
+        const output = process.env.PERF_OUTPUT ?? "/app/test-artifacts/performance/site-round/player-info-batches.json";
+        await mkdir(dirname(output), {recursive: true});
+        await writeFile(output, JSON.stringify({method: "Nine alternating in-process direct handler/legacy fallback pairs; four legacy workers, both variants' prepared SQL shapes primed equally on four pool connections; cold Node value caches, empty Redis 15, bans preknown, MySQL buffers not flushed. Not browser/HTTP latency.",
+            names: names.length, legacyStatements, optimizedStatements: 1, returnedSqlRows: statements[0].rows,
+            measurements, explain: JSON.parse(plans[0].EXPLAIN)}, null, 2));
         console.log(JSON.stringify({case: "cold-player-info-sql-batch", names: names.length,
             legacyStatements, statements: 1, returnedSqlRows: statements[0].rows, maxBoundNames: 20, ms,
-            historicalAlias: aliases[0]?.nickname ?? null, fixtureRedisKeys: 0}));
+            historicalAlias: aliases[0]?.nickname ?? null, fixtureRedisKeys: 0, measurements, output}));
     } finally {pool.getConnection = acquire;}
 
     // Shadow the tables with read-only CTEs. This exercises historical/reused
