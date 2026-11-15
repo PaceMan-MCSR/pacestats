@@ -81,6 +81,11 @@ const sentryBuildOptions = {
     sourcemaps: {
         deleteSourcemapsAfterUpload: true,
     },
+    webpack: {
+        // debug:false does not remove the SDK's development log branches.
+        // Keep error capture, tracing and release/source-map integration.
+        treeshake: {removeDebugLogging: true},
+    },
     // Do not hide upload failures: a successful build without source maps is
     // otherwise difficult to spot until the next production exception.
     silent: false,

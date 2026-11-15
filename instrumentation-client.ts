@@ -1,14 +1,16 @@
 type SentryClient = typeof import("./sentry.client.lazy");
+import {installSentryLoader, registerSentryClient, reportSentryError, reportSentryTransition} from './sentry.client.bridge';
 
 let sentryPromise: Promise<SentryClient> | undefined;
 
 const loadSentry = () => {
     sentryPromise ??= import("./sentry.client.lazy").then((sentry) => {
         sentry.initSentry();
+        registerSentryClient(sentry);
         // From here the SDK's own global handlers report errors.
         stopEarlyReporting();
         return sentry;
-    });
+    }).catch(error => {sentryPromise = undefined;throw error;});
     return sentryPromise;
 };
 
@@ -18,7 +20,7 @@ const loadSentry = () => {
 const SENTRY_DELAY_MS = 3_000;
 
 const initializeAfterLoad = () => {
-    const initialize = () => void loadSentry();
+    const initialize = () => void loadSentry().catch(() => {});
     const whenIdle = () => {
         if ("requestIdleCallback" in window) {
             window.requestIdleCallback(initialize, {timeout: 5_000});
@@ -39,7 +41,7 @@ const initializeAfterLoad = () => {
 const reportEarlyError = (event: ErrorEvent | PromiseRejectionEvent) => {
     const error = "reason" in event ? event.reason : event.error;
     if (error === undefined || error === null) return;
-    void loadSentry().then((sentry) => sentry.captureException(error));
+    reportSentryError(error);
 };
 window.addEventListener("error", reportEarlyError);
 window.addEventListener("unhandledrejection", reportEarlyError);
@@ -48,10 +50,11 @@ const stopEarlyReporting = () => {
     window.removeEventListener("unhandledrejection", reportEarlyError);
 };
 
+installSentryLoader(loadSentry);
 initializeAfterLoad();
 
 export function onRouterTransitionStart(
     ...args: Parameters<SentryClient["captureRouterTransitionStart"]>
 ) {
-    void loadSentry().then((sentry) => sentry.captureRouterTransitionStart(...args));
+    reportSentryTransition(...args);
 }
