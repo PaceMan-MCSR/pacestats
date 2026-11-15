@@ -4,6 +4,9 @@ import Redis from 'ioredis';
 import { WebSocket, WebSocketServer } from 'ws';
 import { CoalescedBroadcasts } from './coalesced-broadcasts.mjs';
 import { HeartbeatWheel } from './heartbeat-wheel.mjs';
+import { SnapshotBroker } from './snapshot-broker.mjs';
+import { SnapshotDelivery } from './snapshot-delivery.mjs';
+import { createSnapshotFetcher, parseSnapshotSubscription } from './snapshot-subscription.mjs';
 
 dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env.local' });
 
@@ -30,6 +33,15 @@ const pendingBroadcasts = new CoalescedBroadcasts(broadcast, coalesceMs, {
     weightFor: uuid => clientsByUuid.get(uuid)?.size || 1,
 });
 const heartbeat = new HeartbeatWheel();
+const snapshotDelivery = new SnapshotDelivery(send);
+const snapshots = new SnapshotBroker({
+    fetchSnapshot: createSnapshotFetcher({
+        endpoint: process.env.WS_SNAPSHOT_ENDPOINT || 'http://127.0.0.1:5050/stats/api/obsSnapshot/',
+        token: process.env.WS_TOKEN,
+    }),
+    send: (client, message) => snapshotDelivery.add(client, message),
+    onError: (error) => console.error('Overlay snapshot unavailable:', error.message),
+});
 let subscriber = null;
 let shuttingDown = false;
 
@@ -46,6 +58,8 @@ function tokensMatch(actual, expected) {
 
 function removePullClient(ws) {
     heartbeat.remove(ws);
+    snapshots.remove(ws);
+    snapshotDelivery.remove(ws);
     if (!ws.uuid) return;
     const clients = clientsByUuid.get(ws.uuid);
     if (!clients) return;
@@ -54,18 +68,23 @@ function removePullClient(ws) {
     ws.uuid = undefined;
 }
 
+function send(client, message) {
+    if (client.readyState !== WebSocket.OPEN) return;
+    if (client.bufferedAmount > maxBufferedBytes) {
+        client.terminate();
+        return;
+    }
+    client.send(message, (error) => {
+        if (error) client.terminate();
+    });
+}
+
 function broadcast(uuid, message = 'refresh') {
+    snapshots.notify(uuid, message);
     const clients = clientsByUuid.get(uuid);
     if (!clients) return;
     for (const client of clients) {
-        if (client.readyState !== WebSocket.OPEN) continue;
-        if (client.bufferedAmount > maxBufferedBytes) {
-            client.terminate();
-            continue;
-        }
-        client.send(message, (error) => {
-            if (error) client.terminate();
-        });
+        send(client, message);
     }
 }
 
@@ -81,24 +100,46 @@ function parseRequestPath(requestUrl) {
         action: parts[0],
         uuid: parts[1] ? decodeURIComponent(parts[1]) : '',
         token: parts[2] ? decodeURIComponent(parts[2]) : '',
+        searchParams: url.searchParams,
     };
+}
+
+function watchPullClient(ws, label) {
+    ws.isAlive = true;
+    heartbeat.add(ws);
+    ws.on('pong', () => { ws.isAlive = true; });
+    ws.on('close', () => removePullClient(ws));
+    ws.on('error', (error) => {
+        console.error(`WebSocket client error for ${label}:`, error);
+        removePullClient(ws);
+    });
 }
 
 wss.on('connection', (ws, req) => {
     try {
-        const { action, uuid, token } = parseRequestPath(req.url);
+        const { action, uuid, token, searchParams } = parseRequestPath(req.url);
         const requestOrigin = req.headers.origin || '';
         // Browser pull subscriptions must come from the configured site. Keep
         // originless, token-authenticated server-to-server push calls working
         // during the Redis Pub/Sub migration.
         if (allowedOrigins.size > 0
-            && (action === 'pull' || requestOrigin !== '')
+            && (action === 'pull' || action === 'overlay' || requestOrigin !== '')
             && !allowedOrigins.has(requestOrigin)) {
             ws.close(1008, 'Origin not allowed');
             return;
         }
         if (wss.clients.size > maxClients) {
             ws.close(1013, 'Server at capacity');
+            return;
+        }
+        if (action === 'overlay') {
+            if (uuid || token || (req.url?.length || 0) > 8192) {
+                ws.close(1008, 'Invalid overlay subscription');
+                return;
+            }
+            const subscription = parseSnapshotSubscription(searchParams);
+            watchPullClient(ws, 'overlay');
+            if (!snapshots.add(ws, subscription)) ws.close(1013, 'Too many overlay subscriptions');
             return;
         }
         if (!isValidUuid(uuid)) {
@@ -117,15 +158,8 @@ wss.on('connection', (ws, req) => {
                 return;
             }
             ws.uuid = uuid;
-            ws.isAlive = true;
             clients.add(ws);
-            heartbeat.add(ws);
-            ws.on('pong', () => { ws.isAlive = true; });
-            ws.on('close', () => removePullClient(ws));
-            ws.on('error', (error) => {
-                console.error(`WebSocket client error for ${uuid}:`, error);
-                removePullClient(ws);
-            });
+            watchPullClient(ws, uuid);
             return;
         }
 
@@ -180,10 +214,13 @@ async function shutdown(signal) {
     console.log(`Received ${signal}; shutting down WebSocket server.`);
     heartbeat.clear();
     pendingBroadcasts.clear();
+    snapshots.clear();
+    snapshotDelivery.clear();
     for (const clients of clientsByUuid.values()) {
         for (const ws of clients) ws.close(1001, 'Server shutting down');
     }
     clientsByUuid.clear();
+    for (const ws of wss.clients) ws.close(1001, 'Server shutting down');
     await new Promise((resolve) => wss.close(resolve));
     if (subscriber) {
         try {
