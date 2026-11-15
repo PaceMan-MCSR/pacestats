@@ -1,54 +1,100 @@
+import {observeApiRequest} from "@/app/telemetry.server";
 import {NextRequest, NextResponse} from "next/server";
+import {createHash} from "node:crypto";
 import {getCached, getRunId, getUUIDByAccessKey, submitStats} from "@/app/data";
+import {ApiInputError} from "@/app/api/_utils";
 
-export async function POST(request: NextRequest) {
+class InvalidAccessKeyError extends Error {}
+
+const verifyAccessKey = async (accessKey: string): Promise<string> => {
+    const uuid = await getUUIDByAccessKey(accessKey);
+    // Rejections must not enter the 30-minute success cache: the verifier may
+    // have been temporarily unavailable, and the next submission must retry it.
+    if (uuid === null) throw new InvalidAccessKeyError();
+    return uuid;
+};
+
+const objectValue = (value: unknown, name: string): Record<string, unknown> => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        throw new ApiInputError(`${name} must be an object`);
+    }
+    return value as Record<string, unknown>;
+};
+
+const stringValue = (value: unknown, name: string, maxLength: number): string => {
+    if (typeof value !== "string" || value.trim().length === 0 || value.length > maxLength) {
+        throw new ApiInputError(`${name} must be a nonempty string of at most ${maxLength} characters`);
+    }
+    return value;
+};
+
+const integerValue = (value: unknown, name: string, max: number): number => {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > max) {
+        throw new ApiInputError(`${name} must be an integer between 0 and ${max}`);
+    }
+    return value;
+};
+
+const parseJson = (value: string, name: string): unknown => {
     try {
-        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-        const body = await request.json()
-        const accessKey = body.accessKey
-        const uuid = await getCached(getUUIDByAccessKey, "getUUIDByAccessKey", accessKey)
-        if (uuid === null) {
-            return NextResponse.json({status: "error", message: "Invalid access key"}, {status: 401});
+        return JSON.parse(value);
+    } catch {
+        throw new ApiInputError(`${name} must be valid JSON`);
+    }
+};
+
+async function handleRequest(request: NextRequest) {
+    try {
+        const body = objectValue(parseJson(await request.text(), "Request body"), "Request body");
+        const accessKey = stringValue(body.accessKey, "accessKey", 1024);
+        if (typeof body.gameData !== "string") throw new ApiInputError("gameData must be a JSON string");
+        const gameData = objectValue(parseJson(body.gameData, "gameData"), "gameData");
+        const worldId = stringValue(gameData.worldId, "worldId", 64);
+        if (gameData.gameVersion !== "1.16.1") {
+            throw new ApiInputError("Unsupported game version");
         }
-        /*if(body.resets > 20000 || body.resets == body.totalResets){
-            console.error("Rejecting reset count for  ", uuid, "resets:", body.resets, "totalResets:", body.totalResets, "time:", Date.now())
-            return NextResponse.json({status: "error", message: "Rejecting because reset count"}, {status: 400});
-        }*/
-        body.resets = Math.min(body.resets, 20000)
-        const gameData = JSON.parse(body.gameData)
-        const worldId = gameData.worldId
-        const gameVersion = gameData.gameVersion
-        const category = gameData.category
-        if(gameVersion !== "1.16.1") {
-            return NextResponse.json({status: "error", message: "Unsupported game version " + gameVersion}, {status: 400});
+        if (gameData.category !== "ANY") {
+            throw new ApiInputError("Unsupported category");
         }
-        if(category !== "ANY") {
-            return NextResponse.json({status: "error", message: "Unsupported category " + category}, {status: 400});
-        }
+
+        // Match the MySQL column ranges instead of relying on coercion or SQL
+        // mode to reject, truncate or silently change untrusted tracker values.
+        const wallTime = integerValue(body.wallTime, "wallTime", 0xFFFFFFFF);
+        const playTime = integerValue(body.playTime, "playTime", 0xFFFFFFFF);
+        const enters = integerValue(body.seedsPlayed, "seedsPlayed", 0xFFFF);
+        const resets = Math.min(integerValue(body.resets, "resets", 0x7FFFFFFF), 20000);
+        const totalResets = integerValue(body.totalResets, "totalResets", 0x7FFFFFFF);
+        const netherTime = body.netherTime === undefined ? 0 : integerValue(body.netherTime, "netherTime", 0xFFFFFFFF);
+        // Generic cache arguments normalize interval-like strings. Credentials
+        // must match exactly, so cache their digest and verify the original.
+        const accessKeyDigest = createHash("sha256").update(accessKey, "utf8").digest("hex");
+        const uuid: string = await getCached(() => verifyAccessKey(accessKey), "getUUIDByAccessKey", accessKeyDigest);
 
         let runId = null;
-        for(let i = 0; i < 10; i++){
-            runId = await getRunId(uuid, worldId)
-            if(runId !== null){
+        for (let i = 0; i < 10; i++) {
+            runId = await getRunId(uuid, worldId);
+            if (runId !== null) {
                 break;
             }
-            await delay(500)
+            if (i < 9) await new Promise(resolve => setTimeout(resolve, 500));
         }
-        if(runId === null){
-            console.error("Missing worldId after 10 attempts for ", uuid, "gameData:", body.gameData, "version:", gameVersion, "category:", category, "time:", Date.now())
+        if (runId === null) {
+            console.error("Missing worldId after 10 attempts for", uuid, "worldId:", worldId);
             return NextResponse.json({status: "error", message: "Could not find run with that worldId, please report this"}, {status: 400});
         }
 
-        const wallTime = body.wallTime
-        const playTime = body.playTime
-        const enters = body.seedsPlayed
-        const resets = body.resets
-        const totalResets = body.totalResets
-        const netherTime = body.netherTime || 0
-        await submitStats(uuid, runId, wallTime, playTime, enters, resets, totalResets, netherTime)
+        await submitStats(uuid, runId, wallTime, playTime, enters, resets, totalResets, netherTime);
     } catch (e) {
-        console.error("Error in submitStats", e)
+        if (e instanceof ApiInputError) {
+            return NextResponse.json({status: "error", message: e.message}, {status: 400});
+        }
+        if (e instanceof InvalidAccessKeyError) {
+            return NextResponse.json({status: "error", message: "Invalid access key"}, {status: 401});
+        }
+        console.error("Error in submitStats", e);
         return NextResponse.json({status: "error", message: "Unknown error"}, {status: 500});
     }
     return NextResponse.json({status: "success"}, { status: 200 });
 }
+
+export const POST = observeApiRequest("submitStats", handleRequest);

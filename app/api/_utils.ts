@@ -1,5 +1,6 @@
 import {createHash, timingSafeEqual} from "node:crypto";
 import {NextRequest, NextResponse} from "next/server";
+import {observeApiRequest} from "@/app/telemetry.server";
 
 export const MAX_LOOKBACK_DAYS = 90;
 export const MAX_LOOKBACK_HOURS = MAX_LOOKBACK_DAYS * 24;
@@ -183,7 +184,7 @@ export const withApiRequest = (
     namespace: string,
     handler: (request: NextRequest) => Promise<Response>,
     options: {limit?: number; concurrent?: number} = {}
-) => async (request: NextRequest): Promise<Response> => {
+) => observeApiRequest(namespace, async (request: NextRequest): Promise<Response> => {
     const limited = rateLimit(request, {namespace, limit: options.limit ?? 120, windowMs: 60_000});
     if (limited) return limited;
     const active = activeRequests.get(namespace) ?? 0;
@@ -201,7 +202,7 @@ export const withApiRequest = (
     } finally {
         activeRequests.set(namespace, Math.max(0, (activeRequests.get(namespace) ?? 1) - 1));
     }
-};
+});
 
 const clientAddress = (request: NextRequest) => {
     // This assumes the deployment proxy replaces, rather than appends untrusted,

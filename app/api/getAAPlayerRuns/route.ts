@@ -1,3 +1,4 @@
+import {observeApiRequest} from "@/app/telemetry.server";
 import {NextRequest} from "next/server";
 import {getAAPlayerRunsPage, getCached} from "@/app/data";
 import {
@@ -8,7 +9,7 @@ import {
     validationErrorResponse,
 } from "@/app/api/_utils";
 
-export async function GET(request: NextRequest) {
+async function handleRequest(request: NextRequest) {
     const limited = rateLimit(request, {namespace: "getAAPlayerRuns", limit: 120, windowMs: 60_000});
     if (limited) return limited;
     try {
@@ -25,3 +26,5 @@ export async function GET(request: NextRequest) {
         throw error;
     }
 }
+
+export const GET = observeApiRequest("getAAPlayerRuns", handleRequest);

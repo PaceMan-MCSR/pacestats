@@ -41,6 +41,7 @@ import {
 } from "@/app/runHistory";
 import Redis from "ioredis";
 import NodeCache from "node-cache";
+import {reportTelemetryIssue} from "@/app/telemetry.server";
 
 const DEFAULT_DB_POOL_SIZE = 10;
 const DEFAULT_DB_POOL_QUEUE_LIMIT = 500;
@@ -170,6 +171,7 @@ if (!runtime.__paceStatsRedisListenersRegistered) {
             // Registering a listener prevents ioredis from emitting noisy
             // "Unhandled error event" messages on every reconnect attempt.
             console.error("Redis connection error:", error.message);
+            reportTelemetryIssue("redis.unavailable", "redis");
             runtime.__paceStatsLastRedisErrorAt = now;
         }
     });
@@ -241,6 +243,7 @@ const warnAboutPoolPressure = (message: string) => {
         `acquireErrors=${dbPoolMetrics.acquireErrors}, queryTimeouts=${dbPoolMetrics.queryTimeouts}`
     );
     dbPoolMetrics.lastPressureWarningAt = now;
+    reportTelemetryIssue("database.pressure", "mysql");
 };
 
 const acquireDbConnection = async (): Promise<mysql.PoolConnection> => {
@@ -3021,13 +3024,13 @@ export const submitStats = async (
         [result] = await (await getConn()).execute(
             `INSERT INTO nethers
                 (uuid, runId, wallTime, playTime, enters, isAccurate, resets, totalResets, netherTime, sceneChanges)
-             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-             WHERE NOT EXISTS (SELECT 1 FROM nethers WHERE runId=? LIMIT 1);`,
-            [uuid, runId, wallTime, playTime, seedsPlayed, true, resets, totalResets, netherTime, 0, runId]
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            [uuid, runId, wallTime, playTime, seedsPlayed, true, resets, totalResets, netherTime, 0]
         ) as [mysql.ResultSetHeader, mysql.FieldPacket[]];
     } catch (error: any) {
-        // Once uq_nethers_run_id is deployed, concurrent identical submissions
-        // race safely: the loser is an idempotent no-op rather than a 500.
+        // The unique runId index makes retries idempotent. A self-referencing
+        // NOT EXISTS check takes InnoDB gap locks and can deadlock concurrent
+        // first submissions before they reach this duplicate-key path.
         if (error?.code === "ER_DUP_ENTRY") return false;
         throw error;
     }
@@ -3063,7 +3066,7 @@ export const getAllPlayerRunsByHours = async (
     return rows;
 }
 
-export const getUUIDByAccessKey = async (accessKey: string) => {
+export const getUUIDByAccessKey = async (accessKey: string): Promise<string | null> => {
     try {
         const url = new URL(process.env.GETUSER_ENDPOINT as string);
         url.searchParams.set("accessCode", accessKey);
@@ -3071,11 +3074,17 @@ export const getUUIDByAccessKey = async (accessKey: string) => {
             cache: "no-store",
             signal: AbortSignal.timeout(3_000),
         });
-        const data = await res.json();
         if (res.status !== 200) {
+            await res.body?.cancel();
             return null;
         }
-        return data.uuid;
+        const data: unknown = await res.json();
+        if (data === null || typeof data !== "object" || Array.isArray(data) || !("uuid" in data)) return null;
+        const uuid = data.uuid;
+        // A successful upstream status alone is not proof of an identity.
+        // Never let missing or malformed UUIDs reach SQL parameter binding.
+        return typeof uuid === "string" && /^(?:[\da-f]{32}|[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})$/i.test(uuid)
+            ? uuid : null;
     } catch {
         // Fetch errors can embed request URLs. Never risk logging the access
         // code that was placed in the upstream query string.

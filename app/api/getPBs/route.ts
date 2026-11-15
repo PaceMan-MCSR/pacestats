@@ -1,3 +1,4 @@
+import {observeApiRequest} from "@/app/telemetry.server";
 import {NextRequest} from "next/server";
 import {jsonResponse, listParam, rateLimit, validationErrorResponse} from "@/app/api/_utils";
 import {
@@ -5,7 +6,7 @@ import {
     getPBs
 } from "@/app/data";
 
-export async function GET(request: NextRequest) {
+async function handleRequest(request: NextRequest) {
     const limited = rateLimit(request, {namespace: "getPBs", limit: 120, windowMs: 60_000});
     if (limited) return limited;
     try {
@@ -19,3 +20,5 @@ export async function GET(request: NextRequest) {
         throw error;
     }
 }
+
+export const GET = observeApiRequest("getPBs", handleRequest);
