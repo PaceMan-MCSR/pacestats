@@ -1823,6 +1823,24 @@ const indexCompactUsers = (users: any[]): CompactUserIndexes => {
     return index;
 };
 
+/** Resolve the latest association and its current name in two indexed top-one probes. */
+const readCurrentIdentity = async (column: "nickname" | "twitch", name: string) => {
+    const [rows] = await executeDb<any[]>(
+        `SELECT uuid, nickname FROM pace
+         WHERE uuid=(SELECT uuid FROM pace WHERE ${column}=? ORDER BY id DESC LIMIT 1)
+         ORDER BY id DESC LIMIT 1;`,
+        [name]
+    );
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    const bans = await getCached(getBans, "getBans");
+    if (bans.includes(row.uuid)) return null;
+    // Keep the existing per-UUID name cache, including an earlier in-flight
+    // read. A cold entry can now use this statement's already-selected value.
+    const nick = await getCached(async () => row.nickname, "getNick", row.uuid);
+    return {nick, uuid: row.uuid};
+};
+
 export const getAllNamesByNick = async (nick: string) => {
     try {
         const normalizedNick = nick.toLocaleLowerCase();
@@ -1840,20 +1858,7 @@ export const getAllNamesByNick = async (nick: string) => {
     } catch (error) {
         console.error("Unable to resolve nickname from cached users; falling back to MySQL:", error);
     }
-    const [results, fields] = await (await getConn()).execute(
-        `SELECT uuid, nickname FROM pace WHERE nickname=? ORDER BY id DESC LIMIT 1;`,
-        [nick]
-    );
-    if (Array.isArray(results) && results.length === 0) {
-        return null;
-    }
-    const bans = await getCached(getBans, "getBans");
-    // @ts-ignore
-    if(bans.includes(results[0]["uuid"])){
-        return null;
-    }
-    // @ts-ignore
-    return {nick: await getCached(getNick, "getNick", results[0]["uuid"]), uuid: results[0]["uuid"]};
+    return readCurrentIdentity("nickname", nick);
 }
 
 export const getAllNamesByTwitch = async (twitch: string) => {
@@ -1868,20 +1873,7 @@ export const getAllNamesByTwitch = async (twitch: string) => {
     } catch (error) {
         console.error("Unable to resolve Twitch account from cached users; falling back to MySQL:", error);
     }
-    const [results, fields] = await (await getConn()).execute(
-        `SELECT uuid, nickname FROM pace WHERE twitch=? ORDER BY id DESC LIMIT 1;`,
-        [twitch]
-    );
-    if (Array.isArray(results) && results.length === 0) {
-        return null;
-    }
-    const bans = await getCached(getBans, "getBans");
-    // @ts-ignore
-    if(bans.includes(results[0]["uuid"])){
-        return null;
-    }
-    // @ts-ignore
-    return {nick: await getCached(getNick, "getNick", results[0]["uuid"]), uuid: results[0]["uuid"]};
+    return readCurrentIdentity("twitch", twitch);
 }
 
 /** Accounts looked up one by one before getTwitchAccounts groups every run instead. */
