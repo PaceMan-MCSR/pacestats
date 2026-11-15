@@ -171,10 +171,12 @@ async function main() {
         runtime.__paceStatsCache.set('["getBans"]', ["uuid-banned"]);
         const expected = await legacyLookup(normalized);
         assert.equal(expected.legacy, null);
+        assert.ok(expected.reused);
         assert.equal(expected.reused.id, "uuid-current", "The latest nickname association wins");
         assert.equal(expected.blocked, null, "A banned latest owner cannot fall back to an older allowed owner");
         assert.equal(expected["accént"], null, "Case/accent-insensitive SQL lookup retains strict current-name validation");
         assert.equal(expected.pad, null, "SQL space-padding does not bypass the strict current-name check");
+        assert.ok(expected.echo);
         assert.equal(expected.echo.id, "uuid-echo-new", "Association ordering uses the latest ID");
         runtime.__paceStatsCache.flushAll();
         runtime.__paceStatsCache.set('["getBans"]', ["uuid-banned"]);
