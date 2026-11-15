@@ -5,6 +5,60 @@ Do not point the tools at production. Browser scripts reject non-local URLs.
 Use a production Next build for timing; development compilation and HMR
 distort page latency, CPU, and memory results.
 
+## Cold page and API checks
+
+The 2026-11-15 cold-load round compares `95aaaa2` with application source
+`5818880`; details and limitations are in
+`ops/performance/2026-11-15-cold-loads.md`. Build frozen copies with the same
+dependencies and `NEXT_PUBLIC_WS_ENDPOINT=ws://127.0.0.1:8080`, using webpack.
+Run the backend fixtures sequentially from `/app` inside local Docker:
+
+```sh
+PERF_COMPARE_SOURCE_ROOT=/tmp/pacestats-cold2-baseline PERF_TIMING=1 node --import tsx tests/cold-identity-resolution.ts
+PERF_COMPARE_SOURCE_ROOT=/tmp/pacestats-cold2-baseline node --import tsx tests/cold-time-series-allocation.ts
+node --import tsx tests/aa-player-stats.ts
+PERF_BASELINE_ROOT=/tmp/pacestats-cold2-baseline node tests/player-page-identity-seeds.mjs
+node --import tsx tests/cold-cache.ts
+node --expose-gc --import tsx tests/aa-cold-statistics.ts
+```
+
+Identity/allocation and AA projection fixtures use reserved Redis 15; the older
+cold-cache fixtures use reserved Redis 14. They check fixture keys and remove
+only their own keys. Do not run fixtures during timings. Pause cron during
+comparisons, restore it afterwards, and leave primary Redis 0 unchanged.
+
+`perf-cold-start.mjs` makes **one first HTTP request per fresh production Next
+process**, alternating revision order across three rounds. It covers the front
+page, one-day/lifetime profiles, AA lifetime profile and two identity-based APIs,
+with both primary Redis 0 and empty reserved Redis 14. It creates and stops only
+its own children on private ports 5125/5126. No readiness HTTP request warms the
+application. It reports TCP startup separately, request CPU ticks and sampled
+RSS; MySQL and OS buffers remain warm. It does not emulate browser latency or
+claim a CPU/memory ceiling:
+
+```sh
+PERF_BASELINE_ROOT=/tmp/pacestats-cold2-baseline PERF_SOURCE_ROOT=/tmp/pacestats-cold2-final-verified node scripts/perf-cold-start.mjs
+```
+
+For production UI verification, start the frozen baseline/candidate on 5121/5122
+using `--import /app/tests/local-upstreams.mjs`. After functional checks, run
+browser timings separately from builds, backend probes and other browsers:
+
+```sh
+PERF_BASELINE_URL=http://127.0.0.1:5121/stats/ PERF_BASE_URL=http://127.0.0.1:5122/stats/ node tests/player-page-identity-delivery.mjs
+PERF_BASELINE_URL=http://127.0.0.1:5121/stats/ PERF_BASE_URL=http://127.0.0.1:5122/stats/ node tests/player-structure-toggle.mjs
+PERF_BASELINE_URL=http://127.0.0.1:5121/stats/ PERF_BASE_URL=http://127.0.0.1:5122/stats/ node scripts/perf-player-identity.mjs
+PERF_BASELINE_URL=http://127.0.0.1:5121/stats/ PERF_BASE_URL=http://127.0.0.1:5122/stats/ node scripts/perf-bundles.mjs
+```
+
+The header probe measures the first frame with hydrated navigation and exact
+custom theme, plus actual identity request counts. It uses three alternating
+pairs, fresh browser contexts, 300 ms latency, 10/5 Mbps and 4× CPU. Server and data
+caches are not reset. It is separate from whole-page readiness and from the
+fresh-process/empty-Redis benchmark. The structure fixture checks request
+elimination, Back/Forward and all four ranges; its fixed observation waits are
+functional checks, not timing results.
+
 ## CSS, HTML and JavaScript loading
 
 `scripts/perf-bundles.mjs` alternates three fresh browser contexts per revision
