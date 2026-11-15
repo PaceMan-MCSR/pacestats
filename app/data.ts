@@ -1190,7 +1190,7 @@ const calculatePlayerStatsFromDatabase = async (uuid: string, days: number): Pro
     return result;
 };
 
-/** ResetTracker totals for one player; never substitute zeroes for a missing cache. */
+/** Reset stats totals for one player; never substitute zeroes for a missing cache. */
 const calculateNphFromDatabase = async (uuid: string, days: number) => {
     const times = new TimeSeries();
     let count = 0, playTime = 0, wallTime = 0, resets = 0, enters = 0, totalResets = 0;

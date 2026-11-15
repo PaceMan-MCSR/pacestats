@@ -1,14 +1,13 @@
 type JsonValue = null | boolean | number | string | JsonValue[] | {[key: string]: JsonValue};
 type ApiExample = {
     query?: Record<string, string>;
-    requestBody?: JsonValue;
     response: JsonValue;
 };
 
 // Documentation fixtures, not fetched player data. Keep them independent of
 // the database and API so rendering or expanding the docs never makes requests.
 const uuid = "00000000-0000-4000-8000-000000000001";
-const name = "ExamplePlayer";
+const name = "jojoe77777";
 const worldId = "0123456789abcdef0123456789abcdef";
 const sessionQuery = {name, hours: "24", hoursBetween: "6"};
 const splitStats = {
@@ -33,12 +32,12 @@ const playerRun = {
     id: 42, nether: 180000, bastion: 240000, fortress: 330000,
     first_structure: 240000, second_structure: 330000, first_portal: 420000,
     stronghold: 540000, end: 600000, finish: 780000,
-    lastUpdated: 1704067800000, vodId: null, twitch: "exampleplayer",
+    lastUpdated: 1704067800000, vodId: null, twitch: "jojoe77777",
 };
 const aaRun = {
     id: 42, nether: 180000, bastion: 240000, fortress: 330000, stronghold: 540000,
     end: 600000, elytra: 900000, credits: 1200000, finish: 10800000,
-    lastUpdated: 1704078000000, vodId: null, twitch: "exampleplayer",
+    lastUpdated: 1704078000000, vodId: null, twitch: "jojoe77777",
 };
 const statsTotals = {
     runs: 24, netherEnters: 24, bastionEnters: 12, fortressEnters: 8,
@@ -78,7 +77,7 @@ export const apiExamples = {
         query: {worldId: "42"},
         response: {
             data: {
-                id: 42, worldId, nickname: name, uuid, twitch: "exampleplayer",
+                id: 42, worldId, nickname: name, uuid, twitch: "jojoe77777",
                 nether: 180000, bastion: 240000, fortress: 330000, first_portal: 420000,
                 stronghold: 540000, end: 600000, finish: 780000, netherRta: 185000,
                 bastionRta: 245000, fortressRta: 335000, first_portalRta: 425000,
@@ -108,7 +107,7 @@ export const apiExamples = {
     getNickAlways: {query: {uuid}, response: {name}},
     getAllUsers: {
         response: [
-            {id: uuid, nick: name, twitches: ["exampleplayer"]},
+            {id: uuid, nick: name, twitches: ["jojoe77777"]},
             {id: "00000000-0000-4000-8000-000000000002", nick: "AnotherPlayer", twitches: []},
             {id: "00000000-0000-4000-8000-000000000003", nick: "ThirdPlayer", twitches: ["thirdplayer"]},
         ],
@@ -116,7 +115,7 @@ export const apiExamples = {
     getRunsPaginated: {
         query: {page: "1", pageSize: "100"},
         response: {pageCount: 1200, runs: [{
-            id: 42, nickname: name, uuid, twitch: "exampleplayer", worldId,
+            id: 42, nickname: name, uuid, twitch: "jojoe77777", worldId,
             nether: 180000, bastion: 240000, fortress: 330000, first_portal: 420000,
             second_portal: 450000, stronghold: 540000, end: 600000, finish: 780000,
             time: "2024-01-01T00:00:00.000Z", obtainObsidian: 300000, obtainRod: 360000,
@@ -135,23 +134,15 @@ export const apiExamples = {
     exportStats: {
         query: exportQuery,
         response: {dataset: "stats", player: {name, uuid}, range: exportRange, mode: "daily",
-            rows: [{date: "2024-01-01", ...statsTotals}], summary: statsTotals, notes: exportNotes},
+            rows: [{date: "2024-01-01", ...statsTotals}], summary: statsTotals},
     },
     exportResetStats: {
         query: exportQuery,
         response: {dataset: "resetStats", player: {name, uuid}, range: exportRange, mode: "daily",
             rows: [{date: "2024-01-01", ...resetTotals}], summary: resetTotals, notes: exportNotes},
     },
-    submitStats: {
-        requestBody: {
-            accessKey: "YOUR_ACCESS_KEY",
-            gameData: JSON.stringify({worldId, gameVersion: "1.16.1", category: "ANY"}),
-            wallTime: 150000, playTime: 300000, seedsPlayed: 10, resets: 8, totalResets: 10000, netherTime: 180000,
-        },
-        response: {status: "success"},
-    },
     searchPlayers: {
-        query: {q: "Example", limit: "8"},
+        query: {q: name, limit: "8"},
         response: [{id: uuid, name, displayName: null, color: null, bgColor: null}],
     },
     getPlayerRuns: {
@@ -165,7 +156,7 @@ export const apiExamples = {
     "../aa/api/getAllData": {
         query: {days: "30"},
         response: {data: [{
-            id: 42, nickname: name, uuid, twitch: "exampleplayer", worldId,
+            id: 42, nickname: name, uuid, twitch: "jojoe77777", worldId,
             nether: 180000, bastion: 240000, fortress: 330000, stronghold: 540000,
             end: 600000, elytra: 900000, credits: 1200000, finish: 10800000,
             insertTime: "2024-01-01T00:00:00.000Z", lastUpdated: "2024-01-01T03:00:00.000Z",

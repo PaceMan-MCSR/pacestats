@@ -310,7 +310,7 @@ async function verifySqlQueriesAndRecordMapping() {
     }
     assert.ok(!("resets" in statsPage.rows[0]) && !("runId" in statsPage.rows[0]));
     assert.deepEqual(plain(queries[5].values), ["pace-only-player", 1704067200, 1704153600, "3"]);
-    assert.ok(!/nethers|JOIN|OFFSET/i.test(queries[5].sql), "Raw pace pagination does not require any ResetTracker submission");
+    assert.ok(!/nethers|JOIN|OFFSET/i.test(queries[5].sql), "Raw pace pagination does not require any reset stats submission");
     assert.match(queries[5].sql, /ORDER BY p\.insertTime ASC, p\.id ASC LIMIT \?/);
     responses.push([paceRecords[2]]);
     const statsLast = plain(await server.getStatsRecordExportPage("pace-only-player", 1704067200, 1704153600, {time: 1704110400, id: 4}, 2));
@@ -417,7 +417,7 @@ async function verifyRouteValidationAndIdentity() {
     assert.deepEqual(body.range, {from: "2023-01-01", to: "2025-02-01", timezone: "UTC", toExclusive: true});
     assert.equal(body.mode, "daily");
     assert.deepEqual(body.rows, fixture.daily.rows);
-    assert.ok(body.notes.some((note: string) => note.includes("ResetTracker")));
+    assert.ok(body.notes.some((note: string) => note.includes("Only submitted reset stats records")));
     assert.equal(body.dataset, "resetStats");
     assert.deepEqual(fixture.cacheCalls.at(-1), {name: "getResetDailyExport", args: [fixture.uuid,
         Date.parse("2023-01-01T00:00:00Z") / 1000, Date.parse("2025-02-01T00:00:00Z") / 1000]});
@@ -474,7 +474,7 @@ async function verifyRouteLimits() {
     assert.equal(throttled.status, 429);
     assert.ok(Number(throttled.headers.get("retry-after")) >= 1);
     assert.equal((await limited.handlers.stats(limited.request("name=missing", "rate-fixture", "stats"))).status, 404,
-        "Exhausting ResetTracker downloads does not consume PaceMan's rate limit");
+        "Exhausting reset stats downloads does not consume PaceMan's rate limit");
     let release!: () => void;
     const pause = new Promise<void>(resolve => {release = resolve;});
     const concurrent = routeFixture({pause});
@@ -488,7 +488,7 @@ async function verifyRouteLimits() {
     } finally {release();}
     assert.equal((await first).status, 200);
     assert.equal((await second).status, 200);
-    assert.equal((await separateDataset).status, 200, "PaceMan exports have independent concurrency slots from ResetTracker");
+    assert.equal((await separateDataset).status, 200, "PaceMan exports have independent concurrency slots from reset stats");
     assert.equal((await concurrent.GET(concurrent.request("name=KnownPlayer"))).status, 200, "Completed exports release the concurrency slots");
 }
 
@@ -503,10 +503,12 @@ async function verifyStatsRouteAndDatasetSeparation() {
     assert.equal(body.dataset, "stats");
     assert.deepEqual(body.rows, fixture.statsDaily.rows);
     assert.equal(body.summary.runs, 4);
-    assert.ok(body.notes.some((note: string) => note.includes("independently of ResetTracker")));
+    assert.equal(Object.hasOwn(body, "notes"), false, "Main stats responses contain data without explanatory notes");
     assert.deepEqual(plain(fixture.cacheCalls.at(-1)), {name: "getStatsDailyExport", args: [fixture.uuid, 1704067200, 1704153600]});
-    assert.match(response.headers.get("content-disposition")!, /paceman-stats-.*-daily\.json"$/);
+    assert.equal(response.headers.get("content-disposition"), null, "JSON data is displayed inline instead of forced into a download");
+    assert.match(response.headers.get("content-type")!, /^application\/json/);
     const dailyCsv = await fixture.GET(fixture.request(`${query}&format=csv`));
+    assert.equal(dailyCsv.headers.get("content-disposition"), null);
     const text = await dailyCsv.text();
     assert.ok(text.startsWith("date,runs,netherEnters,bastionEnters,fortressEnters,firstPortalEnters,secondPortalEnters,strongholdEnters,endEnters,completions,fastestNetherMs,fastestFinishMs\r\n"));
     assert.ok(text.includes("2024-01-01,4,3,2,1,1,0,1,1,1,90000,600000"));
@@ -515,6 +517,8 @@ async function verifyStatsRouteAndDatasetSeparation() {
     const records = await page.json();
     assert.deepEqual(records.rows, [fixture.statsRecord]);
     assert.equal(records.dataset, "stats");
+    assert.equal(Object.hasOwn(records, "notes"), false);
+    assert.equal(page.headers.get("content-disposition"), null);
     assert.deepEqual(plain(fixture.cacheCalls.at(-1)), {name: "getStatsRecordExportPage", args: [fixture.uuid, 1704067200, 1704153600, null, 2]});
     const nextUrl = new URL(page.headers.get("link")!.match(/^<([^>]+)>; rel="next"$/)![1]);
     assert.equal(nextUrl.pathname, "/stats/api/exportStats");
@@ -524,8 +528,8 @@ async function verifyStatsRouteAndDatasetSeparation() {
     assert.equal(recordText.split("\r\n")[0], ["id", "worldId", "nickname", "timestamp", "lastUpdated", "realUpdated", ...Object.keys(expectedStatsSplits)].join(","));
     assert.ok(recordText.includes('"world,""quoted""\nsecond line"'));
     assert.ok(!recordText.split("\r\n")[0].includes("resets"));
-    assert.match(recordsCsv.headers.get("content-disposition")!, /paceman-stats-.*-records\.csv"$/);
-    assert.ok(!fixture.calls.some(call => call.name.startsWith("getReset")), "PaceMan downloads never call ResetTracker readers");
+    assert.equal(recordsCsv.headers.get("content-disposition"), null);
+    assert.ok(!fixture.calls.some(call => call.name.startsWith("getReset")), "PaceMan downloads never call reset stats readers");
     const reset = await fixture.handlers.resetStats(fixture.request(query, "same-player-reset", "resetStats"));
     const resetBody = await reset.json();
     assert.equal(resetBody.dataset, "resetStats");
@@ -556,11 +560,13 @@ async function verifyUuidRoutesAndNameCompatibility() {
             assert.equal(response.status, 200, `${kind}/${mode}/${format}`);
             assert.ok(fixture.cacheCalls.some(call => call.name === "getExportPlayerByUuid" && call.args[0] === canonicalUuid));
             assert.equal(fixture.cacheCalls.at(-1)!.args[0], storedUuid, "Dataset cache keys retain the UUID stored in the database");
-            assert.match(response.headers.get("content-disposition")!, new RegExp(`paceman-${kind}-${storedUuid}-2024-01-01-2024-01-02-${mode}\\.${format}`));
+            if (kind === "stats") assert.equal(response.headers.get("content-disposition"), null);
+            else assert.match(response.headers.get("content-disposition")!, new RegExp(`paceman-${kind}-${storedUuid}-2024-01-01-2024-01-02-${mode}\\.${format}`));
             if (format === "json") {
                 const body = await response.json();
                 assert.deepEqual(body.player, {uuid: storedUuid, name: null}, "A known UUID can export data even when its current nickname is null");
                 assert.equal(body.dataset, kind);
+                assert.equal(Object.hasOwn(body, "notes"), kind === "resetStats");
             } else assert.equal(response.headers.get("content-type"), "text/csv; charset=utf-8");
             if (mode === "records") {
                 const next = new URL(response.headers.get("link")!.match(/^<([^>]+)>; rel="next"$/)![1]);

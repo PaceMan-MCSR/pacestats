@@ -77,7 +77,7 @@ export async function getResetRecordExportPage(uuid: string, from: number, to: n
     return {rows, hasMore, nextCursor: hasMore && last ? encodeExportCursor({time: Number(last.time), id: Number(last.id)}) : null};
 }
 
-/** Main stats include all stored pace runs, even without ResetTracker data. */
+/** Main stats include all stored pace runs, even without reset stats data. */
 export async function getStatsDailyExport(uuid: string, from: number, to: number) {
     const [rows] = await (await getConn()).execute<(StatsDailyExportInput & RowDataPacket)[]>(
         `SELECT FLOOR(UNIX_TIMESTAMP(p.insertTime) / 86400) AS day,

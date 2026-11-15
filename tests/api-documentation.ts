@@ -21,16 +21,16 @@ for (const endpoint of documented as ApiEndpointPath[]) {
 }
 
 // Catch common documentation mismatches: supported query values, response
-// wrappers, cursor types, and the JSON-encoded nested POST body.
+// wrappers, cursor types, and player selectors.
 assert.equal(new URL(exampleRequestUrl("getLeaderboard")).searchParams.get("type"), "qty");
 assert.ok(Array.isArray(apiExamples.getLatestCompletion.response));
 assert.equal(typeof apiExamples.getPlayerRuns.response.nextCursor, "number");
 assert.equal(typeof apiExamples.getAAPlayerRuns.response.nextCursor, "number");
-assert.deepEqual(JSON.parse(apiExamples.submitStats.requestBody.gameData), {
-    worldId: "0123456789abcdef0123456789abcdef", gameVersion: "1.16.1", category: "ANY",
-});
+assert.equal(new URL(exampleRequestUrl("getRecentRuns")).searchParams.get("name"), "jojoe77777");
+assert.equal(new URL(exampleRequestUrl("getPBs")).searchParams.get("names"), "jojoe77777");
 assert.equal(new URL(exampleRequestUrl("exportStats")).searchParams.get("format"), "json");
 assert.equal(new URL(exampleRequestUrl("exportResetStats")).searchParams.get("format"), "json");
+assert.equal(Object.hasOwn(apiExamples.exportStats.response, "notes"), false);
 
 const small = {count: 24, avg: "3:00", empty: [], nullable: null};
 const smallPreview = exampleResponsePreview(small);
@@ -58,4 +58,4 @@ const nestedPreview = exampleResponsePreview(nested);
 assert.equal(nestedPreview.truncated, true);
 assert.doesNotThrow(() => JSON.parse(nestedPreview.json));
 
-console.log(`API documentation: ${documented.length} example URLs and responses, POST body, valid JSON truncation and metadata preservation passed`);
+console.log(`API documentation: ${documented.length} example URLs and responses, player selectors, valid JSON truncation and metadata preservation passed`);
