@@ -2,9 +2,9 @@ import {NextRequest, NextResponse} from "next/server";
 import {
     getCached,
     getCombinedNetherAggregate,
+    formatCombinedNetherResponse,
     resolveCombinedPlayerUuids,
 } from "@/app/data";
-import {formatTime} from "@/app/utils";
 import {integerParam, jsonResponse, listParam, validationErrorResponse, withApiRequest} from "@/app/api/_utils";
 
 export const GET = withApiRequest("combinedStats", async (request: NextRequest) => {
@@ -44,10 +44,7 @@ export const GET = withApiRequest("combinedStats", async (request: NextRequest) 
             start,
             maxTime
         );
-        return jsonResponse({
-            count: aggregate.count,
-            avg: formatTime(aggregate.average),
-        }, {cacheSeconds: 5, staleSeconds: 10});
+        return jsonResponse(formatCombinedNetherResponse(aggregate), {cacheSeconds: 5, staleSeconds: 10});
     } catch (error) {
         const invalid = validationErrorResponse(error);
         if (invalid) return invalid;

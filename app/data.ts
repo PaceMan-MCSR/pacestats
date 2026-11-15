@@ -1,5 +1,6 @@
 import {
     CategoryType,
+    formatDecimals,
     formatTime,
     getEventTime,
     getFirstStructure,
@@ -1534,6 +1535,22 @@ export const getCombinedNetherAggregate = async (
     return {count: stats.count, average: averageAsSqlDecimal(stats)};
 };
 
+/** Keep public API and pushed overlay snapshots identical. */
+export const formatCombinedSplitResponse = (aggregates: CombinedSplitAggregate[]) => {
+    const aggregateByCategory = new Map(aggregates.map((aggregate) => [aggregate.category, aggregate]));
+    const response: Record<string, {count: number; avg: string}> = {};
+    for (const category of combinedSplitCategories) {
+        const aggregate = aggregateByCategory.get(category);
+        response[category] = {count: aggregate?.count ?? 0, avg: formatTime(aggregate?.average ?? 0)};
+    }
+    return response;
+};
+
+export const formatCombinedNetherResponse = (aggregate: {count: number; average: number}) => ({
+    count: aggregate.count,
+    avg: formatTime(aggregate.average),
+});
+
 export async function fetchAALeaderboardsFromRedis(days = 30) {
     const jsonString = await redis.call('JSON.GET', `aa:leaderboards:${days}day`, '$');
     if (!jsonString) return null;
@@ -1655,6 +1672,22 @@ export const getUUID = async (nick: string) => {
     return results[0]["uuid"];
 };
 
+/** A committed write succeeds even when the optional refresh channel is down. */
+const publishRunUpdate = async (uuid: string) => {
+    try {
+        const subscribers = await redis.publish(
+            process.env.WS_REDIS_CHANNEL || "pacestats:run-updates",
+            JSON.stringify({uuid})
+        );
+        if (subscribers === 0 && Date.now() - (runtime.__paceStatsLastPublishWarningAt ?? 0) >= 30_000) {
+            console.warn("Run refresh was published with no WebSocket Redis subscribers");
+            runtime.__paceStatsLastPublishWarningAt = Date.now();
+        }
+    } catch (error) {
+        console.error("Unable to publish run refresh:", error);
+    }
+};
+
 export const deleteRun = async (id: string) => {
     const connection = await acquireDbConnection();
     let uuid: string | null = null;
@@ -1716,6 +1749,7 @@ export const deleteRun = async (id: string) => {
             // The durable SQL outbox remains authoritative if Redis is down.
             console.error(`Unable to send the fast recent-run invalidation for ${uuid}:`, error);
         }
+        await publishRunUpdate(uuid);
     }
     return deleted;
 };
@@ -2219,6 +2253,54 @@ export const getNethersByPeriod = async (uuid: string, days: number, limit : num
     )
     return rows
 }
+
+/** Shared session-overlay projection; fresh snapshots bypass the API row caches. */
+export const getSessionNethers = async (
+    uuid: string,
+    hours: number,
+    hoursBetween: number,
+    liveOnly = false,
+    dp = 0,
+    options: {fresh?: boolean; includeNph?: boolean} = {}
+) => {
+    const days = Math.ceil(hours / 24);
+    const initialLimit = hoursBetween >= hours ? MAX_STATS_ROWS_PER_PLAYER : SESSION_PAGE_ROWS;
+    const readRows = (limit: number): Promise<any[]> => options.fresh
+        ? getNethersByPeriod(uuid, days, limit, liveOnly) as Promise<any[]>
+        : getCached(getNethersByPeriod, "getNethersByPeriod", uuid, days, limit, liveOnly);
+    const walkRows = (runs: any[]) => {
+        let lastTime = 0;
+        const times: number[] = [];
+        let stopped = false;
+        for (const run of runs) {
+            if ((lastTime > 0 && lastTime - run.time > 60 * 60 * hoursBetween)
+                || Date.now() / 1000 - run.time > 60 * 60 * hours) {
+                stopped = true;
+                break;
+            }
+            times.push(run.nether);
+            lastTime = run.time;
+        }
+        return {times, stopped};
+    };
+    let runs = await readRows(initialLimit);
+    let walk = walkRows(runs);
+    if (initialLimit === SESSION_PAGE_ROWS && !walk.stopped && runs.length === SESSION_PAGE_ROWS) {
+        // Preserve the public route's existing larger cap and cache key.
+        runs = await readRows(9_999_999);
+        walk = walkRows(runs);
+    }
+    const count = walk.times.length;
+    if (count === 0) {
+        return {count: 0, avg: dp > 0 ? `0:00.${"0".repeat(dp)}` : "0:00", rnph: 0, uuid};
+    }
+    const avg = formatDecimals(calculateAvg(walk.times), dp);
+    if (options.includeNph === false) return {count, avg, rnph: 0, uuid};
+    const nph = options.fresh
+        ? await getNPH(uuid, hours, hoursBetween, liveOnly)
+        : await getCached(getNPH, "getNPH", uuid, hours, hoursBetween, liveOnly);
+    return {count, avg, rnph: nph.rnph, uuid};
+};
 
 export const jude = async (uuid: string) => {
     // Find the newest completed ID in the compact finish index, then fetch
@@ -2873,19 +2955,7 @@ export const submitStats = async (
     const inserted = result.affectedRows === 1;
     if (!inserted) return false;
 
-    try {
-        const subscribers = await redis.publish(
-            process.env.WS_REDIS_CHANNEL || "pacestats:run-updates",
-            JSON.stringify({uuid})
-        );
-        if (subscribers === 0 && Date.now() - (runtime.__paceStatsLastPublishWarningAt ?? 0) >= 30_000) {
-            console.warn("Run refresh was published with no WebSocket Redis subscribers")
-            runtime.__paceStatsLastPublishWarningAt = Date.now();
-        }
-    } catch (error) {
-        // The stats write is authoritative; a notification failure should not reject it.
-        console.error("Unable to publish run refresh:", error);
-    }
+    await publishRunUpdate(uuid);
     return true;
 }
 
@@ -3033,19 +3103,23 @@ const walkSessionStats = (boundedRuns: any[], safeHours: number, safeHoursBetwee
     return {splits, stopped}
 }
 
-export const getSessionStats = async (uuid: string, hours: number, hoursBetween: number) => {
+export const getSessionStats = async (
+    uuid: string,
+    hours: number,
+    hoursBetween: number,
+    options: {fresh?: boolean} = {}
+) => {
     const safeHours = boundedInteger(hours, 24, 1, MAX_LOOKBACK_DAYS * 24);
     const safeHoursBetween = boundedInteger(hoursBetween, 6, 0, MAX_LOOKBACK_DAYS * 24);
     // A window-sized gap needs the final cap directly; other sessions keep
     // the short-prefix walk so ordinary current-session reads stay small.
     const initialLimit = safeHoursBetween >= safeHours ? MAX_SESSION_ROWS + 1 : SESSION_PAGE_ROWS;
-    let runs = await getCached(
-        readSessionSplitRows,
-        "readSessionSplitRows",
-        uuid,
-        safeHours,
-        initialLimit
-    )
+    // WebSocket snapshots follow a committed update and must not reuse rows
+    // from the public API's short-lived response cache.
+    const readRows = (limit: number): Promise<any[]> => options.fresh
+        ? readSessionSplitRows(uuid, safeHours, limit)
+        : getCached(readSessionSplitRows, "readSessionSplitRows", uuid, safeHours, limit);
+    let runs = await readRows(initialLimit)
     let truncated = runs.length > MAX_SESSION_ROWS
     let walk = walkSessionStats(runs.length > MAX_SESSION_ROWS ? runs.slice(0, MAX_SESSION_ROWS) : runs, safeHours, safeHoursBetween)
     if (initialLimit === SESSION_PAGE_ROWS && runs.length === SESSION_PAGE_ROWS) {
@@ -3056,13 +3130,7 @@ export const getSessionStats = async (uuid: string, hours: number, hoursBetween:
                 MAX_SESSION_ROWS
             )
         } else {
-            runs = await getCached(
-                readSessionSplitRows,
-                "readSessionSplitRows",
-                uuid,
-                safeHours,
-                MAX_SESSION_ROWS + 1
-            )
+            runs = await readRows(MAX_SESSION_ROWS + 1)
             truncated = runs.length > MAX_SESSION_ROWS
             walk = walkSessionStats(runs.slice(0, MAX_SESSION_ROWS), safeHours, safeHoursBetween)
         }

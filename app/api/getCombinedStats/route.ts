@@ -2,23 +2,11 @@ import {NextRequest, NextResponse} from "next/server";
 import {
     getCached,
     getCombinedSplitAggregates,
+    formatCombinedSplitResponse,
     resolveCombinedPlayerUuids,
 } from "@/app/data";
 import type {CombinedSplitAggregate} from "@/app/data";
-import {formatTime} from "@/app/utils";
 import {integerParam, jsonResponse, listParam, validationErrorResponse, withApiRequest} from "@/app/api/_utils";
-
-const categories = [
-    "nether",
-    "bastion",
-    "fortress",
-    "first_structure",
-    "second_structure",
-    "first_portal",
-    "stronghold",
-    "end",
-    "finish",
-] as const;
 
 export const GET = withApiRequest("combinedStats", async (request: NextRequest) => {
     try {
@@ -51,18 +39,7 @@ export const GET = withApiRequest("combinedStats", async (request: NextRequest) 
             hoursBetween,
             start
         ) as CombinedSplitAggregate[];
-        const aggregateByCategory = new Map(
-            aggregates.map((aggregate) => [aggregate.category, aggregate])
-        );
-        const response: Record<string, {count: number; avg: string}> = {};
-        for (const category of categories) {
-            const aggregate = aggregateByCategory.get(category);
-            response[category] = {
-                count: aggregate?.count ?? 0,
-                avg: formatTime(aggregate?.average ?? 0),
-            };
-        }
-        return jsonResponse(response, {cacheSeconds: 5, staleSeconds: 10});
+        return jsonResponse(formatCombinedSplitResponse(aggregates), {cacheSeconds: 5, staleSeconds: 10});
     } catch (error) {
         const invalid = validationErrorResponse(error);
         if (invalid) return invalid;
