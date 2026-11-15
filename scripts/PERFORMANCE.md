@@ -55,6 +55,7 @@ prefetching, meaningful run updates, relative-time formatting and AA row reuse:
 ```sh
 node scripts/trim-bootstrap.mjs
 node tests/css-source-words.mjs
+node --import tsx tests/player-info-sql-batches.ts
 node --import tsx tests/player-info-requests.ts
 node --import tsx tests/shared-loader.ts
 node --import tsx tests/player-prefetch.ts
@@ -86,6 +87,12 @@ PERF_BASE_URL=http://127.0.0.1:5112/stats/ node tests/frontend-navigation.mjs
 PERF_BASE_URL=http://127.0.0.1:5112/stats/ node tests/search-dismissal.mjs
 PERF_BASELINE_URL=http://127.0.0.1:5111/stats/ PERF_BASE_URL=http://127.0.0.1:5112/stats/ PERF_OUTPUT=/app/test-artifacts/performance/site-round/pages.json node scripts/perf-bundles.mjs
 ```
+
+The SQL fixture uses reserved Redis database 15, which must start empty, and
+does not alter SQL or primary Redis data. Its nine alternating local pairs clear
+Node value caches and prepare both SQL shapes equally; MySQL buffers are not
+flushed. It records direct handler work rather than HTTP latency. Rejected PB
+query experiments are documented in `ops/performance/2026-11-15-site-round.md`.
 
 The bundle probe and the CSS fixture's navigation trace use **300 ms** network
 latency and **4×** CPU slowdown. CSS parity includes stabilization waits and
