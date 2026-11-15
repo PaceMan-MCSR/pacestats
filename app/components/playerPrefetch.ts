@@ -1,17 +1,16 @@
 const PREFETCH_INTERVAL_MS = 50;
 const PREFETCH_TTL_MS = 30_000;
 const MAX_PREFETCHED_PATHS = 64;
+const MAX_PENDING_PATHS = 64;
 
 type PrefetchTask = {
     path: string;
     prefetch: () => void;
     subscribers: number;
-    cancelled: boolean;
 };
 
 const prefetchedPaths = new Map<string, number>();
 const pendingPaths = new Map<string, PrefetchTask>();
-const queue: PrefetchTask[] = [];
 let queueTimer: ReturnType<typeof setTimeout> | undefined;
 let lastPrefetchAt = 0;
 
@@ -32,24 +31,22 @@ function rememberPrefetch(path: string) {
 function runQueue() {
     if (queueTimer !== undefined) return;
 
-    while (queue[0]?.cancelled) queue.shift();
-    if (queue.length === 0) return;
+    if (pendingPaths.size === 0) return;
 
     const delay = Math.max(0, PREFETCH_INTERVAL_MS - (Date.now() - lastPrefetchAt));
     queueTimer = setTimeout(() => {
         queueTimer = undefined;
 
-        let task: PrefetchTask | undefined;
-        while ((task = queue.shift())?.cancelled) {
-            // Drop routes that left the viewport before reaching the front.
-        }
+        const task = pendingPaths.values().next().value;
 
         if (task && task.subscribers > 0) {
             pendingPaths.delete(task.path);
-            rememberPrefetch(task.path);
             lastPrefetchAt = Date.now();
             try {
                 task.prefetch();
+                rememberPrefetch(task.path);
+            } catch {
+                // Speculative work may be tried again on the next intent.
             } finally {
                 runQueue();
             }
@@ -67,9 +64,11 @@ export function schedulePlayerPrefetch(path: string, prefetch: () => void) {
     if (task) {
         task.subscribers += 1;
     } else {
-        task = {path, prefetch, subscribers: 1, cancelled: false};
+        // This is tentative search preparation. Strong hover/keyboard intent
+        // bypasses this queue; omitted paths remain eligible on the next call.
+        if (pendingPaths.size >= MAX_PENDING_PATHS) return () => {};
+        task = {path, prefetch, subscribers: 1};
         pendingPaths.set(path, task);
-        queue.push(task);
         runQueue();
     }
 
@@ -79,8 +78,11 @@ export function schedulePlayerPrefetch(path: string, prefetch: () => void) {
         released = true;
         task.subscribers -= 1;
         if (task.subscribers === 0 && pendingPaths.get(path) === task) {
-            task.cancelled = true;
             pendingPaths.delete(path);
+            if (pendingPaths.size === 0) {
+                clearTimeout(queueTimer);
+                queueTimer = undefined;
+            }
         }
     };
 }
