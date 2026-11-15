@@ -6,6 +6,9 @@ export function parseSnapshotSubscription(input) {
     if (!kinds.has(kind)) throw new Error('Invalid snapshot kind');
     const combined = kind.startsWith('combined');
     const params = new URLSearchParams({kind});
+    const rawSince = input.get('since');
+    const since = rawSince === null ? 0 : Number(rawSince);
+    if (rawSince !== null && (!/^\d+$/.test(rawSince) || !Number.isSafeInteger(since))) throw new Error('Invalid since');
     const integer = (name, fallback, minimum, maximum) => {
         const raw = input.get(name);
         if (raw !== null && raw !== '' && !/^-?\d+$/.test(raw.trim())) throw new Error(`Invalid ${name}`);
@@ -35,7 +38,8 @@ export function parseSnapshotSubscription(input) {
     }
     if (combined) params.set('start', String(integer('start', 0, 0, Number.MAX_SAFE_INTEGER)));
     if (kind === 'combinedNethers') params.set('maxTime', String(integer('maxTime', 99_999_999, 1, 99_999_999)));
-    return {key: params.toString(), params};
+    // The seed age belongs to this browser, never to the shared query/cache key.
+    return {key: params.toString(), params, since};
 }
 
 /** Bound memory even if a broken internal upstream streams a huge response. */

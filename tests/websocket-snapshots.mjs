@@ -32,11 +32,73 @@ assert.equal(spec('kind=nethers&name=fixture').params.get('nph'), 'true');
 assert.equal(spec('kind=nethers&name=fixture&nph=false').params.get('nph'), 'false');
 assert.equal(spec('kind=session&name=fixture&hours=9999999').params.get('hours'), '239976');
 assert.equal(spec('kind=combinedNethers&names= fixture , other ').params.get('names'), 'fixture,other');
+assert.equal(spec('kind=session&name=fixture&since=123').key, normal.key);
+assert.equal(spec('kind=session&name=fixture&since=123').params.has('since'), false);
+assert.equal(spec('kind=session&name=fixture&since=123').since, 123);
+assert.equal(normal.since, 0);
 for (const query of ['kind=unknown&name=x', 'kind=session', 'kind=session&name=x&hours=0',
     'kind=session&name=x&hours=NaN', 'kind=combinedStats&names=x&hoursBetween=0',
     'kind=nethers&name=x&dp=4', 'kind=nethers&name=x&nph=yes', 'kind=nethers&name=x&liveOnly=1',
-    `kind=combinedStats&names=${Array(21).fill('x').join(',')}`, 'kind=combinedStats&names=x&start=9007199254740992']) {
+    `kind=combinedStats&names=${Array(21).fill('x').join(',')}`, 'kind=combinedStats&names=x&start=9007199254740992',
+    ...['', '-1', '1.2', '1e3', 'NaN', '9007199254740992', '%20123'].map(since => `kind=session&name=x&since=${since}`)]) {
     assert.throws(() => spec(query), undefined, query);
+}
+
+{
+    const time = clock(), reads = [], delivered = [];
+    const broker = new SnapshotBroker({...time, fetchSnapshot: () => {
+        const read = deferred(); reads.push(read); return read.promise;
+    }, send: (client, message) => delivered.push([client, message])});
+    const a = {}, b = {}, c = {}, d = {}, future = {};
+    await time.advance(100);
+    broker.add(a, normal); reads[0].resolve(output(1)); await settle();
+    assert.equal(delivered.length, 1);
+    await time.advance(50);
+    const newerSeed = spec('kind=session&name=fixture&since=150');
+    broker.add(b, newerSeed); broker.add(c, newerSeed);
+    assert.equal(delivered.length, 1, 'A cached WS snapshot cannot overwrite a newer rendered seed');
+    assert.equal(reads.length, 2, 'Newer seed joins share one fresh read');
+    reads[1].resolve(output(2)); await settle();
+    assert.equal(delivered.length, 4, 'Fresh data fans out to old and seeded clients');
+    broker.add(d, spec('kind=session&name=fixture&since=149'));
+    assert.equal(reads.length, 2, 'A retained snapshot newer than the seed needs no fetch');
+    assert.equal(delivered.at(-1)[0], d);
+    broker.add(future, spec('kind=session&name=fixture&since=9007199254740991'));
+    assert.equal(reads.length, 2, 'Future hint is clamped to the join clock');
+    assert.equal(delivered.at(-1)[0], future);
+    const group = broker.groups.get(normal.key);
+    broker.clear();
+    assert.equal(group.clients.size, 0, 'Shutdown releases per-client seed timestamps');
+    assert.equal(broker.byClient.size, 0); assert.equal(time.timers.size, 0);
+}
+
+{
+    const time = clock(), reads = [], delivered = [];
+    const broker = new SnapshotBroker({...time, fetchSnapshot: () => {
+        const read = deferred(); reads.push(read); return read.promise;
+    }, send: (client, message) => delivered.push([client, message])});
+    const old = {}, seeded = {}, sameSeed = {}, future = {};
+    await time.advance(100);
+    broker.add(old, normal);
+    await time.advance(50);
+    broker.add(seeded, spec('kind=session&name=fixture&since=150'));
+    broker.add(sameSeed, spec('kind=session&name=fixture&since=150'));
+    reads[0].resolve(output(1)); await settle();
+    assert.deepEqual(delivered.map(([client]) => client), [old],
+        'An older in-flight read cannot overwrite either newer seed');
+    assert.equal(reads.length, 2, 'One follow-up read serves all newer seeds');
+    reads[1].resolve(output(2)); await settle();
+    assert.deepEqual(delivered.slice(1).map(([client]) => client), [old, seeded, sameSeed]);
+    assert.equal(reads.length, 2);
+    await time.advance(25);
+    broker.add(future, spec('kind=session&name=fixture&since=9007199254740991'));
+    assert.equal(reads.length, 3);
+    reads[2].resolve(output(3)); await settle();
+    assert.equal(delivered.at(-1)[0], future);
+    assert.equal(reads.length, 3, 'A clamped future hint cannot cause an infinite dirty rerun');
+    broker.remove(seeded);
+    assert.equal(broker.groups.get(normal.key).clients.has(seeded), false);
+    broker.clear();
 }
 
 {

@@ -31,19 +31,23 @@ export class SnapshotBroker {
         let group = this.groups.get(subscription.key);
         if (!group) {
             if (this.groups.size >= this.maxGroups) return false;
-            group = {subscription, clients: new Set(), uuids: [], running: false,
+            group = {subscription, clients: new Map(), uuids: [], running: false,
                 dirty: false, revision: 0, sequence: 0, controller: null,
-                message: null, failed: false, nextAt: null};
+                message: null, messageAt: -1, readAt: -1, failed: false, nextAt: null};
             this.groups.set(subscription.key, group);
         }
         if (group.clients.size >= this.maxClientsPerGroup) return false;
-        group.clients.add(client);
+        const minimumAt = Math.min(subscription.since ?? 0, this.now());
+        group.clients.set(client, minimumAt);
         this.byClient.set(client, group);
-        if (group.message !== null) this.send(client, group.message);
+        if (group.message !== null && group.messageAt >= minimumAt) this.send(client, group.message);
         if (group.failed) this.send(client, this.errorMessage);
         // In-flight joins share that result. A healthy, already loaded group
-        // supplies its latest message without another API/SQL request.
-        if (!group.running && !this.pending.has(group)
+        // supplies its latest message without another API/SQL request, unless
+        // this browser already rendered a newer server-side seed.
+        const needsFresh = group.message === null || group.messageAt < minimumAt;
+        if (needsFresh && (!group.running || group.readAt < minimumAt)) this.request(group);
+        else if (!group.running && !this.pending.has(group)
             && (group.nextAt === null || group.nextAt <= this.now())) this.request(group);
         return true;
     }
@@ -101,7 +105,7 @@ export class SnapshotBroker {
                 group.nextAt = this.now() + this.refreshMs;
                 this.pending.delete(group);
                 group.controller?.abort();
-                for (const client of group.clients) this.send(client, 'reloadPage');
+                for (const client of group.clients.keys()) this.send(client, 'reloadPage');
             } else this.request(group, false);
         }
         this.drain();
@@ -137,6 +141,8 @@ export class SnapshotBroker {
         const revision = group.revision;
         const initial = group.uuids.length === 0;
         const notifications = this.notifications;
+        const readAt = this.now();
+        group.readAt = readAt;
         const controller = new AbortController();
         group.controller = controller;
         try {
@@ -152,9 +158,13 @@ export class SnapshotBroker {
             if (Buffer.byteLength(message) > this.maxBytes) throw new Error('Overlay snapshot exceeds limit');
             this.index(group, snapshot.uuids);
             group.message = message;
+            group.messageAt = readAt;
             group.failed = false;
             group.nextAt = this.now() + this.refreshMs;
-            for (const client of group.clients) this.send(client, message);
+            for (const [client, minimumAt] of group.clients) {
+                if (readAt >= minimumAt) this.send(client, message);
+                else group.dirty = true;
+            }
             if (initial && notifications !== this.notifications) group.dirty = true;
         } catch (error) {
             if (this.isCurrent(group) && revision === group.revision) {
@@ -162,7 +172,7 @@ export class SnapshotBroker {
                 // signal enables browser fallback without a retry stampede.
                 if (!group.failed) {
                     group.failed = true;
-                    for (const client of group.clients) this.send(client, this.errorMessage);
+                    for (const client of group.clients.keys()) this.send(client, this.errorMessage);
                     this.onError(error);
                 }
                 group.nextAt = this.now() + this.retryMs;
@@ -213,6 +223,7 @@ export class SnapshotBroker {
             group.revision++;
             group.controller?.abort();
             group.message = null;
+            group.clients.clear();
         }
         this.groups.clear();
         this.byClient.clear();
