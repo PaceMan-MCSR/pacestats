@@ -1,23 +1,24 @@
 import "@/app/styles/api.css"
+import {apiExamples, exampleRequestUrl, exampleResponsePreview, type ApiEndpointPath} from "./_examples"
 
 // Keep the prebuilt docs inexpensive without advertising a one-year HTML TTL
 // to shared caches. Deployment also rotates nginx's cache namespace.
 export const revalidate = 60;
 
-type Endpoint = {path: string; method?: string; summary: string; params?: string; returns: string; notes?: string; rateLimit?: string}
+type Endpoint = {path: ApiEndpointPath; method?: string; summary: string; params?: string; returns: string; notes?: string; rateLimit?: string}
 
 const exportParams = 'name or uuid (exactly one required); from: inclusive UTC date YYYY-MM-DD (1970-01-01); to: exclusive UTC date YYYY-MM-DD (tomorrow); mode: daily or records (daily); format: json or csv (json); limit: records only (1000, max 5000); cursor: records only.'
 const exportReturns = 'Daily totals or paginated records, as JSON or CSV.'
 const exportRateLimit = '6 requests/minute; 2 concurrent exports per endpoint.'
 
 const endpoints: Endpoint[] = [
-  {path: 'getLeaderboard', summary: 'Pace leaderboard slice.', params: 'days: 1, 7, 30, or 9999 (30); category (nether); type: count, average, fastest, or conversion (count); limit (10, max 999999).', returns: 'Array of leaderboard entries.'},
+  {path: 'getLeaderboard', summary: 'Pace leaderboard slice.', params: 'days: 1, 7, 30, or 9999 (30); category (nether); type: qty, average, fastest, or conversion (qty); limit (10, max 999999).', returns: 'Array of leaderboard entries.'},
   {path: 'getFastest', summary: 'Fastest runs for one pace category.', params: 'days: 1, 7, 30, or 9999 (30); category (nether); limit (10, max 999999).', returns: 'Array of fastest-run entries.'},
   {path: 'getWorld', summary: 'One run, by numeric stats ID or PaceMan world hash.', params: 'worldId (required).', returns: '{ data, time, isLive } or null.'},
   {path: 'getRecentRuns', summary: 'Recent pace runs for a player.', params: 'name; hours (lifetime by default); hoursBetween (lifetime by default); limit (10, maximum 1000).', returns: 'Array of pace runs.'},
   {path: 'getRecentTimestamps', summary: 'Timestamped split data for recent pace runs.', params: 'name; limit (20, max 50); onlyFort (false).', returns: 'Array of timestamp/split records.'},
   {path: 'getLatestRun', summary: 'Latest pace run for a player.', params: 'name; forceName (false).', returns: 'One run object, [] when none, or { error: "Unknown user" }.'},
-  {path: 'getLatestCompletion', summary: 'Latest completed pace run for a player.', params: 'name.', returns: 'One completion object or { error: "Unknown user" }.'},
+  {path: 'getLatestCompletion', summary: 'Latest completed pace run for a player.', params: 'name.', returns: 'Array containing the latest completion, [] when none, or { error: "Unknown user" }.'},
   {path: 'getPBs', summary: 'Personal-best completions.', params: 'names: comma-separated names; uuids: comma-separated UUIDs. Either may be omitted.', returns: 'Array of PB records.'},
   {path: 'getNickAlways', summary: 'Resolve the current nickname for a UUID.', params: 'uuid.', returns: '{ name }.'},
   {path: 'getAllUsers', summary: 'All known player names and Twitch aliases.', returns: 'Array of user records.'},
@@ -37,18 +38,38 @@ const endpoints: Endpoint[] = [
   {path: '../aa/api/getAllData', summary: 'All Advancements export.', params: 'days: 1, 7, 30, or 9999 (30).', returns: '{ data: [...] }.', notes: 'This route is prefixed with /stats/aa/api/, not /stats/api/.'},
 ]
 
+function EndpointBlock({endpoint}: {endpoint: Endpoint}) {
+  const example = apiExamples[endpoint.path];
+  const url = exampleRequestUrl(endpoint.path);
+  const preview = exampleResponsePreview(example.response);
+  const requestBody = 'requestBody' in example ? example.requestBody : undefined;
+
+  return <section className="apiBlock" id={endpoint.path.replaceAll('/', '-')}>
+    <h3><code>{endpoint.method || 'GET'} /{endpoint.path}</code></h3>
+    <p>{endpoint.summary}</p>
+    {endpoint.params && <p><b>Parameters:</b> {endpoint.params}</p>}
+    <p><b>Response:</b> <code>{endpoint.returns}</code></p>
+    {endpoint.rateLimit && <p><b>Rate limit:</b> {endpoint.rateLimit}</p>}
+    {endpoint.notes && <p><b>Note:</b> {endpoint.notes}</p>}
+    <p><b>Example URL:</b> {endpoint.method === 'POST'
+      ? <code className="apiExampleUrl">{url}</code>
+      : <a className="apiExampleUrl" href={url}><code>{url}</code></a>}
+    </p>
+    {requestBody && <div className="apiExampleRequestBody">
+      <h4>Example JSON body</h4>
+      <pre tabIndex={0} aria-label={`Example request body for ${endpoint.path}`}><code>{JSON.stringify(requestBody, null, 2)}</code></pre>
+    </div>}
+    <details className="apiExampleResponse">
+      <summary>Example response{preview.truncated && <span> (truncated)</span>}</summary>
+      <p className="apiExampleNote">Illustrative data.{preview.truncated && ' Additional array items, fields, or long values are omitted.'}</p>
+      <pre tabIndex={0} aria-label={`Example response for ${endpoint.path}`}><code>{preview.json}</code></pre>
+    </details>
+  </section>
+}
+
 export default function Page() {
   return <main className="container mb-5">
-    <div className="row justify-content-center mt-4"><div className="col-12 text-center"><h1 className="header">API Documentation</h1></div></div>
-    <p>All paths below are relative to <code>https://paceman.gg/stats/api/</code>. Responses are JSON unless a CSV export is requested. Existing endpoints preserve their legacy response shapes; the cursor endpoints are additive.</p>
-    <p>Player lookup parameters accept either a Minecraft nickname or Twitch name where stated. Unknown or unavailable players return <code>{'{ error: "Unknown user" }'}</code> with HTTP 404 unless noted otherwise. Malformed lookup parameters return HTTP 400.</p>
-    <div className="row"><div className="col-12"><h2 className="header">Endpoints</h2>{endpoints.map(endpoint => <section className="apiBlock" id={endpoint.path.replaceAll('/', '-')} key={endpoint.path}>
-      <h3><code>{endpoint.method || 'GET'} /{endpoint.path}</code></h3>
-      <p>{endpoint.summary}</p>
-      {endpoint.params && <p><b>Parameters:</b> {endpoint.params}</p>}
-      <p><b>Response:</b> <code>{endpoint.returns}</code></p>
-      {endpoint.rateLimit && <p><b>Rate limit:</b> {endpoint.rateLimit}</p>}
-      {endpoint.notes && <p><b>Note:</b> {endpoint.notes}</p>}
-    </section>)}</div></div>
+    <div className="row justify-content-center mt-4"><div className="col-12 text-center"><h1 className="header">API Endpoints</h1></div></div>
+    <div className="row"><div className="col-12">{endpoints.map(endpoint => <EndpointBlock endpoint={endpoint} key={endpoint.path}/>)}</div></div>
   </main>
 }

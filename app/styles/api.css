@@ -57,6 +57,76 @@
     color: #d5def0;
 }
 
+.apiExampleUrl {
+    min-width: 0;
+    color: #b8d3ff;
+    overflow-wrap: anywhere;
+}
+
+.apiExampleResponse,
+.apiExampleRequestBody {
+    border-top: 1px solid #2b303c;
+    padding-block: 12px;
+}
+
+.apiExampleResponse summary {
+    width: fit-content;
+    color: #b8d3ff;
+    font-weight: 550;
+    cursor: pointer;
+}
+
+.apiExampleResponse summary::marker {
+    color: #909eb5;
+}
+
+.apiExampleResponse summary span,
+.apiBlock .apiExampleNote {
+    color: #909eb5;
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.apiBlock .apiExampleNote {
+    padding-block: 8px;
+}
+
+.apiExampleRequestBody h4 {
+    color: #909eb5;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+}
+
+.apiExampleResponse pre,
+.apiExampleRequestBody pre {
+    max-width: 100%;
+    max-height: 360px;
+    overflow: auto;
+    margin: 0;
+    padding: 16px;
+    border: 1px solid #2b303c;
+    border-radius: 4px;
+    background: #101217;
+    color: #d5def0;
+    font-size: 13px;
+    line-height: 1.65;
+    white-space: pre;
+}
+
+.apiExampleResponse pre code,
+.apiExampleRequestBody pre code {
+    font-size: inherit;
+}
+
+.apiExampleResponse summary:focus-visible,
+.apiExampleResponse pre:focus-visible,
+.apiExampleRequestBody pre:focus-visible {
+    outline: 2px solid #b8d3ff;
+    outline-offset: 4px;
+}
+
 @media (max-width: 700px) {
     .apiBlock p:has(b) {
         grid-template-columns: minmax(0, 1fr);
