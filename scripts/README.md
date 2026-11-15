@@ -185,12 +185,24 @@ All settings are optional unless noted:
 ## WebSocket overlay delivery
 
 The four OBS overlays (`session`, `sessionNethers`, `combinedStats`, and
-`combinedNethers`) receive their initial values and later values over the
-WebSocket. Their browser-source URLs stay the same. The socket subscribes to
+`combinedNethers`) seed their dedicated browser-source pages with server-rendered
+values, then receive live data snapshots over the WebSocket. Embedded previews
+without a server seed get their first value through that socket. Their
+browser-source URLs stay the same. The socket subscribes to
 `/overlay?kind=session|nethers|combinedStats|combinedNethers&...`, using the
 existing name/names and session settings. A healthy connection applies pushed
 JSON directly; it does not refetch a browser API after each run notification.
 Display settings such as colour and font do not create separate server reads.
+
+Initial page rendering uses the same server snapshot helper directly. Identical
+page loads share in-flight reads and a two-second seed cache holds at most 64
+entries, roughly 2 MiB of serialized UTF-8 data at the per-snapshot limit. That
+is not a JavaScript-heap limit. At most four distinct seed reads are in flight;
+SSR and internal HTTP reads share a process-wide four-read budget even when
+Next.js loads separate module copies. An overload or failed seed leaves the
+normal socket path available. Live socket updates always read fresh data and
+never consume the seed cache. Demo pages skip SSR data work and fetch once
+through their public API, without a socket or background polling.
 
 The server shares one snapshot and one pending refresh per active parameter
 set. A run notification refreshes only groups containing that player's resolved
@@ -203,9 +215,9 @@ Groups disappear and pending work is cancelled when their last viewer leaves.
 Each WS process allows up to 512 snapshot groups, 100 clients per group, and
 two concurrent snapshot requests. Snapshot bodies and outgoing snapshot frames
 are capped at 32 KiB; sends are drained in batches of 256 with the existing
-socket backpressure checks. The internal Next.js endpoint allows four active
-snapshot reads per process. These bounds are separate from the legacy
-per-UUID client limit. The snapshot provider has an eight-second request timeout
+socket backpressure checks. Next.js allows four active snapshot reads per
+process across SSR and its internal endpoint. These bounds are separate from
+the legacy per-UUID client limit. The snapshot provider has an eight-second request timeout
 and retries failed groups after five seconds. The last successful value stays
 visible while recovery is in progress.
 
