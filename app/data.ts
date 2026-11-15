@@ -1830,9 +1830,10 @@ const indexCompactUsers = (users: any[]): CompactUserIndexes => {
 /** Resolve the latest association and its current name in two indexed top-one probes. */
 const readCurrentIdentity = async (column: "nickname" | "twitch", name: string) => {
     const [rows] = await executeDb<any[]>(
-        `SELECT uuid, nickname FROM pace
-         WHERE uuid=(SELECT uuid FROM pace WHERE ${column}=? ORDER BY id DESC LIMIT 1)
-         ORDER BY id DESC LIMIT 1;`,
+        `SELECT owner.uuid, currentPlayer.nickname
+         FROM (SELECT uuid FROM pace WHERE ${column}=? ORDER BY id DESC LIMIT 1) owner
+         INNER JOIN pace currentPlayer ON currentPlayer.uuid=owner.uuid
+         ORDER BY currentPlayer.id DESC LIMIT 1;`,
         [name]
     );
     if (rows.length === 0) return null;

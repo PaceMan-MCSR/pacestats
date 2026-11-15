@@ -72,11 +72,12 @@ async function main() {
             const tables: any[] = [];
             const visit = (node: any) => {
                 if (!node || typeof node !== "object") return;
-                if (node.table_name === "pace") tables.push(node);
+                if (node.table_name === "pace" || node.table_name === "currentPlayer") tables.push(node);
                 for (const value of Object.values(node)) visit(value);
             };
             visit(JSON.parse(plans[0].EXPLAIN));
             assert.ok(tables.every(table => table.key && table.access_type !== "ALL"));
+            if (expected) assert.ok(tables.length >= 2, "Both association and current-name probes use their indexes");
         }
         for (const cachedName of ["An earlier cached nickname", null]) {
             reset(); runtime.__paceStatsCache.set(JSON.stringify(["getNick", uuid]), cachedName);
@@ -100,20 +101,23 @@ async function main() {
         }
 
         // Small read-only tables exercise rare ownership/collation cases without SQL writes.
+        const mixedCaseUuid = "ABCDEF01-2345-6789-ABCD-0123456789AB";
         const rows = [
             [1, "uuid-alpha", "Legacy", "old-handle"], [2, "uuid-alpha", "Alpha", "new-handle"],
             [3, "uuid-former", "Reused", "reused-handle"], [4, "uuid-former", "Changed", "changed-handle"],
             [5, "uuid-current", "Reused", "reused-handle"],
             [6, "uuid-allowed", "Blocked", "blocked-handle"], [7, "uuid-banned", "Blocked", "blocked-handle"],
             [8, "uuid-accent", "Accent", "accent-handle"], [9, "uuid-padded", "Pad ", "pad-handle "],
+            [10, mixedCaseUuid, "LegacyCase", "legacy-case-handle"],
+            [11, mixedCaseUuid.toLowerCase(), "CurrentCase", "current-case-handle"],
         ];
         cte = `WITH pace AS (${rows.map(() =>
             "SELECT ? AS id, CAST(? AS CHAR(36)) AS uuid, CAST(? AS CHAR(64)) COLLATE utf8mb4_unicode_ci AS nickname, CAST(? AS CHAR(64)) COLLATE utf8mb4_unicode_ci AS twitch"
         ).join(" UNION ALL ")}) `;
         cteValues = rows.flat();
         const virtualCases = [
-            ["getAllNamesByNick", ["ALPHA", "Legacy", "Reused", "Blocked", "accént", "Pad", "Unknown"]],
-            ["getAllNamesByTwitch", ["NEW-HANDLE", "old-handle", "reused-handle", "blocked-handle", "accént-handle", "pad-handle", "unknown-handle"]],
+            ["getAllNamesByNick", ["ALPHA", "Legacy", "Reused", "Blocked", "accént", "Pad", "Unknown", "LegacyCase", "CurrentCase"]],
+            ["getAllNamesByTwitch", ["NEW-HANDLE", "old-handle", "reused-handle", "blocked-handle", "accént-handle", "pad-handle", "unknown-handle", "legacy-case-handle", "current-case-handle"]],
         ] as const;
         for (const [method, cases] of virtualCases) {
             for (const name of cases) {
@@ -125,7 +129,29 @@ async function main() {
                 if (/^reused/i.test(name)) assert.equal(expected.uuid, "uuid-current");
                 if (/^blocked/i.test(name)) assert.equal(expected, null, "A banned latest owner must not select an earlier owner");
                 if (name === "Legacy" || name === "old-handle") assert.equal(expected.nick, "Alpha");
+                if (name === "LegacyCase" || name === "legacy-case-handle") {
+                    assert.equal(expected.uuid, mixedCaseUuid, "Retain the association row's raw UUID spelling");
+                    assert.equal(expected.nick, "CurrentCase");
+                }
             }
+        }
+        for (const [method, name] of [
+            ["getAllNamesByNick", "LegacyCase"], ["getAllNamesByTwitch", "legacy-case-handle"],
+        ] as const) {
+            for (const bannedUuid of [mixedCaseUuid, mixedCaseUuid.toLowerCase()]) {
+                reset([bannedUuid]);
+                const expected = await legacy[method](name);
+                reset([bannedUuid]);
+                assert.deepEqual(await data[method](name), expected, "Ban matching uses the latest association's UUID spelling");
+                assert.equal(expected === null, bannedUuid === mixedCaseUuid);
+            }
+            reset();
+            const upperKey = JSON.stringify(["getNick", mixedCaseUuid]);
+            const lowerKey = JSON.stringify(["getNick", mixedCaseUuid.toLowerCase()]);
+            runtime.__paceStatsCache.set(upperKey, "Association-key cached name");
+            runtime.__paceStatsCache.set(lowerKey, "Current-row-key cached name");
+            assert.deepEqual(await data[method](name), await legacy[method](name));
+            assert.deepEqual(await data[method](name), {uuid: mixedCaseUuid, nick: "Association-key cached name"});
         }
         cte = ""; cteValues = [];
         if (process.env.PERF_TIMING === "1") {
@@ -148,9 +174,9 @@ async function main() {
         assert.equal(await runtime.__paceStatsRedis.dbsize(), 0);
         const output = process.env.PERF_OUTPUT ?? "/app/test-artifacts/performance/cold2/cold-identity.json";
         await mkdir(dirname(output), {recursive: true});
-        await writeFile(output, JSON.stringify({counts, warmedNameCacheCases: 4, virtualParityCases: 14,
+        await writeFile(output, JSON.stringify({counts, warmedNameCacheCases: 4, virtualParityCases: 24,
             fixtureRedisKeys: 0, measurements, method: "Read-only SQL and empty Redis15; independent frozen prior source, optional nine alternating pairs of20 sequential lookups with Node values cleared per lookup and equally prepared SQL. MySQL/OS caches not flushed; not HTTP latency."}, null, 2));
-        console.log(JSON.stringify({case: "cold-identity-resolution", counts, virtualParityCases: 14, measurements, output}));
+        console.log(JSON.stringify({case: "cold-identity-resolution", counts, virtualParityCases: 24, measurements, output}));
     } finally {pool.getConnection = acquire;}
 }
 
