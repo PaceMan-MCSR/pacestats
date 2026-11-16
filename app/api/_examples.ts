@@ -21,6 +21,13 @@ const splitStats = {
     end: {count: 2, avg: "10:00"},
     finish: {count: 1, avg: "13:00"},
 };
+const eventSummary = {
+    runCount: 24,
+    splits: Object.fromEntries(Object.entries(splitStats).map(([split, {count}]) => {
+        const avgMs = split === "nether" ? 180_000 : 480_000;
+        return [split, {count, avgMs, bestMs: count > 1 ? avgMs - 15_000 : avgMs}];
+    })),
+};
 const run = {
     id: 42, time: 1704067200, updatedTime: 1704067800, realUpdated: 1704067800,
     nether: 180000, bastion: 240000, fortress: 330000, first_portal: 420000,
@@ -120,6 +127,17 @@ export const apiExamples = {
     getSessionNethers: {query: {...sessionQuery, dp: "0"}, response: {count: 24, avg: "3:00", rnph: 8, uuid}},
     getSplitStats: {query: {...sessionQuery, split: "nether"}, response: {count: 24, avg: "3:00", ms: 180000}},
     getCombinedStats: {query: {names: `${name},AnotherPlayer`, hours: "24", hoursBetween: "6"}, response: splitStats},
+    getEventStats: {
+        query: {vanity: "playoffs-s3"},
+        response: {
+            event: {
+                vanity: "playoffs-s3", name: "PaceMan Playoffs Season 3",
+                windows: [{start: 1737820800, end: 1737850200}, {start: 1737907200, end: 1737936600}],
+            },
+            players: [{uuid, nickname: name, ...eventSummary}],
+            overall: eventSummary,
+        },
+    },
     getCombinedNethers: {query: {names: `${name},AnotherPlayer`, hours: "24", hoursBetween: "6"}, response: {count: 48, avg: "3:10"}},
     getNPH: {
         query: {name, hours: "24", hoursBetween: "2", liveOnly: "false"},
