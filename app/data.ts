@@ -776,7 +776,7 @@ const streamOnConnection = async (
     }
 };
 
-const streamDbRows = async (
+export const streamDbRows = async (
     sql: string,
     values: any,
     onRow: (row: any[]) => void,
@@ -828,6 +828,8 @@ const withReadSnapshot = async <T>(work: (connection: mysql.PoolConnection) => P
 // bounded checkout and execution timeouts.
 const dbExecutor = {execute: executeDb};
 export const getConn = async () => dbExecutor;
+
+export const EVENT_STATS_CACHE_SECONDS = 30;
 
 const ttls = {
     getWorld: 5,
@@ -911,6 +913,7 @@ const ttls = {
     resolveCombinedPlayerUuids: 60,
     getCombinedSplitAggregates: 10,
     getCombinedNetherAggregate: 10,
+    getEventStats: EVENT_STATS_CACHE_SECONDS,
 }
 
 export type CombinedPlayerResolution = {
